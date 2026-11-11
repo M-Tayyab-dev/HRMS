@@ -1,0 +1,65 @@
+# Production-like stack. Usage (from the repo root):
+#   docker compose -f infra/docker-compose.yml --env-file .env up -d --build
+# Put a TLS-terminating reverse proxy (Caddy, Nginx, a cloud load balancer) in front of "web".
+name: hrms
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hrms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PG_SUPERUSER_PASSWORD:?set in .env}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+      PG_APP_PASSWORD: ${PG_APP_PASSWORD:?set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d hrms']
+      interval: 5s
+      retries: 20
+
+  migrate:
+    build: { context: .., dockerfile: infra/api.Dockerfile }
+    command: ['node', 'dist/db/migrate.js']
+    environment:
+      DATABASE_ADMIN_URL: postgres://postgres:${PG_SUPERUSER_PASSWORD}@db:5432/hrms
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    build: { context: .., dockerfile: infra/api.Dockerfile }
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://hrms_app:${PG_APP_PASSWORD}@db:5432/hrms
+      JWT_SECRET: ${JWT_SECRET:?set in .env}
+      DATA_HMAC_SECRET: ${DATA_HMAC_SECRET:?set in .env}
+      APP_URL: ${APP_URL:-https://hr.example.com}
+      COOKIE_SECURE: 'true'
+      STORAGE_DIR: /data/storage
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-HRMS <no-reply@example.com>}
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  web:
+    build: { context: .., dockerfile: infra/web.Dockerfile }
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - '3000:3000'
+    depends_on: [api]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  pgdata:
+  storage:

@@ -1,0 +1,82 @@
+'use client';
+
+import type { Permission, Role } from '@hrms/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { api } from './api';
+
+export interface Me {
+  user: {
+    id: string;
+    email: string;
+    roles: Role[];
+    permissions: Permission[];
+    ledTeamIds: string[];
+    canPost: boolean;
+    mustChangePassword: boolean;
+    guidelinesAccepted: boolean;
+  };
+  employee: {
+    id: string;
+    employeeCode: string;
+    fullName: string;
+    designation: string;
+    avatarFileId: string | null;
+    departmentId: string;
+    departmentName: string;
+    onboardingCompletedAt: string | null;
+  } | null;
+  onboardingRequired: boolean;
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    timezone: string;
+    currency: string;
+    settings: { directoryShowJoinDate: boolean; communityPostingMode: string; communityEngagementEnabled: boolean; medicalAnnualLimit: number };
+  };
+}
+
+interface AuthCtx {
+  me: Me | undefined;
+  loading: boolean;
+  can: (...perms: Permission[]) => boolean;
+  hasRole: (...roles: Role[]) => boolean;
+  isTeamLead: boolean;
+  refresh: () => Promise<unknown>;
+  logout: () => Promise<void>;
+}
+
+const Ctx = createContext<AuthCtx | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const qc = useQueryClient();
+  const { data, isLoading, refetch } = useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/auth/me'), staleTime: 60_000, retry: false });
+  const perms = useMemo(() => new Set(data?.user.permissions ?? []), [data]);
+
+  const logout = useCallback(async () => {
+    await api.post('/auth/logout').catch(() => undefined);
+    qc.clear();
+    window.location.href = '/login';
+  }, [qc]);
+
+  const value = useMemo<AuthCtx>(
+    () => ({
+      me: data,
+      loading: isLoading,
+      can: (...p) => p.some((x) => perms.has(x)),
+      hasRole: (...r) => r.some((x) => data?.user.roles.includes(x) ?? false),
+      isTeamLead: (data?.user.ledTeamIds.length ?? 0) > 0,
+      refresh: refetch,
+      logout,
+    }),
+    [data, isLoading, perms, refetch, logout],
+  );
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useAuth() {
+  const v = useContext(Ctx);
+  if (!v) throw new Error('useAuth outside AuthProvider');
+  return v;
+}

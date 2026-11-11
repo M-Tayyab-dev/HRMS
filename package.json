@@ -1,0 +1,29 @@
+{
+  "name": "hrms",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-tenant HRMS SaaS",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "node scripts/setup-env.mjs && npm run build:shared",
+    "db:start": "node --env-file=.env scripts/dev-db.mjs",
+    "build:shared": "npm run build -w @hrms/shared",
+    "dev:api": "npm run dev -w @hrms/api",
+    "dev:web": "npm run dev -w @hrms/web",
+    "db:migrate": "npm run db:migrate -w @hrms/api",
+    "db:seed": "npm run db:seed -w @hrms/api",
+    "build": "npm run build -w @hrms/shared && npm run build -w @hrms/api && npm run build -w @hrms/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "embedded-postgres": "18.6.0-beta.19"
+  }
+}

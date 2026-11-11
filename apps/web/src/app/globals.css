@@ -1,0 +1,137 @@
+@import 'tailwindcss' source(none);
+@import '@fontsource-variable/inter';
+
+/* Explicit sources: automatic detection is unreliable in this monorepo layout. */
+@source '../';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens (light) */
+:root {
+  --background: #f6f7fb;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --border: #e2e8f0;
+  --input: #cbd5e1;
+  --ring: #2563eb;
+  --primary: #1d4ed8;
+  --primary-foreground: #ffffff;
+  --primary-soft: #eff6ff;
+  --secondary: #eef2f7;
+  --secondary-foreground: #0f172a;
+  --success: #15803d;
+  --success-soft: #f0fdf4;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --info: #1e3a8a;
+  --info-soft: #eef2ff;
+  --sidebar: #0b1220;
+  --sidebar-foreground: #cbd5e1;
+  --sidebar-active: #1e293b;
+  --sidebar-heading: #64748b;
+}
+
+.dark {
+  --background: #0b1020;
+  --foreground: #e2e8f0;
+  --card: #111827;
+  --card-foreground: #e2e8f0;
+  --muted: #1f2937;
+  --muted-foreground: #94a3b8;
+  --border: #1f2937;
+  --input: #334155;
+  --ring: #60a5fa;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --primary-soft: #172554;
+  --secondary: #1e293b;
+  --secondary-foreground: #e2e8f0;
+  --success: #4ade80;
+  --success-soft: #052e16;
+  --warning: #fbbf24;
+  --warning-soft: #422006;
+  --danger: #f87171;
+  --danger-soft: #450a0a;
+  --info: #93c5fd;
+  --info-soft: #172554;
+  --sidebar: #070b14;
+  --sidebar-foreground: #cbd5e1;
+  --sidebar-active: #1e293b;
+  --sidebar-heading: #64748b;
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-heading: var(--sidebar-heading);
+  --radius-lg: 0.75rem;
+  --radius-md: 0.5rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Policy viewer: discourage copying/printing (F1). This is a deterrent only. */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

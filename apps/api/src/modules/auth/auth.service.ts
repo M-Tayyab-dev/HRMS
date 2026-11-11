@@ -1,0 +1,347 @@
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import type { LoginInput, SignupInput } from '@hrms/shared';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { config } from '../../config';
+import { als } from '../../common/context';
+import { hashPassword, randomToken, sha256, verifyPassword } from '../../common/crypto';
+import { badRequest, conflict } from '../../common/errors';
+import { AuditService } from '../../core/audit.service';
+import { MailService } from '../../core/mail.service';
+import { DbService, type Tx } from '../../db/db.service';
+import {
+  departments,
+  employeePositions,
+  employees,
+  guidelineAcceptances,
+  guidelineVersions,
+  levels,
+  refreshTokens,
+  tenants,
+  userRoles,
+  userTokens,
+  users,
+} from '../../db/schema';
+import { AccessService } from './access.service';
+import { nextEmployeeCode, provisionTenant } from './provisioning';
+import { REFRESH_TTL_SEC, signAccessToken } from './tokens';
+
+const MAX_FAILED = 5;
+const LOCK_MINUTES = 15;
+const INVITE_TTL_H = 72;
+const RESET_TTL_MIN = 60;
+
+export interface SessionTokens {
+  access: string;
+  refresh: string;
+}
+
+const INVALID = () => new UnauthorizedException({ message: 'Incorrect workspace, email or password', code: 'INVALID_CREDENTIALS' });
+
+/** Token format "<tenantId>.<secret>" lets us set the RLS tenant before looking the token up. */
+function splitToken(raw: string | undefined): { tenantId: string; secret: string } | null {
+  if (!raw) return null;
+  const dot = raw.indexOf('.');
+  if (dot !== 36) return null;
+  const tenantId = raw.slice(0, 36);
+  const secret = raw.slice(37);
+  if (!/^[0-9a-f-]{36}$/.test(tenantId) || secret.length < 20) return null;
+  return { tenantId, secret };
+}
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly db: DbService,
+    private readonly access: AccessService,
+    private readonly audit: AuditService,
+    private readonly mail: MailService,
+  ) {}
+
+  private async issue(tx: Tx, tenantId: string, userId: string, tokenVersion: number, familyId: string = randomUUID()): Promise<SessionTokens & { id: string }> {
+    const secret = randomToken(32);
+    const store = als.getStore();
+    const [row] = await tx
+      .insert(refreshTokens)
+      .values({
+        tenantId,
+        userId,
+        familyId,
+        tokenHash: sha256(secret),
+        expiresAt: new Date(Date.now() + REFRESH_TTL_SEC * 1000),
+        ip: store?.ip,
+        userAgent: store?.userAgent?.slice(0, 300),
+      })
+      .returning({ id: refreshTokens.id });
+    const access = await signAccessToken({ sub: userId, tid: tenantId, ver: tokenVersion });
+    return { id: row!.id, access, refresh: `${tenantId}.${secret}` };
+  }
+
+  /* ---------------- Sign-up (new tenant) ---------------- */
+
+  async signup(input: SignupInput): Promise<SessionTokens> {
+    const [existing] = await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, input.workspace)).limit(1);
+    if (existing) throw conflict('That workspace name is taken', 'WORKSPACE_TAKEN');
+
+    return this.db.root.transaction(async (tx) => {
+      const [tenant] = await tx
+        .insert(tenants)
+        .values({ name: input.companyName, slug: input.workspace, timezone: input.timezone, currency: input.currency })
+        .returning();
+      await tx.execute(sql`select set_config('app.tenant_id', ${tenant!.id}, true)`);
+
+      const [user] = await tx
+        .insert(users)
+        .values({
+          tenantId: tenant!.id,
+          email: input.email,
+          passwordHash: await hashPassword(input.password),
+          status: 'ACTIVE',
+          passwordChangedAt: new Date(),
+          canPost: true,
+        })
+        .returning();
+      const { management } = await provisionTenant(tx, tenant!.id, user!.id);
+      const [topLevel] = await tx
+        .select()
+        .from(levels)
+        .where(and(eq(levels.departmentId, management.id), eq(levels.code, 'L6')))
+        .limit(1);
+      const today = new Date().toISOString().slice(0, 10);
+      const [emp] = await tx
+        .insert(employees)
+        .values({
+          tenantId: tenant!.id,
+          employeeCode: await nextEmployeeCode(tx, tenant!.id),
+          userId: user!.id,
+          fullName: input.adminName,
+          email: input.email,
+          departmentId: management.id,
+          levelId: topLevel!.id,
+          designation: 'Administrator',
+          hierarchyTier: 'DIRECTOR',
+          joiningDate: today,
+          basicSalary: topLevel!.defaultSalary,
+          onboardingCompletedAt: new Date(),
+        })
+        .returning();
+      await tx.insert(employeePositions).values({
+        tenantId: tenant!.id,
+        employeeId: emp!.id,
+        departmentId: management.id,
+        levelId: topLevel!.id,
+        designation: 'Administrator',
+        salary: topLevel!.defaultSalary,
+        startDate: today,
+        changeType: 'JOINED',
+      });
+      await tx.update(users).set({ employeeId: emp!.id }).where(eq(users.id, user!.id));
+      await tx.update(departments).set({ headEmployeeId: emp!.id }).where(eq(departments.id, management.id));
+      await tx.insert(userRoles).values([
+        { tenantId: tenant!.id, userId: user!.id, role: 'SUPER_ADMIN' },
+        { tenantId: tenant!.id, userId: user!.id, role: 'EMPLOYEE' },
+      ]);
+      await this.audit.log(tx, { tenantId: tenant!.id, action: 'tenant.signup', actorUserId: user!.id, actorLabel: input.email, entityType: 'tenant', entityId: tenant!.id });
+      return this.issue(tx, tenant!.id, user!.id, 0);
+    });
+  }
+
+  /* ---------------- Login ---------------- */
+
+  async login(input: LoginInput): Promise<SessionTokens> {
+    const [tenant] = await this.db.root.select().from(tenants).where(eq(tenants.slug, input.workspace)).limit(1);
+    if (!tenant || tenant.status !== 'ACTIVE') {
+      await verifyPassword(null, input.password);
+      throw INVALID();
+    }
+    const outcome = await this.db.inTenant(tenant.id, async (tx) => {
+      const [user] = await tx.select().from(users).where(eq(users.email, input.email)).limit(1);
+      const ok = await verifyPassword(user?.passwordHash, input.password);
+      if (!user) return { error: INVALID() };
+
+      if (user.lockedUntil && user.lockedUntil > new Date()) {
+        await this.audit.log(tx, { tenantId: tenant.id, action: 'auth.login_locked', actorUserId: user.id, actorLabel: user.email });
+        return { error: new UnauthorizedException({ message: `Account temporarily locked. Try again in ${LOCK_MINUTES} minutes or reset your password.`, code: 'LOCKED' }) };
+      }
+      if (!ok) {
+        const failed = user.failedLoginCount + 1;
+        await tx
+          .update(users)
+          .set({ failedLoginCount: failed, lockedUntil: failed >= MAX_FAILED ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null })
+          .where(eq(users.id, user.id));
+        await this.audit.log(tx, { tenantId: tenant.id, action: 'auth.login_failed', actorUserId: user.id, actorLabel: user.email, metadata: { failed } });
+        return { error: INVALID() };
+      }
+      if (user.status !== 'ACTIVE') return { error: new UnauthorizedException({ message: 'This account is disabled. Contact HR.', code: 'DISABLED' }) };
+
+      await tx.update(users).set({ failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() }).where(eq(users.id, user.id));
+      await this.audit.log(tx, { tenantId: tenant.id, action: 'auth.login', actorUserId: user.id, actorLabel: user.email });
+      return { tokens: await this.issue(tx, tenant.id, user.id, user.tokenVersion) };
+    });
+    // Failed-attempt counters must be committed, so errors are thrown after the transaction.
+    if ('error' in outcome) throw outcome.error;
+    return outcome.tokens;
+  }
+
+  /* ---------------- Refresh (rotation + reuse detection) ---------------- */
+
+  async refresh(raw: string | undefined): Promise<SessionTokens> {
+    const parts = splitToken(raw);
+    if (!parts) throw new UnauthorizedException({ message: 'Session expired', code: 'UNAUTHENTICATED' });
+    const outcome = await this.db.inTenant(parts.tenantId, async (tx) => {
+      const [row] = await tx.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, sha256(parts.secret))).limit(1);
+      if (!row) return null;
+      if (row.revokedAt) {
+        // A rotated token was presented again → likely theft. Kill the whole family.
+        await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.familyId, row.familyId), isNull(refreshTokens.revokedAt)));
+        await this.audit.log(tx, { tenantId: parts.tenantId, action: 'auth.refresh_reuse_detected', actorUserId: row.userId });
+        return null;
+      }
+      if (row.expiresAt < new Date()) return null;
+      const [user] = await tx.select().from(users).where(eq(users.id, row.userId)).limit(1);
+      if (!user || user.status !== 'ACTIVE') return null;
+      const next = await this.issue(tx, parts.tenantId, user.id, user.tokenVersion, row.familyId);
+      await tx.update(refreshTokens).set({ revokedAt: new Date(), replacedById: next.id }).where(eq(refreshTokens.id, row.id));
+      return next;
+    });
+    if (!outcome) throw new UnauthorizedException({ message: 'Session expired', code: 'UNAUTHENTICATED' });
+    return outcome;
+  }
+
+  async logout(raw: string | undefined) {
+    const parts = splitToken(raw);
+    if (!parts) return;
+    await this.db.inTenant(parts.tenantId, async (tx) => {
+      const [row] = await tx.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, sha256(parts.secret))).limit(1);
+      if (row) {
+        await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.familyId, row.familyId));
+        await this.audit.log(tx, { tenantId: parts.tenantId, action: 'auth.logout', actorUserId: row.userId });
+      }
+    });
+  }
+
+  /* ---------------- Invites & password reset ---------------- */
+
+  /** Creates an invite / reset token in the current tenant tx and emails the link. */
+  async sendTokenEmail(tx: Tx, tenantId: string, user: { id: string; email: string }, purpose: 'INVITE' | 'PASSWORD_RESET', createdByUserId?: string) {
+    const secret = randomToken(32);
+    const ttl = purpose === 'INVITE' ? INVITE_TTL_H * 3600_000 : RESET_TTL_MIN * 60_000;
+    // Invalidate older outstanding tokens of the same purpose.
+    await tx.update(userTokens).set({ usedAt: new Date() }).where(and(eq(userTokens.userId, user.id), eq(userTokens.purpose, purpose), isNull(userTokens.usedAt)));
+    await tx.insert(userTokens).values({ tenantId, userId: user.id, purpose, tokenHash: sha256(secret), expiresAt: new Date(Date.now() + ttl), createdByUserId });
+    const [tenant] = await tx.select({ name: tenants.name, slug: tenants.slug }).from(tenants).where(eq(tenants.id, tenantId));
+    const link = `${config().APP_URL}/reset-password?token=${encodeURIComponent(`${tenantId}.${secret}`)}${purpose === 'INVITE' ? '&invite=1' : ''}`;
+    await this.mail.send({
+      to: user.email,
+      subject: purpose === 'INVITE' ? `You're invited to ${tenant?.name} on HRMS` : 'Reset your HRMS password',
+      text:
+        purpose === 'INVITE'
+          ? `You've been added to ${tenant?.name}'s HR portal.\n\nWorkspace: ${tenant?.slug}\nSet your password (link valid for ${INVITE_TTL_H} hours):\n${link}`
+          : `A password reset was requested for your account in workspace "${tenant?.slug}".\n\nReset it here (valid for ${RESET_TTL_MIN} minutes):\n${link}\n\nIf you didn't ask for this, you can ignore this email.`,
+    });
+  }
+
+  /** Always succeeds from the caller's view, so accounts can't be enumerated. */
+  async forgotPassword(workspace: string, email: string) {
+    const [tenant] = await this.db.root.select().from(tenants).where(eq(tenants.slug, workspace)).limit(1);
+    if (!tenant || tenant.status !== 'ACTIVE') return;
+    await this.db.inTenant(tenant.id, async (tx) => {
+      const [user] = await tx.select().from(users).where(eq(users.email, email)).limit(1);
+      if (!user || user.status === 'DISABLED') return;
+      await this.sendTokenEmail(tx, tenant.id, user, 'PASSWORD_RESET');
+      await this.audit.log(tx, { tenantId: tenant.id, action: 'auth.password_reset_requested', actorUserId: user.id, actorLabel: user.email });
+    });
+  }
+
+  async resetPassword(rawToken: string, password: string): Promise<{ workspace: string; email: string }> {
+    const parts = splitToken(rawToken);
+    if (!parts) throw badRequest('This link is invalid or has expired', 'INVALID_TOKEN');
+    return this.db.inTenant(parts.tenantId, async (tx) => {
+      const [tok] = await tx.select().from(userTokens).where(eq(userTokens.tokenHash, sha256(parts.secret))).limit(1);
+      if (!tok || tok.usedAt || tok.expiresAt < new Date()) throw badRequest('This link is invalid or has expired', 'INVALID_TOKEN');
+      const [user] = await tx.select().from(users).where(eq(users.id, tok.userId)).limit(1);
+      if (!user || user.status === 'DISABLED') throw badRequest('This link is invalid or has expired', 'INVALID_TOKEN');
+      await tx.update(userTokens).set({ usedAt: new Date() }).where(eq(userTokens.id, tok.id));
+      await tx
+        .update(users)
+        .set({
+          passwordHash: await hashPassword(password),
+          passwordChangedAt: new Date(),
+          mustChangePassword: false,
+          status: 'ACTIVE',
+          failedLoginCount: 0,
+          lockedUntil: null,
+          tokenVersion: user.tokenVersion + 1,
+        })
+        .where(eq(users.id, user.id));
+      await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, user.id), isNull(refreshTokens.revokedAt)));
+      await this.audit.log(tx, { tenantId: parts.tenantId, action: tok.purpose === 'INVITE' ? 'auth.invite_accepted' : 'auth.password_reset', actorUserId: user.id, actorLabel: user.email });
+      const [tenant] = await tx.select({ slug: tenants.slug }).from(tenants).where(eq(tenants.id, parts.tenantId));
+      return { workspace: tenant!.slug, email: user.email };
+    });
+  }
+
+  async changePassword(userId: string, current: string, next: string) {
+    const tx = this.db.tx;
+    const [user] = await tx.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user || !(await verifyPassword(user.passwordHash, current))) throw badRequest('Current password is incorrect', 'INVALID_PASSWORD');
+    if (current === next) throw badRequest('Choose a password you have not just used');
+    await tx
+      .update(users)
+      .set({ passwordHash: await hashPassword(next), passwordChangedAt: new Date(), mustChangePassword: false, tokenVersion: user.tokenVersion + 1 })
+      .where(eq(users.id, userId));
+    await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
+    return this.issue(tx, user.tenantId, userId, user.tokenVersion + 1);
+  }
+
+  /* ---------------- Current session ---------------- */
+
+  async me() {
+    const store = als.getStore()!;
+    const u = store.user!;
+    const tx = this.db.tx;
+    const [tenant] = await tx.select().from(tenants).where(eq(tenants.id, u.tenantId));
+    const [user] = await tx.select().from(users).where(eq(users.id, u.userId));
+    const emp = u.employeeId
+      ? (
+          await tx
+            .select({
+              id: employees.id,
+              employeeCode: employees.employeeCode,
+              fullName: employees.fullName,
+              designation: employees.designation,
+              avatarFileId: employees.avatarFileId,
+              departmentId: employees.departmentId,
+              departmentName: departments.name,
+              onboardingCompletedAt: employees.onboardingCompletedAt,
+            })
+            .from(employees)
+            .innerJoin(departments, eq(departments.id, employees.departmentId))
+            .where(eq(employees.id, u.employeeId))
+        )[0]
+      : null;
+    const [latestGuidelines] = await tx.select({ version: guidelineVersions.version }).from(guidelineVersions).orderBy(desc(guidelineVersions.version)).limit(1);
+    const accepted = latestGuidelines
+      ? (await tx
+          .select({ v: guidelineAcceptances.version })
+          .from(guidelineAcceptances)
+          .where(and(eq(guidelineAcceptances.userId, u.userId), eq(guidelineAcceptances.version, latestGuidelines.version)))
+          .limit(1)).length > 0
+      : true;
+    return {
+      user: {
+        id: u.userId,
+        email: u.email,
+        roles: u.roles,
+        permissions: [...u.permissions],
+        ledTeamIds: u.ledTeamIds,
+        canPost: u.canPost,
+        mustChangePassword: user?.mustChangePassword ?? false,
+        guidelinesAccepted: accepted,
+      },
+      employee: emp ?? null,
+      onboardingRequired: !!emp && !emp.onboardingCompletedAt,
+      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, settings: tenant!.settings },
+    };
+  }
+}
