@@ -10,7 +10,7 @@ import { Badge, Card, CardBody, CardHeader, PageHeader, Stat, StatusBadge } from
 import { Checkbox, Field, FormGrid, Input, Select, Textarea } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
-import { Bars, Donut, Line } from '@/components/ui/charts';
+import { Donut, HoursChart, Line } from '@/components/ui/charts';
 import { api, qs } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
@@ -50,114 +50,172 @@ interface Dash {
   percentage: number | null;
   daysRecorded: number;
   counts: { present: number; late: number; absent: number; leave: number };
-  figures: { workedMinutes: number; scheduledMinutes: number; overtimeMinutes: number; lateMinutes: number; averageCheckIn: string | null; averageBreakMinutes: number | null; foodEligibleDays: number | null };
+  figures: { workedMinutes: number; scheduledMinutes: number; overtimeMinutes: number; lateMinutes: number; averageCheckIn: string | null; averageBreakMinutes: number | null; averageWorkedMinutes: number | null; approvedOvertimeMinutes: number; foodEligibleDays: number | null };
+  shift: { start: string; end: string; minutes: number };
   daily: { date: string; status: string; workedMinutes: number; scheduledMinutes: number }[];
   trend: { month: string; percentage: number | null; late: number }[];
   latest: { date: string; status: string; checkIn: string | null; checkOut: string | null; workedMinutes: number; breakMinutes: number; overtimeMinutes: number; lateMinutes: number }[];
   colors: Record<string, string>;
 }
 
-const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v}%`);
+const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${Math.round(v)}%`);
+/** "13:30" → "1:30 PM" */
+const clock = (hhmm: string | null | undefined) => {
+  if (!hhmm) return '—';
+  const [h, m] = hhmm.split(':').map(Number) as [number, number];
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+const clockOf = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '—');
+const dur = (m: number | null | undefined) => (!m ? '—' : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`);
+const decHours = (m: number | null | undefined) => `${Math.round(((m ?? 0) / 60) * 10) / 10} h`;
+const lastMonths = (n: number) => {
+  const now = new Date();
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+};
 
+function StatusChip({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-l-4 bg-card px-3.5 py-2" style={{ borderLeftColor: color }}>
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-xl font-semibold tabular-nums" style={{ color }}>{value}</span>
+    </div>
+  );
+}
+
+function Figure({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
+  return (
+    <Card className="p-4">
+      <p className="text-sm text-muted-foreground">{label}</p>
+      <p className="mt-1.5 text-2xl font-semibold tracking-tight tabular-nums">{value}</p>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+    </Card>
+  );
+}
+
+/** Individual attendance dashboard (ADB-01–07), laid out like the approved design. */
 function MyAttendance() {
   const [month, setMonth] = useState(todayLocal().slice(0, 7));
   const [showAll, setShowAll] = useState(false);
   const { from, to } = monthBounds(month);
-  const { data: dash, isLoading: dashLoading } = useApi<Dash>(`/attendance/me/dashboard${qs({ month })}`);
+  const { data: dash } = useApi<Dash>(`/attendance/me/dashboard${qs({ month })}`);
   const { data: days, isLoading } = useApi<Day[]>(showAll ? `/attendance/days${qs({ from, to })}` : null);
   const { data: corrections } = useApi<Correction[]>('/attendance/corrections?mine=true');
   const [corr, setCorr] = useState<{ open: boolean; date?: string }>({ open: false });
   const f = dash?.figures;
   const col = (k: string) => dash?.colors[k] ?? '#999';
-  const correctBtn = (d: { date: string }) => <Button size="sm" variant="ghost" onClick={() => setCorr({ open: true, date: d.date })}>Request correction</Button>;
+  const statusCols = [
+    { key: 'date', header: 'Date', cell: (d: { date: string }) => <span className="whitespace-nowrap font-medium">{date(d.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span> },
+    { key: 'status', header: 'Status', cell: (d: { status: string }) => <StatusBadge status={d.status} /> },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Input type="month" className="w-auto" aria-label="Month" value={month} max={todayLocal().slice(0, 7)} onChange={(e) => setMonth(e.target.value)} />
+      <div className="flex flex-wrap items-end justify-end gap-3">
+        <Field label="Month" className="w-48">{(a) => (
+          <Select {...a} value={month} onChange={(e) => setMonth(e.target.value)}>
+            {lastMonths(12).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+          </Select>
+        )}</Field>
+        <Button onClick={() => setCorr({ open: true })}><Plus className="h-4 w-4" /> Request correction</Button>
+      </div>
+
+      {/* Summary */}
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between gap-4 bg-primary px-5 py-4 text-primary-foreground sm:px-6">
           <div>
-            <p className="text-sm font-semibold">{monthLabel(month)}</p>
-            <p className="text-xs text-muted-foreground">Attendance {pct(dash?.percentage)}</p>
+            <p className="text-[11px] font-semibold tracking-widest uppercase opacity-80">
+              {monthLabel(month)}{dash ? ` · Shift ${clock(dash.shift.start)} – ${clock(dash.shift.end)}` : ''}
+            </p>
+            <h2 className="mt-0.5 text-lg font-semibold sm:text-xl">Attendance summary</h2>
           </div>
+          <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-primary tabular-nums">{pct(dash?.percentage)}</span>
         </div>
-        <Button variant="outline" onClick={() => setCorr({ open: true })}><Plus className="h-4 w-4" /> Request correction</Button>
+        <CardBody className="flex flex-col items-center gap-6 py-8 sm:flex-row sm:justify-center sm:gap-10">
+          <Donut
+            center={pct(dash?.percentage)}
+            sub="attendance"
+            showLegend={false}
+            slices={[
+              { label: 'Present', value: dash?.counts.present ?? 0, color: col('PRESENT') },
+              { label: 'Late', value: dash?.counts.late ?? 0, color: col('LATE') },
+              { label: 'Absent', value: dash?.counts.absent ?? 0, color: col('ABSENT') },
+              { label: 'Leave', value: dash?.counts.leave ?? 0, color: col('ON_LEAVE') },
+            ]}
+          />
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{dash?.daysRecorded ?? 0}</span> working days recorded · <span className="font-semibold text-primary">{pct(dash?.percentage)}</span> attendance
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <StatusChip label="Present" value={dash?.counts.present ?? 0} color={col('PRESENT')} />
+              <StatusChip label="Late" value={dash?.counts.late ?? 0} color={col('LATE')} />
+              <StatusChip label="Absent" value={dash?.counts.absent ?? 0} color={col('ABSENT')} />
+              <StatusChip label="Leave" value={dash?.counts.leave ?? 0} color={col('ON_LEAVE')} />
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Key figures */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <Figure label="Working hours" value={decHours(f?.workedMinutes)} hint={f?.averageWorkedMinutes ? `avg ${decHours(f.averageWorkedMinutes)} per day` : 'no days yet'} />
+        <Figure label="Overtime" value={decHours(f?.overtimeMinutes)} hint={`${decHours(f?.approvedOvertimeMinutes)} approved by Team Lead`} />
+        <Figure label="Average check-in" value={clock(f?.averageCheckIn)} hint={dash ? `shift starts ${clock(dash.shift.start)}` : undefined} />
+        <Figure label="Average break" value={f?.averageBreakMinutes == null ? '—' : `${f.averageBreakMinutes} min`} hint="per working day" />
+        <Figure label="Food allowance days" value={f?.foodEligibleDays ?? '—'} hint={f?.foodEligibleDays === null ? 'not enabled for your department' : 'full required hours met'} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/* Charts */}
+      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <Card>
-          <CardHeader title="This month" description={`${dash?.daysRecorded ?? 0} working days recorded`} />
-          <CardBody>
-            <Donut
-              center={pct(dash?.percentage)}
-              sub="attendance"
-              slices={[
-                { label: 'Present', value: dash?.counts.present ?? 0, color: col('PRESENT') },
-                { label: 'Late', value: dash?.counts.late ?? 0, color: col('LATE') },
-                { label: 'Absent', value: dash?.counts.absent ?? 0, color: col('ABSENT') },
-                { label: 'Leave', value: dash?.counts.leave ?? 0, color: col('ON_LEAVE') },
-              ]}
-            />
-          </CardBody>
-        </Card>
-        <div className="grid grid-cols-2 gap-4 lg:col-span-2 lg:grid-cols-3">
-          <Stat label="Total working hours" value={hours(f?.workedMinutes ?? 0)} hint={`of ${hours(f?.scheduledMinutes ?? 0)} shift hours`} />
-          <Stat label="Overtime" tone="success" value={hours(f?.overtimeMinutes ?? 0)} />
-          <Stat label="Total late time" tone="warning" value={`${f?.lateMinutes ?? 0} min`} />
-          <Stat label="Average check-in" value={f?.averageCheckIn ?? '—'} />
-          <Stat label="Average break" value={f?.averageBreakMinutes == null ? '—' : `${f.averageBreakMinutes} min`} />
-          <Stat label="Food-allowance days" value={f?.foodEligibleDays ?? '—'} hint={f?.foodEligibleDays === null ? 'Not enabled for your department' : 'eligible this month'} />
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Daily working hours" description="Bars show hours worked; the dashed line is the shift." />
-          <CardBody>
-            <Bars format={hours} items={(dash?.daily ?? []).map((d) => ({ label: String(Number(d.date.slice(8))), value: d.workedMinutes, target: d.scheduledMinutes, color: col(d.status), title: `${date(d.date)}: ${hours(d.workedMinutes)} of ${hours(d.scheduledMinutes)}` }))} />
-          </CardBody>
+          <CardHeader title="Daily working hours" action={<span className="text-xs text-muted-foreground">Hours worked each day vs {decHours(dash?.shift.minutes)} shift</span>} />
+          <CardBody>{dash && <HoursChart days={dash.daily} shiftMinutes={dash.shift.minutes} colors={dash.colors} />}</CardBody>
         </Card>
         <Card>
-          <CardHeader title="6-month attendance trend" />
+          <CardHeader title="Attendance trend" description="Attendance % over the last 6 months" />
           <CardBody>
-            <Line max={100} format={(n) => `${n}%`} points={(dash?.trend ?? []).map((t) => ({ label: monthLabel(t.month).slice(0, 3), value: t.percentage }))} />
+            <Line max={100} highlightLast format={(n) => `${Math.round(n)}%`} points={(dash?.trend ?? []).map((t) => ({ label: monthLabel(t.month).slice(0, 3), value: t.percentage }))} />
           </CardBody>
         </Card>
       </div>
 
+      {/* Latest records */}
       <Card>
-        <CardHeader title="Latest records" description="Your 5 most recent days." action={<Button size="sm" variant="outline" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide full history' : 'View all'}</Button>} />
-        <DataTable loading={dashLoading} rows={dash?.latest} rowKey={(d) => d.date} empty="No attendance recorded yet" columns={[
-          { key: 'd', header: 'Date', cell: (d) => <span className="whitespace-nowrap">{date(d.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span> },
-          { key: 's', header: 'Status', cell: (d) => <StatusBadge status={d.status} /> },
-          { key: 'i', header: 'Check-in', cell: (d) => <span className="tabular-nums">{time(d.checkIn)}{d.lateMinutes > 0 && <Badge tone="warning" className="ml-1">{d.lateMinutes}m late</Badge>}</span> },
-          { key: 'o', header: 'Check-out', cell: (d) => <span className="tabular-nums">{time(d.checkOut)}</span> },
-          { key: 'w', header: 'Working hours', cell: (d) => <span className="tabular-nums">{hours(d.workedMinutes)}</span> },
-          { key: 'b', header: 'Break', hideOnMobile: true, cell: (d) => hours(d.breakMinutes) },
-          { key: 'ot', header: 'Overtime', hideOnMobile: true, cell: (d) => (d.overtimeMinutes ? hours(d.overtimeMinutes) : '—') },
-          { key: 'c', header: '', cell: correctBtn },
+        <CardHeader title="Latest attendance" description="Last 5 working days" action={<button className="text-sm font-medium text-primary hover:underline" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide full history' : 'View all records →'}</button>} />
+        <DataTable rows={dash?.latest} rowKey={(d) => d.date} empty="No attendance recorded yet" columns={[
+          ...statusCols,
+          { key: 'in', header: 'Check-in', cell: (d) => <span className="tabular-nums">{d.status === 'ON_LEAVE' ? '—' : clockOf(d.checkIn)}</span> },
+          { key: 'out', header: 'Check-out', cell: (d) => <span className="tabular-nums">{d.status === 'ON_LEAVE' ? '—' : clockOf(d.checkOut)}</span> },
+          { key: 'w', header: 'Working hours', cell: (d) => <span className="tabular-nums">{dur(d.workedMinutes)}</span> },
+          { key: 'b', header: 'Break', cell: (d) => (d.breakMinutes ? `${d.breakMinutes}m` : '—') },
+          { key: 'ot', header: 'Overtime', cell: (d) => (d.overtimeMinutes ? `${d.overtimeMinutes}m` : '—') },
         ]} />
       </Card>
 
       {showAll && (
         <Card>
-          <CardHeader title={`Full history · ${monthLabel(month)}`} description="Captured from the biometric device. Skipped your break? You may leave early by the break length." />
+          <CardHeader title={`All records · ${monthLabel(month)}`} description="Captured from the biometric device. Skipped your break? You may leave early by the break length." />
           <DataTable loading={isLoading} rows={days} rowKey={(d) => d.id} empty="No attendance recorded this month" columns={[
-            { key: 'd', header: 'Date', cell: (d) => <span className="whitespace-nowrap">{date(d.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span> },
-            { key: 'in', header: 'In / out', cell: (d) => <span className="tabular-nums">{time(d.checkIn)} – {time(d.checkOut)}</span> },
-            { key: 'w', header: 'Worked', cell: (d) => <span className="tabular-nums">{hours(d.workedMinutes)}</span> },
-            { key: 'b', header: 'Break', hideOnMobile: true, cell: (d) => (d.skippedBreak ? <Badge tone="info">skipped</Badge> : <span className="text-muted-foreground">{hours(d.breakMinutes)}</span>) },
-            { key: 'x', header: 'Notes', hideOnMobile: true, cell: (d) => <div className="flex flex-wrap gap-1">{d.lateMinutes > 0 && <Badge tone="warning">{d.lateMinutes}m late</Badge>}{d.earlyLeave && <Badge tone="warning">left early</Badge>}{d.overtimeMinutes > 0 && <Badge tone="success">+{hours(d.overtimeMinutes)} OT</Badge>}{d.workFromHome && <Badge tone="info">WFH</Badge>}</div> },
-            { key: 's', header: 'Status', cell: (d) => <StatusBadge status={d.status} /> },
-            { key: 'c', header: '', cell: correctBtn },
+            ...statusCols,
+            { key: 'in', header: 'Check-in', cell: (d) => <span className="tabular-nums">{clockOf(d.checkIn)}{d.lateMinutes > 0 && <Badge tone="warning" className="ml-1.5">{d.lateMinutes}m late</Badge>}</span> },
+            { key: 'out', header: 'Check-out', cell: (d) => <span className="tabular-nums">{clockOf(d.checkOut)}</span> },
+            { key: 'w', header: 'Working hours', cell: (d) => <span className="tabular-nums">{dur(d.workedMinutes)}</span> },
+            { key: 'b', header: 'Break', hideOnMobile: true, cell: (d) => (d.skippedBreak ? <Badge tone="info">skipped</Badge> : d.breakMinutes ? `${d.breakMinutes}m` : '—') },
+            { key: 'ot', header: 'Overtime', hideOnMobile: true, cell: (d) => (d.overtimeMinutes ? `${d.overtimeMinutes}m` : '—') },
+            { key: 'c', header: <span className="sr-only">Actions</span>, cell: (d) => <Button size="sm" variant="ghost" onClick={() => setCorr({ open: true, date: d.date })}>Request correction</Button> },
           ]} />
         </Card>
       )}
+
       {!!corrections?.length && (
         <Card>
           <CardHeader title="My correction requests" />
           <DataTable rows={corrections} rowKey={(c) => c.id} columns={[
             { key: 'd', header: 'Date', cell: (c) => date(c.date) },
-            { key: 't', header: 'Requested', cell: (c) => `${c.checkIn?.slice(0, 5) ?? '—'} – ${c.checkOut?.slice(0, 5) ?? '—'}` },
+            { key: 't', header: 'Requested', cell: (c) => `${clock(c.checkIn)} – ${clock(c.checkOut)}` },
             { key: 'r', header: 'Reason', hideOnMobile: true, cell: (c) => <span className="text-muted-foreground">{c.reason}</span> },
             { key: 's', header: 'Status', cell: (c) => <StatusBadge status={c.status} step={c.currentStep} /> },
           ]} />

@@ -15,7 +15,7 @@ import type { Response } from 'express';
 export const notFound = (what = 'Resource') => new NotFoundException({ message: `${what} not found`, code: 'NOT_FOUND' });
 export const forbidden = (message = 'You do not have access to this resource') =>
   new ForbiddenException({ message, code: 'FORBIDDEN' });
-export const conflict = (message: string, code = 'CONFLICT') => new ConflictException({ message, code });
+export const conflict = (message: string, code = 'CONFLICT', details?: Record<string, unknown>) => new ConflictException({ message, code, ...(details ? { details } : {}) });
 export const badRequest = (message: string, code = 'BAD_REQUEST') => new BadRequestException({ message, code });
 
 interface PgError {
@@ -58,6 +58,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code: payload.code ?? HttpStatus[status],
         message: Array.isArray(payload.message) ? payload.message.join(', ') : payload.message,
         ...(payload.issues ? { issues: payload.issues } : {}),
+        ...(payload.details ? { details: payload.details } : {}),
       });
       return;
     }

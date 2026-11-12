@@ -8,6 +8,8 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public issues?: { path: string; message: string }[],
+    /** Extra data some errors carry, e.g. the workspaces to choose from at sign-in. */
+    public details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -93,7 +95,7 @@ async function request<T>(method: string, path: string, body?: Body, retried = f
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.code ?? 'ERROR', err.message ?? res.statusText, err.issues);
+    throw new ApiError(res.status, err.code ?? 'ERROR', err.message ?? res.statusText, err.issues, err.details);
   }
   const type = res.headers.get('content-type') ?? '';
   if (type.includes('application/json')) return (await res.json()) as T;

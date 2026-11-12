@@ -86,6 +86,22 @@ export const tenants = pgTable('tenants', {
   updatedAt: updatedAt(),
 });
 
+/**
+ * Platform-wide email → company index so people can sign in with just their email. Kept in sync by a
+ * database trigger on `users`; one indexed lookup per sign-in however many companies there are.
+ */
+export const userDirectory = pgTable(
+  'user_directory',
+  {
+    email: text('email').notNull(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.email, t.tenantId] }), index('user_directory_user_idx').on(t.userId)],
+);
+
 /** Subscription plans the platform sells (e.g. Starter, Professional). Not tenant data. */
 export const platformPlans = pgTable('platform_plans', {
   id: id(),
@@ -1123,4 +1139,4 @@ export const jobs = pgTable(
 );
 
 /** Tables without tenant_id RLS (platform + infra). Everything else gets RLS. */
-export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins', 'platform_plans'];
+export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins', 'platform_plans', 'user_directory'];

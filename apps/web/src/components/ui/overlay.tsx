@@ -121,6 +121,8 @@ export const DropdownLabel = ({ children }: { children: ReactNode }) => <DM.Labe
 
 export function Tabs({ tabs, value, onValueChange, defaultValue }: { tabs: { value: string; label: ReactNode; content: ReactNode; hidden?: boolean }[]; value?: string; onValueChange?: (v: string) => void; defaultValue?: string }) {
   const visible = tabs.filter((t) => !t.hidden);
+  // A single tab needs no tab bar.
+  if (visible.length === 1) return <>{visible[0]!.content}</>;
   return (
     <T.Root value={value} onValueChange={onValueChange} defaultValue={defaultValue ?? visible[0]?.value}>
       {/* Segmented control that wraps onto more lines on small screens (no sideways scrolling). */}

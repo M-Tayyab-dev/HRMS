@@ -7,6 +7,7 @@ import type { z } from 'zod';
 import { hashPassword, verifyPassword } from '../../common/crypto';
 import { Public, SkipAudit } from '../../common/decorators';
 import { badRequest, conflict, notFound } from '../../common/errors';
+import { loginAttempts } from '../../common/attempt-limiter';
 import { zp } from '../../common/zod.pipe';
 import { DbService } from '../../db/db.service';
 import { MailService } from '../../core/mail.service';
@@ -49,6 +50,7 @@ export class PlatformController {
   @HttpCode(200)
   @Post('login')
   async login(@Body(zp(platformLoginSchema)) body: z.infer<typeof platformLoginSchema>, @Res({ passthrough: true }) res: Response) {
+    loginAttempts.hit(`platform:${body.email}`);
     const [admin] = await this.db.root.select().from(platformAdmins).where(eq(platformAdmins.email, body.email));
     const ok = await verifyPassword(admin?.passwordHash, body.password);
     const invalid = () => new UnauthorizedException({ message: 'Email or password is incorrect', code: 'INVALID_CREDENTIALS' });

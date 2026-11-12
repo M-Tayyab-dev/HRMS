@@ -39,11 +39,11 @@ export function DeleteButton({
   return (
     <>
       {iconOnly ? (
-        <Button type="button" size="icon" variant="ghost" className="text-danger" aria-label={`Delete ${what}`} loading={del.isPending} onClick={run}>
+        <Button type="button" size="icon" variant="ghost" className="bg-danger-soft text-danger hover:bg-danger hover:text-white" aria-label={`Delete ${what}`} loading={del.isPending} onClick={run}>
           <Trash2 className="h-4 w-4" />
         </Button>
       ) : (
-        <Button type="button" size="sm" variant="ghost" className="text-danger" loading={del.isPending} onClick={run}>
+        <Button type="button" size="sm" variant="danger" loading={del.isPending} onClick={run}>
           <Trash2 className="h-4 w-4" /> {label}
         </Button>
       )}

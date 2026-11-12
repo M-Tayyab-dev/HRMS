@@ -14,6 +14,7 @@ import { als } from '../../common/context';
 import { DbService } from '../../db/db.service';
 import { AccessService } from './access.service';
 import type { AuthUser } from '../../common/context';
+import { loginAttempts, resetAttempts } from '../../common/attempt-limiter';
 import { zp } from '../../common/zod.pipe';
 import { AuthService } from './auth.service';
 import { ACCESS_COOKIE, ACTIVITY_HEADER, REFRESH_COOKIE, clearSessionCookies, issueCsrfCookie, setSessionCookies, verifyAccessToken } from './tokens';
@@ -42,7 +43,8 @@ export class AuthController {
   @HttpCode(200)
   @Post('login')
   async login(@Body(zp(loginSchema)) body: LoginInput, @Res({ passthrough: true }) res: Response) {
-    const t = await this.auth.login(body);
+    loginAttempts.hit(`company:${body.email}`);
+    const t = await this.auth.loginByEmail(body);
     setSessionCookies(res, t.access, t.refresh);
     return { ok: true };
   }
@@ -76,6 +78,7 @@ export class AuthController {
   @HttpCode(200)
   @Post('forgot-password')
   async forgot(@Body(zp(forgotPasswordSchema)) body: z.infer<typeof forgotPasswordSchema>) {
+    resetAttempts.hit(`reset:${body.email}`);
     await this.auth.forgotPassword(body.workspace, body.email);
     return { ok: true, message: 'If an account exists, a reset link has been sent.' };
   }

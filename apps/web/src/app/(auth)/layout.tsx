@@ -5,8 +5,8 @@ import { SITE } from '@/lib/site';
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      <section className="relative hidden overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-900 p-12 text-white lg:flex lg:flex-col lg:justify-between">
+    <div className="grid min-h-dvh lg:h-dvh lg:grid-cols-[1.1fr_1fr] lg:overflow-hidden">
+      <section className="relative hidden overflow-hidden bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-900 p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-12">
         <div className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-white/10 blur-3xl" aria-hidden />
         <BrandLogo inverted size="lg" className="relative" />
         <div className="relative max-w-md">
@@ -20,9 +20,9 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         </div>
         <p className="relative text-xs text-blue-200">© {new Date().getFullYear()} {SITE.name}</p>
       </section>
-      <section className="flex items-center justify-center p-6 sm:p-10">
+      <section className="flex items-center justify-center overflow-y-auto p-6 sm:p-10">
         <div className="w-full max-w-sm">
-          <BrandLogo className="mb-8 lg:hidden" />
+          <BrandLogo className="mb-6 lg:hidden" />
           {children}
         </div>
       </section>

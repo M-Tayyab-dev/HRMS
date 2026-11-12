@@ -36,6 +36,13 @@
       "when": 1794484547222,
       "tag": "0004_plans_modules",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794503041545,
+      "tag": "0005_user_directory",
+      "breakpoints": true
     }
   ]
 }

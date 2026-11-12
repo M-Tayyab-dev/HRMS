@@ -1,7 +1,9 @@
 'use client';
 
 import { AlertTriangle, CalendarClock, Clock, FileText, HandCoins, Inbox, LifeBuoy, Megaphone, Receipt, Timer, UserCheck, Users, Utensils } from 'lucide-react';
+import { ATTENDANCE_COLORS as C } from '@hrms/shared';
 import Link from 'next/link';
+import { Bars, Donut } from '@/components/ui/charts';
 import { Badge, BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, Progress, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
@@ -36,6 +38,8 @@ interface Dash {
     openSurveys: number;
   };
   organisation?: {
+    workforceTrend: { month: string; headcount: number; joined: number; left: number }[];
+    payrollTrend: { period: string; totalNet: number; status: string }[];
     headcount: { total: number; active: number; inactive: number; resigned: number; terminated: number };
     todayAttendance: Record<string, number>;
     byDepartment: { name: string; n: number }[];
@@ -120,19 +124,17 @@ export default function DashboardPage() {
             {has('ATTENDANCE') && <Card className="lg:col-span-2">
               <CardHeader title="Attendance this month" action={<Link className="text-xs text-primary hover:underline" href="/attendance">View attendance</Link>} />
               <CardBody>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  {[
-                    ['Present', e.attendance.present, 'text-success'],
-                    ['Late', e.attendance.late, 'text-warning'],
-                    ['Absent', e.attendance.absent, 'text-danger'],
-                    ['On leave', e.attendance.leave, 'text-info'],
-                  ].map(([l, v, c]) => (
-                    <div key={l as string}>
-                      <p className="text-xs text-muted-foreground">{l}</p>
-                      <p className={`text-2xl font-semibold tabular-nums ${c}`}>{v}</p>
-                    </div>
-                  ))}
-                </div>
+                <Donut
+                  className="justify-center sm:justify-start"
+                  center={`${e.attendance.present + e.attendance.late + e.attendance.absent + e.attendance.leave}`}
+                  sub="days"
+                  slices={[
+                    { label: 'Present', value: e.attendance.present, color: C.PRESENT },
+                    { label: 'Late', value: e.attendance.late, color: C.LATE },
+                    { label: 'Absent', value: e.attendance.absent, color: C.ABSENT },
+                    { label: 'On leave', value: e.attendance.leave, color: C.ON_LEAVE },
+                  ]}
+                />
                 {has('PAYROLL') && <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
                   <Utensils className="h-4 w-4" aria-hidden /> {e.attendance.foodDays} days eligible for food allowance (if enabled for your department)
                 </div>}
@@ -225,7 +227,19 @@ export default function DashboardPage() {
             {has('COMPLIANCE') && <Stat label="Open queries" icon={LifeBuoy} tone="warning" value={d.teamLead.openQueries} />}
             {has('COMPLIANCE') && <Stat label="Open team surveys" icon={Megaphone} tone="info" value={d.teamLead.openSurveys} />}
           </div>
-          {has('PERFORMANCE') && <Card>
+          <div className="grid gap-4 lg:grid-cols-3">
+          {has('ATTENDANCE') && <Card>
+            <CardHeader title="Team today" description={date(d.today, { weekday: 'long', day: 'numeric', month: 'short' })} />
+            <CardBody>
+              <Donut center={`${d.teamLead.memberCount}`} sub="members" slices={[
+                { label: 'Present', value: d.teamLead.todayAttendance.PRESENT ?? 0, color: C.PRESENT },
+                { label: 'Late', value: d.teamLead.todayAttendance.LATE ?? 0, color: C.LATE },
+                { label: 'On leave', value: d.teamLead.todayAttendance.ON_LEAVE ?? 0, color: C.ON_LEAVE },
+                { label: 'Not in yet', value: d.teamLead.notCheckedIn, color: 'var(--muted-foreground)' },
+              ]} />
+            </CardBody>
+          </Card>}
+          {has('PERFORMANCE') && <Card className="lg:col-span-2">
             <CardHeader title="Team performance" description={`KPI achievement · ${monthLabel(d.month)}`} />
             <CardBody>
               {d.teamLead.performance.length ? (
@@ -235,6 +249,7 @@ export default function DashboardPage() {
               )}
             </CardBody>
           </Card>}
+          </div>
         </section>
       )}
 
@@ -259,6 +274,34 @@ export default function DashboardPage() {
               value={d.organisation.latestPayroll ? money(d.organisation.latestPayroll.totalNet, cur) : '—'}
               hint={d.organisation.latestPayroll ? `${monthLabel(d.organisation.latestPayroll.period)} · ${d.organisation.latestPayroll.status.replace('_', ' ').toLowerCase()}` : 'Not processed yet'}
             />}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {has('ATTENDANCE') && <Card>
+              <CardHeader title="Attendance today" />
+              <CardBody>
+                <Donut center={`${d.organisation.headcount.active}`} sub="active" slices={[
+                  { label: 'Present', value: d.organisation.todayAttendance.PRESENT ?? 0, color: C.PRESENT },
+                  { label: 'Late', value: d.organisation.todayAttendance.LATE ?? 0, color: C.LATE },
+                  { label: 'Absent', value: d.organisation.todayAttendance.ABSENT ?? 0, color: C.ABSENT },
+                  { label: 'On leave', value: d.organisation.todayAttendance.ON_LEAVE ?? 0, color: C.ON_LEAVE },
+                ]} />
+              </CardBody>
+            </Card>}
+            <Card className={has('ATTENDANCE') ? '' : 'lg:col-span-2'}>
+              <CardHeader title="Headcount trend" description="Active employees at each month end" />
+              <CardBody>
+                <Bars items={d.organisation.workforceTrend.map((t) => ({ label: monthLabel(t.month).slice(0, 3), value: t.headcount, title: `${monthLabel(t.month)}: ${t.headcount} employees · +${t.joined} joined · −${t.left} left` }))} />
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {d.organisation.workforceTrend.reduce((a, t) => a + t.joined, 0)} joined · {d.organisation.workforceTrend.reduce((a, t) => a + t.left, 0)} left in the last 6 months
+                </p>
+              </CardBody>
+            </Card>
+            {has('PAYROLL') && d.organisation.payrollTrend.length > 0 && <Card>
+              <CardHeader title="Payroll cost" description="Net pay per month" action={<Link className="text-xs text-primary hover:underline" href="/payroll">Payroll</Link>} />
+              <CardBody>
+                <Bars format={(n) => money(n, cur)} items={d.organisation.payrollTrend.map((r) => ({ label: monthLabel(r.period).slice(0, 3), value: r.totalNet, color: r.status === 'APPROVED' || r.status === 'PAID' ? 'var(--primary)' : 'var(--muted-foreground)', title: `${monthLabel(r.period)}: ${money(r.totalNet, cur)} (${r.status.replace('_', ' ').toLowerCase()})` }))} />
+              </CardBody>
+            </Card>}
           </div>
           <div className="grid gap-4 lg:grid-cols-3">
             <Card className="lg:col-span-2">

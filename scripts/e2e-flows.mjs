@@ -271,6 +271,12 @@ async function main() {
     expect(d.status === 200, `${name} dashboard loads`, d);
   }
 
+  // ---- Sign in with email + password only (company found from the email)
+  const emailOnly = new Client();
+  await emailOnly.get('/auth/csrf');
+  expect((await emailOnly.post('/auth/login', { email: `esha@${ws}.test`, password: pw })).status === 200, 'sign in with email and password only');
+  expect((await emailOnly.post('/auth/login', { email: `nobody-${ws}@example.test`, password: pw })).status === 401, 'unknown email is rejected');
+
   // ---- Deleting records needs the "Delete records" permission (Super Admin by default)
   const pol = await HR.post('/policies', { category: 'COMPANY', title: 'Temporary policy', content: 'Draft text to be removed.' });
   expect(pol.status === 201, 'HR creates a policy', pol);

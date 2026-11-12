@@ -14,6 +14,7 @@ import {
   employeePositions,
   employees,
   platformPlans,
+  userDirectory,
   guidelineAcceptances,
   guidelineVersions,
   levels,
@@ -165,7 +166,48 @@ export class AuthService {
 
   /* ---------------- Login ---------------- */
 
-  async login(input: LoginInput): Promise<SessionTokens> {
+  /** Active companies an email belongs to (one indexed lookup in the platform-wide directory). */
+  private async workspacesFor(email: string) {
+    return this.db.root
+      .select({ slug: tenants.slug, name: tenants.name })
+      .from(userDirectory)
+      .innerJoin(tenants, eq(tenants.id, userDirectory.tenantId))
+      .where(and(eq(userDirectory.email, email.toLowerCase()), eq(tenants.status, 'ACTIVE')))
+      .limit(20);
+  }
+
+  /**
+   * Email + password sign-in. The company is found from the email; when the same email is used in several
+   * companies and the password matches more than one, the person picks the workspace (never revealed before
+   * the password is proven).
+   */
+  async loginByEmail(input: LoginInput): Promise<SessionTokens> {
+    if (input.workspace) return this.login({ ...input, workspace: input.workspace });
+    const spaces = await this.workspacesFor(input.email);
+    if (spaces.length === 0) {
+      await verifyPassword(null, input.password); // same timing as a real account
+      throw INVALID();
+    }
+    if (spaces.length === 1) return this.login({ ...input, workspace: spaces[0]!.slug });
+    const matches: { slug: string; name: string }[] = [];
+    for (const s of spaces) {
+      const ok = await this.db.inTenant(
+        (await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, s.slug)))[0]!.id,
+        async (tx) => {
+          const [u] = await tx.select({ hash: users.passwordHash, status: users.status, locked: users.lockedUntil }).from(users).where(eq(users.email, input.email)).limit(1);
+          return !!u && u.status === 'ACTIVE' && !(u.locked && u.locked > new Date()) && (await verifyPassword(u.hash, input.password));
+        },
+      );
+      if (ok) matches.push(s);
+    }
+    if (matches.length === 1) return this.login({ ...input, workspace: matches[0]!.slug });
+    if (matches.length > 1) throw conflict('This email is used in more than one company. Choose the workspace to open.', 'CHOOSE_WORKSPACE', { workspaces: matches });
+    // Wrong password: count the failed attempt (and any lockout) on every account with this email.
+    for (const s of spaces) await this.login({ ...input, workspace: s.slug }).catch(() => undefined);
+    throw INVALID();
+  }
+
+  async login(input: LoginInput & { workspace: string }): Promise<SessionTokens> {
     const [tenant] = await this.db.root.select().from(tenants).where(eq(tenants.slug, input.workspace)).limit(1);
     if (!tenant || tenant.status !== 'ACTIVE') {
       await verifyPassword(null, input.password);
@@ -304,7 +346,12 @@ export class AuthService {
   }
 
   /** Always succeeds from the caller's view, so accounts can't be enumerated. */
-  async forgotPassword(workspace: string, email: string) {
+  /** Without a workspace, a reset link is sent for every company the email belongs to. */
+  async forgotPassword(workspace: string | undefined, email: string) {
+    if (!workspace) {
+      for (const s of await this.workspacesFor(email)) await this.forgotPassword(s.slug, email);
+      return;
+    }
     const [tenant] = await this.db.root.select().from(tenants).where(eq(tenants.slug, workspace)).limit(1);
     if (!tenant || tenant.status !== 'ACTIVE') return;
     await this.db.inTenant(tenant.id, async (tx) => {

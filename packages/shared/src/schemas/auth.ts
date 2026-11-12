@@ -64,15 +64,16 @@ export type PlanInput = z.infer<typeof planSchema>;
 
 export const testEmailSchema = z.object({ to: z.email() });
 
+/** Sign in with email + password; the workspace is only needed when one email belongs to several companies. */
 export const loginSchema = z.object({
-  workspace: workspaceSlug,
+  workspace: workspaceSlug.optional(),
   email: z.email().toLowerCase(),
   password: z.string().min(1).max(128),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
 export const forgotPasswordSchema = z.object({
-  workspace: workspaceSlug,
+  workspace: workspaceSlug.optional(),
   email: z.email().toLowerCase(),
 });
 

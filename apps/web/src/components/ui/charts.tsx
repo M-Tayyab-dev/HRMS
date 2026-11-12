@@ -10,7 +10,7 @@ export interface DonutSlice {
   color: string;
 }
 
-export function Donut({ slices, center, sub, className }: { slices: DonutSlice[]; center?: string; sub?: string; className?: string }) {
+export function Donut({ slices, center, sub, className, showLegend = true }: { slices: DonutSlice[]; center?: string; sub?: string; className?: string; showLegend?: boolean }) {
   const total = slices.reduce((a, s) => a + s.value, 0);
   const r = 42;
   const c = 2 * Math.PI * r;
@@ -32,7 +32,7 @@ export function Donut({ slices, center, sub, className }: { slices: DonutSlice[]
         {center && <text x="50" y={sub ? 50 : 54} textAnchor="middle" className="fill-foreground text-[14px] font-semibold">{center}</text>}
         {sub && <text x="50" y="63" textAnchor="middle" className="fill-muted-foreground text-[8px]">{sub}</text>}
       </svg>
-      <ul className="space-y-1.5 text-sm">
+      {showLegend && <ul className="space-y-1.5 text-sm">
         {slices.map((s) => (
           <li key={s.label} className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-sm" style={{ background: s.color }} aria-hidden />
@@ -40,7 +40,7 @@ export function Donut({ slices, center, sub, className }: { slices: DonutSlice[]
             <span className="ml-auto pl-4 font-medium tabular-nums">{s.value}</span>
           </li>
         ))}
-      </ul>
+      </ul>}
     </div>
   );
 }
@@ -80,7 +80,7 @@ export function Bars({
 }
 
 /** Simple line chart for percentages or amounts over time. */
-export function Line({ points, format = (n) => String(n), max: fixedMax }: { points: { label: string; value: number | null }[]; format?: (n: number) => string; max?: number }) {
+export function Line({ points, format = (n) => String(n), max: fixedMax, highlightLast = false }: { points: { label: string; value: number | null }[]; format?: (n: number) => string; max?: number; highlightLast?: boolean }) {
   const w = 300;
   const h = 120;
   const pad = 16;
@@ -100,15 +100,81 @@ export function Line({ points, format = (n) => String(n), max: fixedMax }: { poi
         {points.map((p, i) =>
           p.value === null ? null : (
             <g key={p.label}>
-              <circle cx={x(i)} cy={y(p.value)} r="3" fill="var(--primary)" />
-              <text x={x(i)} y={y(p.value) - 7} textAnchor="middle" className="fill-foreground text-[9px]">{format(p.value)}</text>
+              <circle cx={x(i)} cy={y(p.value)} r={highlightLast && i === points.length - 1 ? 4.5 : 3} fill="var(--primary)" />
+              <text x={x(i)} y={y(p.value) - 8} textAnchor="middle" className={highlightLast && i === points.length - 1 ? 'fill-primary text-[10px] font-semibold' : 'fill-muted-foreground text-[9px]'}>{format(p.value)}</text>
             </g>
           ),
         )}
         {points.map((p, i) => (
-          <text key={`l${p.label}`} x={x(i)} y={h + 8} textAnchor="middle" className="fill-muted-foreground text-[9px]">{p.label}</text>
+          <text key={`l${p.label}`} x={x(i)} y={h + 8} textAnchor="middle" className={highlightLast && i === points.length - 1 ? 'fill-primary text-[9px] font-semibold' : 'fill-muted-foreground text-[9px]'}>{p.label}</text>
         ))}
       </svg>
+    </figure>
+  );
+}
+
+/**
+ * Daily working hours (ADB-04): one bar per working day coloured by status, an hour axis,
+ * a dashed shift line and "Abs" / "Lv" markers for absent and leave days.
+ */
+export function HoursChart({
+  days,
+  shiftMinutes,
+  colors,
+}: {
+  days: { date: string; status: string; workedMinutes: number }[];
+  shiftMinutes: number;
+  colors: Record<string, string>;
+}) {
+  if (!days.length) return <p className="py-12 text-center text-sm text-muted-foreground">No working days recorded this month</p>;
+  const W = 720;
+  const H = 240;
+  const left = 34;
+  const right = 34;
+  const top = 12;
+  const bottom = 26;
+  const maxH = Math.max(Math.ceil(Math.max(...days.map((d) => d.workedMinutes)) / 60), Math.ceil(shiftMinutes / 60) + 2, 1);
+  const y = (minutes: number) => top + (H - top - bottom) * (1 - minutes / 60 / maxH);
+  const slot = (W - left - right) / days.length;
+  const bar = Math.min(26, slot * 0.62);
+  const ticks = [0, Math.round(maxH * 0.4), maxH];
+  const color = (s: string) => colors[s] ?? 'var(--muted-foreground)';
+  const shiftY = y(shiftMinutes);
+  const fmt = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+  return (
+    <figure>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={days.map((d) => `${d.date}: ${d.status === 'ABSENT' ? 'absent' : d.status === 'ON_LEAVE' ? 'leave' : fmt(d.workedMinutes)}`).join(', ')}>
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={left} x2={W - right} y1={y(t * 60)} y2={y(t * 60)} stroke="var(--border)" />
+            <text x={left - 6} y={y(t * 60) + 3} textAnchor="end" className="fill-muted-foreground text-[10px]">{t === 0 ? '0' : `${t}h`}</text>
+          </g>
+        ))}
+        {days.map((d, i) => {
+          const cx = left + slot * i + slot / 2;
+          const label = String(Number(d.date.slice(8)));
+          const marker = d.status === 'ABSENT' ? 'Abs' : d.status === 'ON_LEAVE' ? 'Lv' : null;
+          return (
+            <g key={d.date}>
+              <title>{`${d.date} · ${marker ?? fmt(d.workedMinutes)}`}</title>
+              {marker ? (
+                <text x={cx} y={y(0) - 5} textAnchor="middle" className="text-[10px] font-semibold" fill={color(d.status)}>{marker}</text>
+              ) : (
+                <rect x={cx - bar / 2} y={y(d.workedMinutes)} width={bar} height={Math.max(0, y(0) - y(d.workedMinutes))} rx={3} fill={color(d.status)} />
+              )}
+              <text x={cx} y={H - 8} textAnchor="middle" className="fill-muted-foreground text-[10px]">{label}</text>
+            </g>
+          );
+        })}
+        <line x1={left} x2={W - right} y1={shiftY} y2={shiftY} stroke="var(--foreground)" strokeWidth={1.5} strokeDasharray="5 4" opacity={0.7} />
+        <text x={W - right + 4} y={shiftY + 3} className="fill-foreground text-[10px] font-semibold">{Math.round((shiftMinutes / 60) * 10) / 10}h</text>
+      </svg>
+      <figcaption className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {[['PRESENT', 'Present'], ['LATE', 'Late'], ['ABSENT', 'Absent'], ['ON_LEAVE', 'Leave']].map(([k, l]) => (
+          <span key={k} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: color(k!) }} aria-hidden />{l}</span>
+        ))}
+        <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-foreground/70" aria-hidden />Shift hours</span>
+      </figcaption>
     </figure>
   );
 }

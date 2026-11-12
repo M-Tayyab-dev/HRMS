@@ -41,6 +41,7 @@ import {
 } from '../../db/schema';
 import { foodEligibleDays } from '../payroll/payroll.logic';
 import { AttendanceService } from './attendance.service';
+import { scheduledNetMinutes } from './attendance.logic';
 import { ONLINE_WINDOW_MS } from './biometric';
 
 const reqList = z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED']).optional(), mine: z.coerce.boolean().optional() });
@@ -384,9 +385,17 @@ export class AttendanceController {
     const latest = await tx
       .select({ date: attendanceDays.date, status: attendanceDays.status, checkIn: attendanceDays.checkIn, checkOut: attendanceDays.checkOut, workedMinutes: attendanceDays.workedMinutes, breakMinutes: attendanceDays.breakMinutes, overtimeMinutes: attendanceDays.overtimeMinutes, lateMinutes: attendanceDays.lateMinutes })
       .from(attendanceDays)
-      .where(and(eq(attendanceDays.employeeId, employeeId), sql`${attendanceDays.status} not in ('WEEKEND')`))
+      .where(and(eq(attendanceDays.employeeId, employeeId), sql`${attendanceDays.status} not in ('WEEKEND', 'HOLIDAY')`))
       .orderBy(desc(attendanceDays.date))
       .limit(5);
+
+    // Shift shown in the summary header and as the reference line on the daily chart.
+    const shift = await this.svc.scheduleFor(employeeId);
+    const [ot] = await tx
+      .select({ m: sql<number>`coalesce(sum(coalesce(${overtimeRecords.approvedMinutes}, ${overtimeRecords.minutes})), 0)::int` })
+      .from(overtimeRecords)
+      .where(and(eq(overtimeRecords.employeeId, employeeId), eq(overtimeRecords.status, 'APPROVED'), sql`to_char(${overtimeRecords.date}, 'YYYY-MM') = ${month}`));
+    const workedDays = days.filter((d) => d.workedMinutes > 0);
 
     return {
       month,
@@ -400,9 +409,12 @@ export class AttendanceController {
         lateMinutes: days.reduce((a, d) => a + d.lateMinutes, 0),
         averageCheckIn: avgIn === null ? null : `${String(Math.floor(avgIn / 60)).padStart(2, '0')}:${String(avgIn % 60).padStart(2, '0')}`,
         averageBreakMinutes: avg(withIn.map((d) => d.breakMinutes)),
+        averageWorkedMinutes: avg(workedDays.map((d) => d.workedMinutes)),
+        approvedOvertimeMinutes: ot?.m ?? 0,
         foodEligibleDays: foodDays,
       },
-      daily: days.filter((d) => d.status !== 'WEEKEND').map((d) => ({ date: d.date, status: d.status, workedMinutes: d.workedMinutes, scheduledMinutes: d.scheduledMinutes })),
+      shift: { start: String(shift.startTime).slice(0, 5), end: String(shift.endTime).slice(0, 5), minutes: scheduledNetMinutes(shift) },
+      daily: days.filter((d) => d.status !== 'WEEKEND' && d.status !== 'HOLIDAY').map((d) => ({ date: d.date, status: d.status, workedMinutes: d.workedMinutes, scheduledMinutes: d.scheduledMinutes })),
       trend,
       latest,
       colors: ATTENDANCE_COLORS,
