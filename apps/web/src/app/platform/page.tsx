@@ -14,6 +14,8 @@ import { api } from '@/lib/api';
 import { fieldError, useZodForm } from '@/lib/form';
 import { date, dateTime } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { Combobox } from '@/components/ui/combobox';
+import { currencyOptions, timeZoneOptions } from '@/lib/locale-options';
 
 interface Me { id: string; name: string; email: string }
 interface Company { id: string; name: string; slug: string; status: 'ACTIVE' | 'SUSPENDED'; timezone: string; currency: string; activeEmployees: number; createdAt: string }
@@ -48,8 +50,8 @@ function NewCompanyDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
           <Field label="Workspace" required error={fieldError(form, 'workspace')} hint="Used to sign in, e.g. acme">{(a) => <Input {...a} autoCapitalize="none" {...form.register('workspace')} />}</Field>
           <Field label="Super Admin name" required error={fieldError(form, 'adminName')}>{(a) => <Input {...a} {...form.register('adminName')} />}</Field>
           <Field label="Super Admin email" required error={fieldError(form, 'email')}>{(a) => <Input {...a} type="email" {...form.register('email')} />}</Field>
-          <Field label="Time zone" error={fieldError(form, 'timezone')}>{(a) => <Input {...a} {...form.register('timezone')} />}</Field>
-          <Field label="Currency" error={fieldError(form, 'currency')}>{(a) => <Input {...a} maxLength={3} {...form.register('currency')} />}</Field>
+          <Field label="Time zone" error={fieldError(form, 'timezone')}>{(a) => <Combobox {...a} value={form.watch('timezone')} onChange={(tz) => form.setValue('timezone', tz, { shouldDirty: true })} options={timeZoneOptions()} searchPlaceholder="Search city, region or UTC offset…" />}</Field>
+          <Field label="Currency" error={fieldError(form, 'currency')}>{(a) => <Combobox {...a} value={form.watch('currency')} onChange={(c) => form.setValue('currency', c, { shouldDirty: true })} options={currencyOptions()} renderValue={(o) => o.value} searchPlaceholder="Search currency…" />}</Field>
         </FormGrid>
         <Checkbox label="Set a temporary password instead of emailing an invite" checked={setPassword} onChange={(e) => setSetPassword(e.target.checked)} />
         {setPassword && (

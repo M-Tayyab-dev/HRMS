@@ -1,20 +1,76 @@
 'use client';
 
 import { PERMISSIONS as P, workScheduleSchema } from '@hrms/shared';
-import { Plus } from 'lucide-react';
+import { ImageUp, Plus, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { CompanyLogo } from '@/components/brand';
+import { FileUpload } from '@/components/ui/file-upload';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardBody, CardHeader, PageHeader } from '@/components/ui/display';
 import { Checkbox, Field, FormGrid, Input } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
+import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { useAction, useApi } from '@/lib/hooks';
+import { Combobox } from '@/components/ui/combobox';
+import { currencyOptions, timeZoneOptions } from '@/lib/locale-options';
 
 interface S { name: string; slug: string; timezone: string; currency: string; settings: { directoryShowJoinDate: boolean; sessionIdleMinutes?: number; medicalAnnualLimit: number; overtimeThresholdMinutes: number; payrollWorkingHoursBased: boolean } }
 interface WS { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; workingDays: number[]; isDefault: boolean }
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Company logo shown in everyone's sidebar. */
+function CompanyLogoCard() {
+  const { me, refresh } = useAuth();
+  const qc = useQueryClient();
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  if (!me) return null;
+  const run = async (fn: () => Promise<unknown>, msg: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      toast.success(msg);
+      setFiles([]);
+      await refresh();
+      qc.invalidateQueries({ queryKey: ['/settings'] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const upload = () => {
+    const fd = new FormData();
+    fd.set('file', files[0]!);
+    return run(() => api.put('/settings/logo', fd), 'Logo updated');
+  };
+  return (
+    <Card>
+      <CardHeader title="Company logo" description="Shown at the top of the sidebar for everyone in your company. A square PNG or JPG works best." />
+      <CardBody className="space-y-4">
+        <div className="flex items-center gap-4">
+          <CompanyLogo name={me.tenant.name} logoFileId={me.tenant.logoFileId} className="h-16 w-16 text-xl" />
+          <div className="text-sm">
+            <p className="font-medium">{me.tenant.name}</p>
+            <p className="text-muted-foreground">{me.tenant.logoFileId ? 'Current logo' : 'No logo yet – initials are shown instead'}</p>
+          </div>
+          {me.tenant.logoFileId && (
+            <Button variant="ghost" size="sm" className="ml-auto text-danger" loading={busy && !files.length} onClick={() => run(() => api.del('/settings/logo'), 'Logo removed')}>
+              <Trash2 className="h-4 w-4" /> Remove
+            </Button>
+          )}
+        </div>
+        <FileUpload value={files} onChange={setFiles} accept="image/png,image/jpeg,image/webp" maxSizeMB={2} label={me.tenant.logoFileId ? 'Choose a new logo' : 'Choose a logo'} />
+        {files.length > 0 && <Button loading={busy} onClick={upload}><ImageUp className="h-4 w-4" /> Save logo</Button>}
+      </CardBody>
+    </Card>
+  );
+}
 
 function Company() {
   const { can, refresh } = useAuth();
@@ -35,8 +91,8 @@ function Company() {
         {full && (
           <FormGrid cols={3}>
             <Field label="Company name">{(a) => <Input {...a} value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} />}</Field>
-            <Field label="Time zone" hint="IANA name, e.g. Asia/Karachi">{(a) => <Input {...a} value={v.timezone} onChange={(e) => setV({ ...v, timezone: e.target.value })} />}</Field>
-            <Field label="Currency">{(a) => <Input {...a} maxLength={3} value={v.currency} onChange={(e) => setV({ ...v, currency: e.target.value.toUpperCase() })} />}</Field>
+            <Field label="Time zone" hint="Used for attendance, late minutes and payroll dates">{(a) => <Combobox {...a} value={v.timezone} onChange={(tz) => setV({ ...v, timezone: tz })} options={timeZoneOptions()} searchPlaceholder="Search city, region or UTC offset…" />}</Field>
+            <Field label="Currency">{(a) => <Combobox {...a} value={v.currency} onChange={(c) => setV({ ...v, currency: c })} options={currencyOptions()} renderValue={(o) => o.value} searchPlaceholder="Search currency…" />}</Field>
           </FormGrid>
         )}
         {full && (
@@ -103,7 +159,7 @@ export default function SettingsPage() {
     <>
       <PageHeader title="Settings" />
       <Tabs tabs={[
-        { value: 'company', label: 'Company', hidden: !can(P.TENANT_SETTINGS, P.DIRECTORY_SETTINGS), content: <Company /> },
+        { value: 'company', label: 'Company', hidden: !can(P.TENANT_SETTINGS, P.DIRECTORY_SETTINGS), content: <div className="space-y-6">{can(P.TENANT_SETTINGS) && <CompanyLogoCard />}<Company /></div> },
         { value: 'schedules', label: 'Working hours', hidden: !can(P.ATTENDANCE_MANAGE), content: <Schedules /> },
       ]} />
     </>

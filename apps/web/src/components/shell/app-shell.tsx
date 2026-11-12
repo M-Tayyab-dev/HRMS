@@ -1,13 +1,15 @@
 'use client';
 
-import { Bell, Building, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
+import { Bell, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { cn, relative } from '@/lib/format';
+import { SITE } from '@/lib/site';
 import { useAction, useApi } from '@/lib/hooks';
 import { activeItem, LogoutIcon, matches, NAV, type NavGroup, type NavItem } from '@/lib/nav';
+import { BrandMark, CompanyLogo } from '../brand';
 import { useTheme } from '../theme';
 import { Button } from '../ui/button';
 import { Avatar, Badge, Skeleton } from '../ui/display';
@@ -189,10 +191,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const sidebar = (
     <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
-      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-        <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white">
-          <Building className="h-4 w-4" aria-hidden />
-        </span>
+      <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-4">
+        <CompanyLogo name={me.tenant.name} logoFileId={me.tenant.logoFileId} />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-foreground">{me.tenant.name}</p>
           <p className="truncate text-[11px] text-sidebar-heading">{me.tenant.slug}</p>
@@ -203,6 +203,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <button onClick={logout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground hover:bg-danger-soft hover:text-danger">
           <LogoutIcon className="h-4 w-4" aria-hidden /> Log out
         </button>
+        <p className="mt-2 flex items-center gap-1.5 px-3 text-[11px] text-sidebar-heading">
+          <BrandMark className="h-4 w-4" /> Powered by {SITE.name}
+        </p>
       </div>
     </div>
   );

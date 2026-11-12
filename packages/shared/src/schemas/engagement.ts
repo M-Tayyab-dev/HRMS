@@ -11,7 +11,7 @@ import {
   SURVEY_KINDS,
   SURVEY_QUESTION_TYPES,
 } from '../enums';
-import { money, optionalText, period, trimmed, uuid } from './common';
+import { currencyCode, money, optionalText, period, timeZone, trimmed, uuid } from './common';
 
 /* ---------- E. Performance ---------- */
 export const kpiTargetSchema = z.object({
@@ -124,8 +124,8 @@ export const grantPostingSchema = z.object({ canPost: z.boolean() });
 /* ---------- Tenant settings ---------- */
 export const tenantSettingsSchema = z.object({
   name: trimmed(2, 120).optional(),
-  timezone: z.string().min(3).max(60).optional(),
-  currency: z.string().length(3).optional(),
+  timezone: timeZone.optional(),
+  currency: currencyCode.optional(),
   directoryShowJoinDate: z.boolean().optional(),
   /** SEC-03: inactivity timeout (minutes), managed by Operations. */
   sessionIdleMinutes: z.coerce.number().int().min(5).max(480).optional(),

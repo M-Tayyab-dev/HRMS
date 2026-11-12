@@ -19,7 +19,7 @@ import { zp } from '../../common/zod.pipe';
 import { NotificationsService } from '../../core/notifications.service';
 import { StorageService, type UploadedFileLike } from '../../core/storage.service';
 import { DbService } from '../../db/db.service';
-import { employeeDocuments, employees, files } from '../../db/schema';
+import { employeeDocuments, employees, files, tenants } from '../../db/schema';
 
 const upload = () => FileInterceptor('file', { limits: { fileSize: config().MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
 
@@ -175,6 +175,36 @@ export class DocumentsController {
     const f = await this.storage.save(file, 'image');
     await this.db.tx.update(employees).set({ avatarFileId: f.id }).where(eq(employees.id, id));
     return { avatarFileId: f.id };
+  }
+
+  /* ---------------- Company logo ---------------- */
+
+  @Put('settings/logo')
+  @UseInterceptors(upload())
+  @Audit('settings.logo_updated', 'tenant')
+  async setLogo(@UploadedFile() file: UploadedFileLike) {
+    const u = currentUser();
+    if (!u.permissions.has(P.TENANT_SETTINGS)) throw forbidden();
+    const f = await this.storage.save(file, 'image');
+    await this.db.tx.update(tenants).set({ logoFileId: f.id }).where(eq(tenants.id, u.tenantId));
+    return { id: u.tenantId, logoFileId: f.id };
+  }
+
+  @Delete('settings/logo')
+  @Audit('settings.logo_removed', 'tenant')
+  async removeLogo() {
+    const u = currentUser();
+    if (!u.permissions.has(P.TENANT_SETTINGS)) throw forbidden();
+    await this.db.tx.update(tenants).set({ logoFileId: null }).where(eq(tenants.id, u.tenantId));
+    return { id: u.tenantId, logoFileId: null };
+  }
+
+  /** Every signed-in member of the company may see its logo. */
+  @Get('company/logo/:fileId')
+  async logo(@Param('fileId', ParseUUIDPipe) fileId: string) {
+    const [t] = await this.db.tx.select({ logo: tenants.logoFileId }).from(tenants).where(eq(tenants.id, currentUser().tenantId));
+    if (t?.logo !== fileId) throw forbidden();
+    return this.storage.stream(fileId, 'inline');
   }
 
   /** Avatars are visible company-wide (directory, birthdays – B5, G3). */

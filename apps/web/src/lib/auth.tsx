@@ -33,6 +33,7 @@ export interface Me {
     slug: string;
     timezone: string;
     currency: string;
+    logoFileId: string | null;
     settings: { directoryShowJoinDate: boolean; communityPostingMode: string; communityEngagementEnabled: boolean; medicalAnnualLimit: number };
   };
 }

@@ -50,3 +50,20 @@ export interface Paginated<T> {
   page: number;
   pageSize: number;
 }
+
+/** A real IANA time zone, e.g. "Asia/Karachi" (checked with the runtime's time zone database). */
+export const timeZone = z
+  .string()
+  .min(1)
+  .max(60)
+  .refine((tz) => {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz });
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'Choose a time zone from the list');
+
+/** ISO 4217 currency code, e.g. "PKR". */
+export const currencyCode = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'Choose a currency from the list');

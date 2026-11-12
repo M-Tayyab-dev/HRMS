@@ -356,7 +356,7 @@ export class AuthService {
       },
       employee: emp ?? null,
       onboardingRequired: !!emp && !emp.onboardingCompletedAt,
-      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, settings: tenant!.settings },
+      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, logoFileId: tenant!.logoFileId, settings: tenant!.settings },
     };
   }
 }

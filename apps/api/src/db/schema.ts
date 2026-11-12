@@ -75,6 +75,8 @@ export const tenants = pgTable('tenants', {
   timezone: text('timezone').notNull().default('Asia/Karachi'),
   currency: text('currency').notNull().default('PKR'),
   settings: jsonb('settings').$type<TenantSettings>().notNull().default(DEFAULT_TENANT_SETTINGS),
+  /** Company logo shown in the app header (uploaded by a Super Admin). */
+  logoFileId: uuid('logo_file_id'),
   employeeSeq: integer('employee_seq').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ROLES, ALL_PERMISSIONS } from '../permissions';
-import { password, trimmed } from './common';
+import { currencyCode, password, timeZone, trimmed } from './common';
 
 export const workspaceSlug = z
   .string()
@@ -19,8 +19,8 @@ export const createCompanySchema = z.object({
   email: z.email().toLowerCase(),
   password: password.optional(),
   mustChangePassword: z.boolean().default(true),
-  timezone: z.string().min(3).max(60).default('Asia/Karachi'),
-  currency: z.string().length(3).toUpperCase().default('PKR'),
+  timezone: timeZone.default('Asia/Karachi'),
+  currency: currencyCode.default('PKR'),
 });
 export type CreateCompanyInput = z.infer<typeof createCompanySchema>;
 

@@ -22,7 +22,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
 
 export function Label({ children, htmlFor, className }: { children: ReactNode; htmlFor?: string; className?: string }) {
   return (
-    <label htmlFor={htmlFor} className={cn('text-sm font-medium text-foreground', className)}>
+    <label htmlFor={htmlFor} className={cn('block text-sm font-medium text-foreground', className)}>
       {children}
     </label>
   );

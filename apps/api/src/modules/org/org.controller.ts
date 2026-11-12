@@ -58,7 +58,7 @@ export class OrgController {
   @Get('settings')
   async settings() {
     const [t] = await this.db.tx.select().from(tenants).where(eq(tenants.id, currentUser().tenantId));
-    return { name: t!.name, slug: t!.slug, timezone: t!.timezone, currency: t!.currency, settings: t!.settings };
+    return { name: t!.name, slug: t!.slug, timezone: t!.timezone, currency: t!.currency, logoFileId: t!.logoFileId, settings: t!.settings };
   }
 
   @Patch('settings')
