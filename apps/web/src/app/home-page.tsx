@@ -8,7 +8,7 @@ import {
   Fingerprint, KeyRound, LogIn, Megaphone, Menu, ScrollText, ShieldCheck, Smartphone, Sparkles, Target, UserPlus, Users, Wallet, X, type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { BrandLogo } from '@/components/brand';
 import { SiteCopyright } from '@/components/site-copyright';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -70,27 +70,22 @@ const FAQ = [
   ['Can we change plans later?', 'Yes. Moving to another plan switches the modules on or off right away. Your data stays where it is.'],
 ] as const;
 
-/** Card that lights up under the pointer. */
+/** Card that lights up under the pointer (see `.spotlight` in globals.css; the page tracks the pointer). */
 function Spotlight({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
-  const onMove = (e: MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`);
-    e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`);
-  };
   return (
-    <div
-      onMouseMove={onMove}
-      className={cn(
-        'group relative overflow-hidden rounded-2xl border bg-card shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg',
-        'before:pointer-events-none before:absolute before:inset-0 before:opacity-0 before:transition-opacity before:duration-300 hover:before:opacity-100',
-        'before:bg-[radial-gradient(400px_circle_at_var(--mx)_var(--my),color-mix(in_oklab,var(--primary)_14%,transparent),transparent_70%)]',
-        className,
-      )}
-      {...rest}
-    >
+    <div className={cn('spotlight group rounded-2xl border bg-card shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg', className)} {...rest}>
       {children}
     </div>
   );
+}
+
+/** One listener for the whole page: feeds the pointer position to the `.spotlight` element under it. */
+function trackSpotlight(e: React.PointerEvent) {
+  const el = (e.target as HTMLElement).closest<HTMLElement>('.spotlight');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+  el.style.setProperty('--my', `${e.clientY - r.top}px`);
 }
 
 function SectionHeading({ eyebrow, title, body }: { eyebrow: string; title: string; body?: string }) {
@@ -145,14 +140,14 @@ function HeroPreview() {
   return (
     <div className="relative mx-auto w-full max-w-lg [perspective:1200px]" data-anim="preview">
       <div className="absolute -inset-8 rounded-[2.5rem] bg-gradient-to-tr from-primary/30 via-indigo-500/20 to-fuchsia-500/10 blur-3xl" aria-hidden />
-      <div data-anim="tilt" className="relative rounded-2xl border bg-card/95 p-5 shadow-2xl shadow-primary/10 backdrop-blur [transform-style:preserve-3d]">
+      <div data-anim="tilt" className="spotlight relative rounded-2xl border bg-card/95 p-5 shadow-2xl shadow-primary/10 backdrop-blur [transform-style:preserve-3d]">
         <div className="mb-4 flex items-center gap-1.5" aria-hidden>
           <span className="h-2.5 w-2.5 rounded-full bg-danger/70" /><span className="h-2.5 w-2.5 rounded-full bg-warning/70" /><span className="h-2.5 w-2.5 rounded-full bg-success/70" />
           <span className="ml-3 h-5 flex-1 rounded-md bg-muted" />
         </div>
         <div className="grid grid-cols-3 gap-3">
           {[['Present', 94, '%'], ['On leave', 6, ''], ['Overtime', 38, 'h']].map(([l, v, s]) => (
-            <div key={l as string} className="rounded-xl border bg-background/60 p-3">
+            <div key={l as string} className="spotlight rounded-xl border bg-background/60 p-3">
               <p className="text-[11px] text-muted-foreground">{l}</p>
               <p className="mt-1 text-xl font-semibold tabular-nums"><span data-count={v}>{v}</span>{s}</p>
             </div>
@@ -173,13 +168,13 @@ function HeroPreview() {
           ))}
         </div>
       </div>
-      <div className="absolute top-10 -left-6 hidden items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg sm:flex" data-anim="float">
+      <div className="absolute top-10 -left-6 spotlight hidden items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg sm:flex" data-anim="float">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-soft"><Fingerprint className="h-4 w-4 text-primary" aria-hidden /></span> 128 punches synced
       </div>
-      <div className="absolute -right-5 bottom-24 hidden items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg sm:flex" data-anim="float">
+      <div className="absolute -right-5 bottom-24 spotlight hidden items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg sm:flex" data-anim="float">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-success-soft"><FileText className="h-4 w-4 text-success" aria-hidden /></span> 42 salary slips ready
       </div>
-      <div className="absolute -bottom-6 left-10 hidden items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg sm:flex" data-anim="float">
+      <div className="absolute -bottom-6 left-10 spotlight hidden items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm shadow-lg sm:flex" data-anim="float">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-warning-soft"><Bell className="h-4 w-4 text-warning" aria-hidden /></span> 3 approvals waiting
       </div>
     </div>
@@ -192,7 +187,7 @@ function Marquee() {
     <div className="relative overflow-hidden border-y bg-muted/30 py-4 [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)]" aria-label="Capabilities">
       <ul data-anim="marquee" className="flex w-max gap-3">
         {row.map((c, i) => (
-          <li key={i} aria-hidden={i >= CAPABILITIES.length} className="flex shrink-0 items-center gap-2 rounded-full border bg-card px-4 py-1.5 text-sm text-muted-foreground">
+          <li key={i} aria-hidden={i >= CAPABILITIES.length} className="spotlight flex shrink-0 items-center gap-2 rounded-full border bg-card px-4 py-1.5 text-sm text-muted-foreground">
             <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden /> {c}
           </li>
         ))}
@@ -215,7 +210,7 @@ function Features() {
             <p className="mt-1.5 text-sm text-muted-foreground">{MODULE_INFO[first].description} Device punches, manual entries and corrections all land in one place.</p>
             <div className="mt-6 space-y-2.5" aria-hidden>
               {[['Check-in', '09:02', 'On time', 'success'], ['Lunch break', '13:00 – 13:45', '45 min', 'info'], ['Check-out', '18:31', '+31 min overtime', 'primary']].map(([a, b, c, tone]) => (
-                <div key={a} className="flex items-center gap-3 rounded-xl border bg-background/60 px-3 py-2.5 text-sm">
+                <div key={a} className="spotlight flex items-center gap-3 rounded-xl border bg-background/60 px-3 py-2.5 text-sm">
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{a}</span>
                   <span className="text-muted-foreground tabular-nums">{b}</span>
@@ -250,7 +245,7 @@ function Stats() {
     <section className="border-y bg-gradient-to-br from-primary/5 via-transparent to-indigo-500/5 py-14">
       <dl className="mx-auto grid max-w-6xl grid-cols-2 gap-8 px-4 sm:px-6 lg:grid-cols-4">
         {STATS.map((s) => (
-          <div key={s.label} data-anim="reveal" className="text-center">
+          <div key={s.label} data-anim="reveal" className="spotlight rounded-2xl border bg-card/60 px-4 py-6 text-center shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
             <dt className="sr-only">{s.label}</dt>
             <dd className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
               <span className="bg-gradient-to-br from-primary to-indigo-500 bg-clip-text text-transparent"><span data-count={s.value}>{s.value}</span>{s.suffix}</span>
@@ -282,18 +277,18 @@ function Roles() {
           <div role="tablist" aria-label="Roles" className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
             {ROLES.map((r) => (
               <button key={r.key} role="tab" aria-selected={active === r.key} aria-controls="role-panel" onClick={() => pick(r.key)}
-                className={cn('flex shrink-0 items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition', active === r.key ? 'border-primary bg-primary-soft text-primary shadow-sm' : 'bg-card hover:bg-muted')}>
+                className={cn('spotlight flex shrink-0 items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition', active === r.key ? 'border-primary bg-primary-soft text-primary shadow-sm' : 'bg-card hover:bg-muted')}>
                 <r.icon className="h-4 w-4" aria-hidden /> {r.label}
               </button>
             ))}
           </div>
-          <div ref={panel} id="role-panel" role="tabpanel" className="relative overflow-hidden rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
+          <div ref={panel} id="role-panel" role="tabpanel" className="spotlight relative overflow-hidden rounded-2xl border bg-card p-6 shadow-sm sm:p-8">
             <div className="pointer-events-none absolute -top-20 -right-20 h-56 w-56 rounded-full bg-primary/10 blur-3xl" aria-hidden />
             <p className="text-sm font-medium text-primary">{role.label}</p>
             <h3 className="mt-1 text-2xl font-semibold tracking-tight">{role.headline}</h3>
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
               {role.points.map((p) => (
-                <li key={p} data-anim="point" className="flex items-start gap-3 rounded-xl border bg-background/60 p-4 text-sm">
+                <li key={p} data-anim="point" className="spotlight flex items-start gap-3 rounded-xl border bg-background/60 p-4 text-sm">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-success-soft text-success"><Check className="h-3.5 w-3.5" aria-hidden /></span> {p}
                 </li>
               ))}
@@ -334,7 +329,7 @@ function Pricing() {
       {plans?.map((p, i) => {
         const hot = i === featured;
         return (
-          <div key={p.id} data-anim="plan" className={cn('relative flex flex-col rounded-2xl border bg-card p-7 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl', hot && 'border-transparent bg-gradient-to-b from-primary/10 to-card shadow-xl shadow-primary/10 ring-2 ring-primary lg:-mt-4 lg:pb-11')}>
+          <div key={p.id} data-anim="plan" className={cn('spotlight relative flex flex-col rounded-2xl border bg-card p-7 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl', hot && 'border-transparent bg-gradient-to-b from-primary/10 to-card shadow-xl shadow-primary/10 ring-2 ring-primary lg:-mt-4 lg:pb-11')}>
             {hot && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-primary to-indigo-500 px-3 py-1 text-xs font-medium text-white shadow">Most popular</span>}
             <h3 className="text-lg font-semibold">{p.name}</h3>
             {p.description && <p className="mt-1 min-h-10 text-sm text-muted-foreground">{p.description}</p>}
@@ -370,7 +365,7 @@ function Faq() {
         <SectionHeading eyebrow="Questions" title="Frequently asked questions" />
         <div className="mt-12 space-y-3">
           {FAQ.map(([q, a]) => (
-            <details key={q} data-anim="card" className="group rounded-2xl border bg-card px-5 shadow-sm open:shadow-md">
+            <details key={q} data-anim="card" className="spotlight group rounded-2xl border bg-card px-5 shadow-sm open:shadow-md">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 font-medium [&::-webkit-details-marker]:hidden">
                 {q}
                 <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300 group-open:rotate-180" aria-hidden />
@@ -449,7 +444,7 @@ export function HomePage() {
   const accent = ['first', 'day', 'to', 'payday.'];
 
   return (
-    <div ref={root} className="min-h-dvh overflow-x-clip bg-background text-foreground">
+    <div ref={root} onPointerMove={trackSpotlight} className="min-h-dvh overflow-x-clip bg-background text-foreground">
       <Header />
 
       {/* Hero */}
@@ -461,7 +456,7 @@ export function HomePage() {
         </div>
         <div className="relative mx-auto grid max-w-6xl items-center gap-16 px-4 pt-14 pb-24 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-24 lg:pb-32">
           <div>
-            <span data-anim="badge" className="inline-flex items-center gap-2 rounded-full border bg-card/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur">
+            <span data-anim="badge" className="spotlight inline-flex items-center gap-2 rounded-full border bg-card/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur">
               <span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-success" /></span>
               HR, attendance and payroll in one place
             </span>
@@ -503,9 +498,9 @@ export function HomePage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <SectionHeading eyebrow="How it works" title="Up and running in a day" />
           <div className="relative mt-16 grid gap-12 md:grid-cols-3">
-            <div data-anim="line" className="absolute top-7 right-[16%] left-[16%] hidden h-0.5 rounded-full bg-gradient-to-r from-primary via-indigo-500 to-violet-500 md:block" aria-hidden />
+            <div data-anim="line" className="absolute top-[3.75rem] right-[16%] left-[16%] hidden h-0.5 rounded-full bg-gradient-to-r from-primary via-indigo-500 to-violet-500 md:block" aria-hidden />
             {STEPS.map((s, i) => (
-              <div key={s.title} data-anim="card" className="relative text-center">
+              <div key={s.title} data-anim="card" className="spotlight relative rounded-2xl border bg-card px-6 pt-8 pb-7 text-center shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
                 <div className="relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border-4 border-background bg-gradient-to-br from-primary to-indigo-500 text-white shadow-lg shadow-primary/30"><s.icon className="h-6 w-6" aria-hidden /></div>
                 <p className="mt-5 text-xs font-semibold tracking-wider text-primary uppercase">Step {i + 1}</p>
                 <h3 className="mt-1 text-lg font-semibold">{s.title}</h3>
@@ -550,7 +545,7 @@ export function HomePage() {
 
       {/* Call to action */}
       <section id="contact" className="scroll-mt-20 px-4 py-20 sm:px-6">
-        <div data-anim="cta" className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-indigo-700 to-violet-800 px-6 py-16 text-center text-white shadow-2xl shadow-primary/20 sm:px-12">
+        <div data-anim="cta" className="spotlight spotlight-light relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-indigo-700 to-violet-800 px-6 py-16 text-center text-white shadow-2xl shadow-primary/20 sm:px-12">
           <div className="pointer-events-none absolute inset-0 [background-image:radial-gradient(rgba(255,255,255,0.15)_1px,transparent_1px)] [background-size:20px_20px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" aria-hidden />
           <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
           <h2 className="relative text-3xl font-semibold tracking-tight sm:text-4xl">Ready to bring your team together?</h2>
