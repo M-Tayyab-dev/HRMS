@@ -14,7 +14,8 @@ import { alias } from 'drizzle-orm/pg-core';
 import { currentUser, type AuthUser } from '../../common/context';
 import { badRequest, conflict, forbidden } from '../../common/errors';
 import { addDays, todayIn } from '../../common/tz';
-import { emailInUse, inIds, like, offset, one, page, tenantInfo } from '../../common/util';
+import { emailInUse, inIds, like, offset, one, page, requireDelete, tenantInfo } from '../../common/util';
+import { recordPurger } from '../../db/purge';
 import { NotificationsService } from '../../core/notifications.service';
 import { ScopeService } from '../../core/scope.service';
 import { hashPassword } from '../../common/crypto';
@@ -103,7 +104,7 @@ export class EmployeesService {
     if (q.departmentId) conds.push(eq(employees.departmentId, q.departmentId));
     if (q.status) conds.push(eq(employees.employmentStatus, q.status as 'ACTIVE'));
     const where = conds.length ? and(...conds) : undefined;
-    const rows = await this.baseSelect().where(where).orderBy(asc(employees.fullName)).limit(q.pageSize).offset(offset(q));
+    const rows = await this.baseSelect().where(where).orderBy(sql`${employees.employmentStatus} <> 'ACTIVE'`, asc(employees.fullName)).limit(q.pageSize).offset(offset(q));
     const [{ n }] = (await this.db.tx.select({ n: sql<number>`count(*)::int` }).from(employees).where(where)) as [{ n: number }];
     return page(rows.map((r) => this.redact(r, user)), n, q);
   }
@@ -145,12 +146,7 @@ export class EmployeesService {
     const { level } = await this.validatePlacement(input.departmentId, input.levelId);
     await this.assertCompanyEmail(input.email);
     if (await emailInUse(this.db, input.email)) throw conflict('This email is already used by another account. Every account needs its own email.', 'EMAIL_TAKEN');
-    // Subscription limit on active employees.
-    const [plan] = await tx.select({ max: tenants.maxEmployees }).from(tenants).where(eq(tenants.id, actor.tenantId));
-    if (plan?.max) {
-      const [{ n }] = (await tx.select({ n: sql<number>`count(*)::int` }).from(employees).where(eq(employees.employmentStatus, 'ACTIVE'))) as [{ n: number }];
-      if (n >= plan.max) throw conflict(`Your plan allows ${plan.max} active employees. Contact your provider to raise the limit.`, 'PLAN_LIMIT');
-    }
+    await this.assertSeatAvailable();
 
     const salary = input.basicSalary ?? level.defaultSalary; // B7 auto-fill, HR may override
     const emp = one(
@@ -233,6 +229,7 @@ export class EmployeesService {
       await tx.update(users).set({ email: input.email }).where(eq(users.id, cur.userId));
     }
     const { roles: _r, sendInvite: _s, password: _p, mustChangePassword: _m, ...rest } = input as EmployeeUpdateInput & { roles?: unknown; sendInvite?: unknown; password?: unknown; mustChangePassword?: unknown };
+    if (input.employmentStatus === 'ACTIVE' && cur.employmentStatus !== 'ACTIVE') await this.assertSeatAvailable();
     const updated = one(await tx.update(employees).set(rest).where(eq(employees.id, id)).returning());
     // Level/department/salary changes through edit are recorded as an adjustment in the position history.
     if (input.levelId && input.levelId !== cur.levelId) {
@@ -241,7 +238,63 @@ export class EmployeesService {
     if (input.employmentStatus && input.employmentStatus !== 'ACTIVE' && cur.userId) {
       await this.disableUser(cur.userId);
     }
+    // Status set back to Active in the edit form: same as Reactivate (login restored).
+    if (input.employmentStatus === 'ACTIVE' && cur.employmentStatus !== 'ACTIVE') {
+      await tx.update(employees).set({ exitDate: null }).where(eq(employees.id, id));
+      if (cur.userId) {
+        const [u] = await tx.select({ hash: users.passwordHash }).from(users).where(eq(users.id, cur.userId));
+        await tx.update(users).set({ status: u?.hash ? 'ACTIVE' : 'INVITED' }).where(eq(users.id, cur.userId));
+      }
+    }
     return updated;
+  }
+
+  /** Subscription limit on active employees. */
+  private async assertSeatAvailable() {
+    const tx = this.db.tx;
+    const [plan] = await tx.select({ max: tenants.maxEmployees }).from(tenants).where(eq(tenants.id, currentUser().tenantId));
+    if (!plan?.max) return;
+    const [{ n }] = (await tx.select({ n: sql<number>`count(*)::int` }).from(employees).where(eq(employees.employmentStatus, 'ACTIVE'))) as [{ n: number }];
+    if (n >= plan.max) throw conflict(`Your plan allows ${plan.max} active employees. Contact your provider to raise the limit.`, 'PLAN_LIMIT');
+  }
+
+  /** Former employee comes back: ACTIVE again, exit date cleared, login restored if asked (and they had one). */
+  async reactivate(id: string, restoreLogin: boolean) {
+    const tx = this.db.tx;
+    const cur = one(await tx.select().from(employees).where(eq(employees.id, id)), 'Employee');
+    if (cur.employmentStatus === 'ACTIVE') throw badRequest('This employee is already active');
+    await this.assertSeatAvailable();
+    const emp = one(await tx.update(employees).set({ employmentStatus: 'ACTIVE', exitDate: null }).where(eq(employees.id, id)).returning());
+    let login: 'restored' | 'invite_needed' | 'kept_disabled' | 'none' = 'none';
+    if (cur.userId) {
+      if (restoreLogin) {
+        const [u] = await tx.select({ hash: users.passwordHash }).from(users).where(eq(users.id, cur.userId));
+        // With a password they can sign in at once; without one they stay invited until they set it.
+        await tx.update(users).set({ status: u?.hash ? 'ACTIVE' : 'INVITED' }).where(eq(users.id, cur.userId));
+        login = u?.hash ? 'restored' : 'invite_needed';
+      } else login = 'kept_disabled';
+    }
+    return { ...emp, login };
+  }
+
+  /**
+   * Permanently deletes a former employee and everything that belongs to them (attendance, leave, payslips, documents…).
+   * Only for people who have already left; links from other people's records (e.g. "approved by") are cleared.
+   */
+  async remove(id: string) {
+    requireDelete();
+    const tx = this.db.tx;
+    const actor = currentUser();
+    const cur = one(await tx.select().from(employees).where(eq(employees.id, id)), 'Employee');
+    if (cur.employmentStatus === 'ACTIVE') throw badRequest('Terminate this employee first. Only former employees can be deleted.', 'STILL_ACTIVE');
+    if (actor.employeeId === id) throw badRequest('You cannot delete yourself');
+    if (cur.userId) {
+      const roles = await tx.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, cur.userId));
+      if (roles.some((r) => r.role === 'SUPER_ADMIN')) throw badRequest('Remove the Company Admin role from this person before deleting them.', 'IS_ADMIN');
+      await recordPurger.purge(tx, 'users', [cur.userId]);
+    }
+    await recordPurger.purge(tx, 'employees', [id]);
+    return { id, fullName: cur.fullName, deleted: true };
   }
 
   async disableUser(userId: string) {

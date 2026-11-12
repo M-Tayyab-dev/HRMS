@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import { ApiError } from '@/lib/api';
 import { ThemeProvider, useTheme } from './theme';
+import { FaviconSync } from './favicon-sync';
 
 /**
  * App-wide: any text cut off with "…" (Tailwind `truncate` / `line-clamp-*`) shows its full text as a
@@ -52,6 +53,7 @@ export function Providers({ children }: { children: ReactNode }) {
         {children}
         <Toasts />
         <TruncatedTextTooltips />
+        <FaviconSync />
       </QueryClientProvider>
     </ThemeProvider>
   );

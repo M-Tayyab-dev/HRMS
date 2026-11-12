@@ -312,6 +312,11 @@ async function main() {
   expect((await other.get(`/payroll/payslips/${slips[0].id}`)).status === 403, 'other tenant cannot read payslip');
   const otherList = (await other.get('/employees')).data;
   expect(otherList.total === 1, 'other tenant sees only its own employees');
+  expect(!(otherList.items ?? []).some((x) => x.id === emp.id), 'other tenant list never contains our employee');
+  expect([403, 404].includes((await other.patch(`/employees/${emp.id}`, { designation: 'Hacked' })).status), 'other tenant cannot edit our employee');
+  const crossFix = await other.post('/attendance/days/correct', { employeeId: emp.id, date: prevWeekday(today, 3), checkIn: '09:00', note: 'cross tenant' });
+  expect([400, 403, 404].includes(crossFix.status), 'other tenant cannot correct our attendance', crossFix);
+  expect((await admin.get(`/employees/${emp.id}`)).data.designation !== 'Hacked', 'our employee is unchanged');
   const suspended = await platform.patch(`/platform/companies/${(await platform.get('/platform/companies')).data.find((c) => c.slug === `${ws}-b`).id}`, { status: 'SUSPENDED' });
   expect(suspended.data.status === 'SUSPENDED', 'platform owner suspends a company');
   expect((await other.get('/employees')).status === 401, 'suspended company is locked out immediately');
@@ -323,6 +328,45 @@ async function main() {
   const fixed = await HR.post('/attendance/days/correct', { employeeId: emp.id, date: fixDay, checkIn: '09:00', checkOut: '18:00', note: 'Device was offline' });
   expect(fixed.status === 201 && fixed.data.day?.status === 'PRESENT', 'HR corrects a day directly, no approval needed', fixed);
   expect((await E.post('/attendance/days/correct', { employeeId: emp.id, date: fixDay, checkIn: '08:00', note: 'Trying myself' })).status === 403, 'employees cannot correct attendance directly');
+
+  // ---- Former employees: kept until deleted, can be reactivated, deleted only on purpose
+  const leaver = await mk('Lena Leaver', `lena@${ws}.test`, sales.id, lvl('L1').id, ['EMPLOYEE']);
+  await HR.post('/attendance/days/correct', { employeeId: leaver.id, date: prevWeekday(today, 2), checkIn: '09:00', checkOut: '17:00', note: 'History to keep' });
+  expect((await admin.del(`/employees/${leaver.id}`)).status === 400, 'active employees cannot be deleted');
+  expect((await admin.post(`/employees/${leaver.id}/terminate`, { exitDate: today, reason: 'Contract ended' })).status === 201, 'employee terminated');
+  const listed = (await admin.get('/employees?pageSize=100')).data.items.find((x) => x.id === leaver.id);
+  expect(listed?.employmentStatus === 'TERMINATED', 'terminated employee still listed by default');
+  expect((await admin.get(`/employees/${leaver.id}`)).data.accountStatus === 'DISABLED', 'terminated employee login disabled');
+  const back = await admin.post(`/employees/${leaver.id}/reactivate`, { restoreLogin: true });
+  expect(back.status === 201 && back.data.login === 'restored', 'Company Admin reactivates and restores login', back);
+  const again = (await admin.get(`/employees/${leaver.id}`)).data;
+  expect(again.employmentStatus === 'ACTIVE' && again.accountStatus === 'ACTIVE' && !again.exitDate, 'reactivated employee is active with login');
+  await admin.post(`/employees/${leaver.id}/terminate`, { exitDate: today, reason: 'Left again' });
+  expect((await HR.del(`/employees/${leaver.id}`)).status === 403, 'HR without "Delete records" cannot delete');
+  const gone = await admin.del(`/employees/${leaver.id}`);
+  expect(gone.status === 200 && gone.data.deleted, 'Company Admin permanently deletes a former employee with history', gone);
+  expect((await admin.get(`/employees/${leaver.id}`)).status === 404, 'deleted employee is gone');
+  expect((await admin.post('/employees', { fullName: 'Lena Again', email: `lena@${ws}.test`, departmentId: sales.id, levelId: lvl('L1').id, designation: 'Associate', joiningDate: today, sendInvite: false })).status === 201, 'deleted email can be used again');
+
+  // ---- Platform settings: default currency and sign-in footer
+  const before = (await platform.get('/platform/settings')).data;
+  const saved = await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, copyright: '© {year} Test Footer', applyToPlans: false });
+  expect(saved.status === 200 && saved.data.copyright === '© {year} Test Footer', 'Super Admin saves platform settings', saved);
+  const brand = (await new Client().get('/public/branding')).data;
+  expect(brand.copyright === `© ${new Date().getFullYear()} Test Footer`, 'sign-in footer shows the saved text with the year', brand);
+  expect((await admin.get('/platform/settings')).status === 401, 'company users cannot read platform settings');
+  await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, copyright: before.copyright ?? undefined });
+
+  // ---- Platform logo / favicon (only real images; SVG refused because it can carry scripts)
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const hadFavicon = before.faviconVersion !== null;
+  const up = await platform.put('/platform/settings/favicon', { data: png });
+  expect(up.status === 200 && up.data.faviconVersion, 'Super Admin uploads a favicon', up);
+  const svg = await platform.put('/platform/settings/logo', { data: 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64') });
+  expect(svg.status === 400 && svg.data.code === 'BAD_IMAGE', 'SVG logos are refused', svg);
+  const plansPublic = await new Client().get('/public/plans');
+  expect(plansPublic.status === 200 && Array.isArray(plansPublic.data), 'homepage can list plans without signing in');
+  if (!hadFavicon) await platform.put('/platform/settings/favicon', { data: null });
 
   console.log(`\nAll flows passed for workspace "${ws}".`);
   // Test companies are removed afterwards so they don't pile up.

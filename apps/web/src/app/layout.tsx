@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   title: { default: SITE.name, template: `%s · ${SITE.name}` },
   description: SITE.tagline,
   robots: { index: false, follow: false },
+  // Served by the API: the Super Admin's favicon, or the built-in icon.
+  icons: { icon: '/api/v1/public/favicon' },
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {

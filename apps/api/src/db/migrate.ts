@@ -24,6 +24,37 @@ function tenantTables(): string[] {
     .map((c) => c.name);
 }
 
+/**
+ * Cross-company references are impossible at the database level: every foreign key between two tenant
+ * tables gets a companion key on (tenant_id, column) → (tenant_id, id). Foreign-key checks bypass RLS, so
+ * without this a request could link a row in its own company to another company's employee, department, etc.
+ * Plain foreign keys stay in place for their ON DELETE behaviour.
+ */
+export function sameTenantFkSql(): string {
+  const tenantSet = new Set(tenantTables());
+  const lines: string[] = [];
+  const refs = new Set<string>();
+  for (const t of Object.values(schema) as unknown[]) {
+    if (!is(t, PgTable)) continue;
+    const cfg = getTableConfig(t);
+    if (!tenantSet.has(cfg.name)) continue;
+    for (const fk of cfg.foreignKeys) {
+      const r = fk.reference();
+      const col = r.columns[0]?.name;
+      const target = getTableConfig(r.foreignTable).name;
+      if (r.columns.length !== 1 || r.foreignColumns[0]?.name !== 'id' || col === 'tenant_id' || !tenantSet.has(target)) continue;
+      refs.add(target);
+      const name = `${cfg.name}_${col}`.slice(0, 50) + '_same_tenant';
+      lines.push(
+        `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${name}') THEN ` +
+          `ALTER TABLE "${cfg.name}" ADD CONSTRAINT "${name}" FOREIGN KEY ("tenant_id", "${col}") REFERENCES "${target}" ("tenant_id", "id"); END IF; END $$;`,
+      );
+    }
+  }
+  const uniques = [...refs].map((t) => `CREATE UNIQUE INDEX IF NOT EXISTS "${t.slice(0, 45)}_tenant_id_id_uq" ON "${t}" ("tenant_id", "id");`);
+  return [...uniques, ...lines].join('\n');
+}
+
 export function hardeningSql(): string {
   const tables = tenantTables();
   const lines: string[] = [
@@ -108,6 +139,7 @@ async function main() {
     const db = drizzle(client);
     await migrate(db, { migrationsFolder: resolve(__dirname, '../../drizzle'), migrationsSchema: 'public' });
     await client.query(hardeningSql());
+    await client.query(sameTenantFkSql());
     const encrypted = await encryptLegacyValues(client);
     console.log(`Migrations applied; RLS enforced on ${tenantTables().length} tenant tables; ${encrypted} rows encrypted.`);
   } finally {

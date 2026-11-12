@@ -1,7 +1,7 @@
 import { CalendarCheck2, ShieldCheck, Wallet } from 'lucide-react';
 import { BrandLogo } from '@/components/brand';
 import type { ReactNode } from 'react';
-import { SITE } from '@/lib/site';
+import { SiteCopyright } from '@/components/site-copyright';
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
@@ -18,7 +18,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             <li className="flex gap-3"><ShieldCheck className="h-5 w-5 text-blue-200" aria-hidden /> Role-based access, audit trail and anonymous complaints</li>
           </ul>
         </div>
-        <p className="relative text-xs text-blue-200">© {new Date().getFullYear()} {SITE.name}</p>
+        <SiteCopyright className="relative text-xs text-blue-200" />
       </section>
       <section className="flex items-center justify-center overflow-y-auto p-6 sm:p-10">
         <div className="w-full max-w-sm">

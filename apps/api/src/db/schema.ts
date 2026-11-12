@@ -28,6 +28,8 @@ const createdAt = () => ts('created_at').notNull().defaultNow();
 const updatedAt = () => ts('updated_at').notNull().defaultNow().$onUpdate(() => new Date());
 const money = (name: string) => numeric(name, { precision: 14, scale: 2, mode: 'number' });
 /** SEC-05: confidential values are encrypted by the app (AES-256-GCM) before they reach the database. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
 const encryptedText = customType<{ data: string; driverData: string }>({
   dataType: () => 'text',
   toDriver: (v) => encryptField(v),
@@ -116,6 +118,21 @@ export const platformPlans = pgTable('platform_plans', {
   maxEmployees: integer('max_employees'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** Platform-wide settings set by the Super Admin (one row, id = 'default'). Not tenant data. */
+export const platformSettings = pgTable('platform_settings', {
+  id: text('id').primaryKey().default('default'),
+  /** Currency new plans start with. */
+  defaultCurrency: text('default_currency').notNull().default('PKR'),
+  /** Footer text on the sign-in pages; `{year}` is replaced with the current year. */
+  copyright: text('copyright'),
+  /** Platform logo and favicon uploaded by the Super Admin (small images, kept in the row). */
+  logo: bytea('logo'),
+  logoType: text('logo_type'),
+  favicon: bytea('favicon'),
+  faviconType: text('favicon_type'),
   updatedAt: updatedAt(),
 });
 
@@ -1142,4 +1159,4 @@ export const jobs = pgTable(
 );
 
 /** Tables without tenant_id RLS (platform + infra). Everything else gets RLS. */
-export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins', 'platform_plans', 'user_directory'];
+export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins', 'platform_plans', 'platform_settings', 'user_directory'];

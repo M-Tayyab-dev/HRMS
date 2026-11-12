@@ -136,7 +136,8 @@ export default function EmployeesPage() {
   const [search, setSearch] = useState('');
   const [q, setQ] = useState('');
   const [departmentId, setDepartmentId] = useState('');
-  const [status, setStatus] = useState('ACTIVE');
+  // Everyone by default (active first); former employees stay listed until deleted.
+  const [status, setStatus] = useState('');
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => {

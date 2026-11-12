@@ -65,6 +65,18 @@ export const planSchema = z.object({
 });
 export type PlanInput = z.infer<typeof planSchema>;
 
+/** Platform-wide settings (Super Admin → Platform settings → General). */
+export const platformSettingsSchema = z.object({
+  defaultCurrency: currencyCode,
+  /** Also switch every existing plan to the default currency. */
+  applyToPlans: z.boolean().default(false),
+  copyright: z.string().trim().max(200).optional().transform((v) => v || undefined),
+});
+export type PlatformSettingsInput = z.infer<typeof platformSettingsSchema>;
+
+/** Logo / favicon upload: a base64 data URL (max ~256 KB of image), or null to remove. */
+export const brandImageSchema = z.object({ data: z.string().max(360_000).nullable() });
+
 export const testEmailSchema = z.object({ to: z.email() });
 
 /** Sign in with email + password; the workspace is only needed when one email belongs to several companies. */

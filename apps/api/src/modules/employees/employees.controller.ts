@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import {
   PERMISSIONS as P,
   employeeListQuery,
@@ -7,6 +7,7 @@ import {
   promotionSchema,
   selfProfileSchema,
   terminateSchema,
+  reactivateSchema,
   type EmployeeInput,
   type EmployeeUpdateInput,
   type PromotionInput,
@@ -69,6 +70,22 @@ export class EmployeesController {
     );
     if (emp.userId) await this.svc.disableUser(emp.userId);
     return emp;
+  }
+
+  /** Give a former employee their place (and optionally their login) back. Their records were never removed. */
+  @Post('employees/:id/reactivate')
+  @RequireAny(P.EMPLOYEES_MANAGE)
+  @Audit('employee.reactivated', 'employee')
+  reactivate(@Param('id', ParseUUIDPipe) id: string, @Body(zp(reactivateSchema)) body: z.infer<typeof reactivateSchema>) {
+    return this.svc.reactivate(id, body.restoreLogin);
+  }
+
+  /** Permanent delete of a former employee (needs "Delete records" too). */
+  @Delete('employees/:id')
+  @RequireAny(P.EMPLOYEES_MANAGE)
+  @Audit('employee.deleted', 'employee')
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.svc.remove(id);
   }
 
   @Get('me/profile')

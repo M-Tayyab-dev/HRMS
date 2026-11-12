@@ -117,6 +117,9 @@ export const documentUploadSchema = z.object({
   title: optionalText(150),
 });
 
+/** Bring a former employee back: status ACTIVE again, optionally with their login restored. */
+export const reactivateSchema = z.object({ restoreLogin: z.boolean().default(true) });
+
 export const terminateSchema = z.object({
   exitDate: isoDate,
   reason: trimmed(5, 2000),

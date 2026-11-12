@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PERMISSIONS as P, type PunchType } from '@hrms/shared';
 import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { als } from '../../common/context';
+import { notFound } from '../../common/errors';
 import { addDays, eachDay, localDate, todayIn, zonedInstant } from '../../common/tz';
 import { DbService } from '../../db/db.service';
 import {
@@ -171,6 +172,11 @@ export class AttendanceService {
     if (!punches.length) return { inserted: 0 };
     const tx = this.db.tx;
     const t = await this.tenant();
+    // Tenant isolation: only employees of this company (the select is filtered by RLS). Foreign keys alone
+    // don't stop a punch here from pointing at another company's employee id.
+    const ids = [...new Set(punches.map((p) => p.employeeId))];
+    const own = await tx.select({ id: employees.id }).from(employees).where(inArray(employees.id, ids));
+    if (own.length !== ids.length) throw notFound('Employee');
     const inserted = await tx
       .insert(attendancePunches)
       .values(punches.map((p) => ({ tenantId: t.id, employeeId: p.employeeId, punchedAt: p.at, type: p.type ?? null, source, deviceId, note: p.note })))

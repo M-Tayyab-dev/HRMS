@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { companyUpdateSchema, createCompanySchema, planSchema, platformAdminSchema, platformLoginSchema, testEmailSchema, type CompanyUpdateInput, type CreateCompanyInput, type PlanInput } from '@hrms/shared';
+import { companyUpdateSchema, createCompanySchema, planSchema, platformAdminSchema, platformLoginSchema, platformSettingsSchema, brandImageSchema, type PlatformSettingsInput, testEmailSchema, type CompanyUpdateInput, type CreateCompanyInput, type PlanInput } from '@hrms/shared';
 import type { Request, Response } from 'express';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -13,6 +13,7 @@ import { DbService } from '../../db/db.service';
 import { MailService } from '../../core/mail.service';
 import { employees, platformAdmins, platformPlans, tenants, userRoles, users } from '../../db/schema';
 import { AccessService } from '../auth/access.service';
+import { PlatformSettingsService } from './platform-settings.service';
 import { AuthService } from '../auth/auth.service';
 import { lockMinutesFor, waitText } from '../auth/lockout';
 import { PLATFORM_COOKIE, clearPlatformCookie, setPlatformCookie, signPlatformToken, verifyPlatformToken } from '../auth/tokens';
@@ -33,6 +34,7 @@ export class PlatformController {
     private readonly auth: AuthService,
     private readonly access: AccessService,
     private readonly mail: MailService,
+    private readonly settings: PlatformSettingsService,
   ) {}
 
   private async requireAdmin(req: Request): Promise<Admin> {
@@ -209,6 +211,32 @@ export class PlatformController {
     if (n > 0) throw conflict(`This plan is used by ${n} compan${n === 1 ? 'y' : 'ies'}. Move them to another plan or deactivate it instead.`, 'IN_USE');
     await this.db.root.delete(platformPlans).where(eq(platformPlans.id, id));
     return { id, deleted: true };
+  }
+
+  /* ---------------- General settings ---------------- */
+
+  @Get('settings')
+  async getSettings(@Req() req: Request) {
+    await this.requireAdmin(req);
+    return this.settings.get();
+  }
+
+  @Put('settings')
+  async putSettings(@Req() req: Request, @Body(zp(platformSettingsSchema)) body: PlatformSettingsInput) {
+    await this.requireAdmin(req);
+    return this.settings.update(body);
+  }
+
+  @Put('settings/logo')
+  async putLogo(@Req() req: Request, @Body(zp(brandImageSchema)) body: z.infer<typeof brandImageSchema>) {
+    await this.requireAdmin(req);
+    return this.settings.setImage('logo', body.data);
+  }
+
+  @Put('settings/favicon')
+  async putFavicon(@Req() req: Request, @Body(zp(brandImageSchema)) body: z.infer<typeof brandImageSchema>) {
+    await this.requireAdmin(req);
+    return this.settings.setImage('favicon', body.data);
   }
 
   /* ---------------- Email (SMTP) ---------------- */
