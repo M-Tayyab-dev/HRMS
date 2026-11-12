@@ -2,7 +2,7 @@
 
 import { DOC_CATEGORY_LABELS, EMPLOYMENT_DOC_CATEGORIES, ONBOARDING_DOC_CATEGORIES, PERMISSIONS as P, type DocCategory } from '@hrms/shared';
 import { Download, FileText, Trash2, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -13,6 +13,7 @@ import { Button } from './ui/button';
 import { Badge, Card, CardBody, CardHeader, EmptyState, LoadingRows } from './ui/display';
 import { Field, Input, Select } from './ui/form';
 import { Dialog, useConfirm } from './ui/overlay';
+import { FileUpload } from './ui/file-upload';
 
 export interface Doc {
   id: string;
@@ -34,7 +35,7 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
   const [category, setCategory] = useState<DocCategory>(self ? 'CNIC_FRONT' : 'OFFER_LETTER');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const { confirm, node } = useConfirm();
   const remove = useAction<string>('del', (id) => `/documents/${id}`, { invalidate: [key], success: 'Document removed' });
 
@@ -47,7 +48,7 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
   const uploaded = new Set(data?.map((d) => d.category));
 
   const upload = async () => {
-    const file = fileRef.current?.files?.[0];
+    const file = files[0];
     if (!file) return toast.error('Choose a file');
     const fd = new FormData();
     fd.set('file', file);
@@ -59,6 +60,7 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
       toast.success('Document uploaded');
       setOpen(false);
       setTitle('');
+      setFiles([]);
       qc.invalidateQueries({ queryKey: [key] });
     } catch (e) {
       toast.error((e as Error).message);
@@ -158,7 +160,7 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
             )}
           </Field>
           <Field label="Title (optional)">{(a) => <Input {...a} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={150} />}</Field>
-          <Field label="File">{(a) => <Input {...a} ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" className="pt-1.5" />}</Field>
+          <Field label="File" required>{(a) => <FileUpload {...a} value={files} onChange={setFiles} accept=".pdf,.png,.jpg,.jpeg,.webp" label="Upload document" />}</Field>
         </div>
       </Dialog>
       {node}

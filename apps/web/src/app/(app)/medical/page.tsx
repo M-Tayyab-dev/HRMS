@@ -2,7 +2,7 @@
 
 import { PERMISSIONS as P } from '@hrms/shared';
 import { HeartPulse, Paperclip, Plus } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { DecisionButtons } from '@/components/domain';
@@ -11,6 +11,7 @@ import { Card, CardHeader, PageHeader, Stat, StatusBadge } from '@/components/ui
 import { Field, FormGrid, Input, Textarea } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
+import { FileUpload } from '@/components/ui/file-upload';
 import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { date, money, todayLocal } from '@/lib/format';
@@ -43,16 +44,15 @@ export default function MedicalPage() {
   const [open, setOpen] = useState(false);
   const [v, setV] = useState({ amount: '', claimDate: todayLocal(), description: '' });
   const [busy, setBusy] = useState(false);
-  const files = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
 
   const submit = async () => {
-    const list = files.current?.files;
-    if (!list?.length) return toast.error('Attach at least one receipt or prescription');
+    if (!files.length) return toast.error('Attach at least one receipt or prescription');
     const fd = new FormData();
     fd.set('amount', v.amount);
     fd.set('claimDate', v.claimDate);
     fd.set('description', v.description);
-    for (const f of Array.from(list)) fd.append('files', f);
+    for (const f of files) fd.append('files', f);
     setBusy(true);
     try {
       await api.post('/payroll/medical', fd);
@@ -94,7 +94,7 @@ export default function MedicalPage() {
             <Field label="Date of expense" required>{(a) => <Input {...a} type="date" max={todayLocal()} value={v.claimDate} onChange={(e) => setV({ ...v, claimDate: e.target.value })} />}</Field>
           </FormGrid>
           <Field label="Description" required>{(a) => <Textarea {...a} rows={3} value={v.description} onChange={(e) => setV({ ...v, description: e.target.value })} />}</Field>
-          <Field label="Supporting documents" required>{(a) => <Input {...a} ref={files} type="file" multiple accept=".pdf,image/*" className="pt-1.5" />}</Field>
+          <Field label="Supporting documents" required>{(a) => <FileUpload {...a} value={files} onChange={setFiles} multiple maxFiles={5} accept=".pdf,image/*" required label="Upload receipts" />}</Field>
         </div>
       </Dialog>
     </>

@@ -2,7 +2,7 @@
 
 import { PERMISSIONS as P, loanSchema } from '@hrms/shared';
 import { HandCoins, Paperclip, Plus, Send } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { DecisionButtons, EmployeeSelect } from '@/components/domain';
@@ -11,6 +11,7 @@ import { Card, CardHeader, PageHeader, Progress, StatusBadge } from '@/component
 import { Field, FormGrid, Input, Textarea } from '@/components/ui/form';
 import { Dialog } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
+import { FileUpload } from '@/components/ui/file-upload';
 import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
@@ -26,17 +27,18 @@ function RequestLoanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const blank = { principal: '', installment: '', startPeriod: todayLocal().slice(0, 7), reason: '' };
   const [v, setV] = useState(blank);
   const [busy, setBusy] = useState(false);
-  const files = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const submit = async () => {
     const fd = new FormData();
     for (const [k, val] of Object.entries(v)) fd.set(k, val);
-    for (const f of Array.from(files.current?.files ?? [])) fd.append('files', f);
+    for (const f of files) fd.append('files', f);
     setBusy(true);
     try {
       await api.post('/payroll/loans/requests', fd);
       toast.success('Loan request sent to HR');
       onOpenChange(false);
       setV(blank);
+      setFiles([]);
       qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith('/payroll/loans') });
     } catch (e) {
       toast.error((e as Error).message);
@@ -54,7 +56,7 @@ function RequestLoanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
           <Field label="First deduction" required>{(a) => <Input {...a} type="month" value={v.startPeriod} onChange={(e) => setV({ ...v, startPeriod: e.target.value })} />}</Field>
         </FormGrid>
         <Field label="Reason" required hint="At least 5 characters">{(a) => <Textarea {...a} rows={3} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} />}</Field>
-        <Field label="Supporting documents (optional)" hint="PDF or image, up to 5 files">{(a) => <Input {...a} ref={files} type="file" multiple accept=".pdf,image/*" className="pt-1.5" />}</Field>
+        <Field label="Supporting documents (optional)">{(a) => <FileUpload {...a} value={files} onChange={setFiles} multiple maxFiles={5} accept=".pdf,image/*" label="Upload documents" />}</Field>
       </div>
     </Dialog>
   );
