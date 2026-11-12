@@ -51,7 +51,21 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const { data, isLoading, refetch } = useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/auth/me'), staleTime: 60_000, retry: false });
+  // /auth/session restores the session (refreshing an expired access token server-side) in one call.
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['me'],
+    queryFn: async () => {
+      const r = await api.get<({ authenticated: true } & Me) | { authenticated: false }>('/auth/session');
+      if (!r.authenticated) {
+        const here = window.location.pathname + window.location.search;
+        window.location.replace(`/login?next=${encodeURIComponent(here)}`);
+        return new Promise<Me>(() => {}); // keep the skeleton until the browser navigates
+      }
+      return r as Me;
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
   const perms = useMemo(() => new Set(data?.user.permissions ?? []), [data]);
 
   const logout = useCallback(async () => {

@@ -23,6 +23,7 @@ import { like, offset, one, page } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
 import { DbService } from '../../db/db.service';
 import { auditLogs, employees, refreshTokens, rolePermissions, userRoles, users } from '../../db/schema';
+import { AccessService } from '../auth/access.service';
 import { AuthService } from '../auth/auth.service';
 
 const auditQuery = pagination.extend({
@@ -39,6 +40,7 @@ export class AccessController {
   constructor(
     private readonly db: DbService,
     private readonly auth: AuthService,
+    private readonly access: AccessService,
   ) {}
 
   private async targetUser(id: string) {
@@ -48,6 +50,7 @@ export class AccessController {
     // You may only manage someone whose every role you are allowed to grant.
     const actor = currentUser();
     if (roles.some((r) => !canAssignRole(actor.roles, r))) throw forbidden('You cannot manage this account');
+    this.access.forget(id); // role / status / password changes apply on the next request
     return { ...u, roles };
   }
 
@@ -177,6 +180,7 @@ export class AccessController {
     if (!ROLES.includes(role as Role)) throw badRequest('Unknown role');
     if (role === 'SUPER_ADMIN') throw badRequest('Super Admin always has full access');
     const actor = currentUser();
+    this.access.forgetAll();
     // Nobody can grant a permission they don't hold themselves (prevents privilege escalation).
     const missing = body.permissions.filter((p) => !actor.permissions.has(p as never));
     if (missing.length) throw forbidden(`You cannot grant permissions you don't have: ${missing.join(', ')}`);

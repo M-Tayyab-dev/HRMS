@@ -6,12 +6,55 @@ import { DbService } from '../../db/db.service';
 import { rolePermissions, teams, tenants, userRoles, users } from '../../db/schema';
 import { sessionIdleMinutes } from './tokens';
 
+/** How long a resolved user (roles, permissions, status) is reused before re-reading the database. */
+const USER_CACHE_MS = 10_000;
+/** How often a session's inactivity window is re-checked (and extended) in the database. */
+const SESSION_CHECK_MS = 30_000;
+const MAX_CACHE = 5_000;
+
 /** Resolves a user's effective roles, permissions and data scope. */
 @Injectable()
 export class AccessService {
   constructor(private readonly db: DbService) {}
 
+  /**
+   * Every API request authenticates through here, so results are kept in memory for a few seconds
+   * instead of running ~6 queries per request. Disabling a user, changing roles or a password takes
+   * effect within USER_CACHE_MS; `forget()` makes it immediate on this server.
+   */
+  private users = new Map<string, { user: AuthUser; at: number }>();
+  private sessions = new Map<string, number>();
+
+  forget(userId: string) {
+    for (const k of this.users.keys()) if (k.includes(`:${userId}:`)) this.users.delete(k);
+  }
+
+  /** After a role's permissions change, everyone's cached permissions are stale. */
+  forgetAll() {
+    this.users.clear();
+  }
+
   async load(tenantId: string, userId: string, tokenVersion?: number, session?: { sid: string; active: boolean }): Promise<AuthUser | null> {
+    const now = Date.now();
+    const key = `${tenantId}:${userId}:${tokenVersion ?? '-'}`;
+    let user = this.users.get(key);
+    const sessionFresh = !session || now - (this.sessions.get(session.sid) ?? 0) < SESSION_CHECK_MS;
+    if (user && now - user.at < USER_CACHE_MS && sessionFresh) return user.user;
+
+    const fresh = await this.loadFresh(tenantId, userId, tokenVersion, sessionFresh ? undefined : session);
+    if (!fresh) {
+      this.users.delete(key);
+      if (session) this.sessions.delete(session.sid);
+      return null;
+    }
+    if (this.users.size > MAX_CACHE) this.users.clear();
+    if (this.sessions.size > MAX_CACHE) this.sessions.clear();
+    this.users.set(key, { user: fresh, at: now });
+    if (session && !sessionFresh) this.sessions.set(session.sid, now);
+    return fresh;
+  }
+
+  private async loadFresh(tenantId: string, userId: string, tokenVersion?: number, session?: { sid: string; active: boolean }): Promise<AuthUser | null> {
     return this.db.inTenant(tenantId, async (tx) => {
       const [u] = await tx.select().from(users).where(eq(users.id, userId)).limit(1);
       if (!u || u.status !== 'ACTIVE') return null;

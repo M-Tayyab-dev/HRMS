@@ -20,7 +20,7 @@ import { useApi } from '@/lib/hooks';
 function DepartmentDialog({ dept, open, onOpenChange }: { dept?: Department; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
   const form = useZodForm(departmentSchema);
-  const { data: schedules } = useApi<{ id: string; name: string; startTime: string; endTime: string }[]>('/work-schedules');
+  const { data: schedules } = useApi<{ id: string; name: string; startTime: string; endTime: string }[]>(open ? '/work-schedules' : null);
   useEffect(() => {
     if (open) form.reset(dept ? { name: dept.name, code: dept.code, headEmployeeId: dept.headEmployeeId, foodAllowanceEnabled: dept.foodAllowanceEnabled, paidOvertimeEnabled: dept.paidOvertimeEnabled, workScheduleId: dept.workScheduleId, isActive: dept.isActive } : { name: '', code: '', headEmployeeId: null, foodAllowanceEnabled: false, paidOvertimeEnabled: false, workScheduleId: null, isActive: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps

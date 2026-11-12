@@ -134,8 +134,9 @@ function SectionTabs() {
   if (!group || group.items.length < 2) return null;
   const current = activeItem(pathname, group.items);
   return (
-    <nav aria-label={group.label} className="no-scrollbar -mx-4 mb-6 overflow-x-auto overflow-y-hidden border-b px-4 sm:mx-0 sm:px-0">
-      <ul className="flex min-w-max gap-1">
+    <nav aria-label={group.label} className="mb-6">
+      {/* Wraps onto more lines instead of scrolling, so every page of the section stays visible. */}
+      <ul className="flex flex-wrap gap-2">
         {group.items.map((i) => {
           const on = current?.href === i.href;
           return (
@@ -144,11 +145,11 @@ function SectionTabs() {
                 href={i.href}
                 aria-current={on ? 'page' : undefined}
                 className={cn(
-                  '-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm whitespace-nowrap transition-colors',
-                  on ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
+                  'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm whitespace-nowrap transition-colors',
+                  on ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
                 )}
               >
-                <i.icon className="h-4 w-4" aria-hidden />
+                <i.icon className="h-3.5 w-3.5" aria-hidden />
                 {i.label}
               </Link>
             </li>
