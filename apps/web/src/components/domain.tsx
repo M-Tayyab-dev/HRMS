@@ -15,6 +15,7 @@ export interface Department {
   headName: string | null;
   foodAllowanceEnabled: boolean;
   paidOvertimeEnabled: boolean;
+  workScheduleId: string | null;
   isActive: boolean;
   activeEmployees: number;
 }

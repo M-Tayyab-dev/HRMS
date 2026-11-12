@@ -7,7 +7,7 @@ import { IS_PUBLIC, PERMS_ANY, SKIP_CSRF } from './decorators';
 // SKIP_CSRF routes must also be @Public() and authenticate themselves (e.g. device API keys).
 import { safeEqual } from './crypto';
 import { AccessService } from '../modules/auth/access.service';
-import { ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER, verifyAccessToken } from '../modules/auth/tokens';
+import { ACCESS_COOKIE, ACTIVITY_HEADER, CSRF_COOKIE, CSRF_HEADER, verifyAccessToken } from '../modules/auth/tokens';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -49,7 +49,8 @@ export class AuthGuard implements CanActivate {
     const claims = typeof token === 'string' ? await verifyAccessToken(token) : null;
     if (!claims) throw new UnauthorizedException({ message: 'Please sign in', code: 'UNAUTHENTICATED' });
 
-    const user = await this.access.load(claims.tid, claims.sub, claims.ver);
+    const session = claims.sid ? { sid: claims.sid, active: req.header(ACTIVITY_HEADER) === '1' } : undefined;
+    const user = await this.access.load(claims.tid, claims.sub, claims.ver, session);
     if (!user) throw new UnauthorizedException({ message: 'Session expired', code: 'UNAUTHENTICATED' });
 
     const store = als.getStore();

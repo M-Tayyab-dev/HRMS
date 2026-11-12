@@ -12,6 +12,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { resolve } from 'node:path';
 import { Client } from 'pg';
 import * as schema from './schema';
+import { encryptField, isEncrypted } from '../common/crypto';
 
 const APP_ROLE = 'hrms_app';
 
@@ -58,6 +59,42 @@ export function hardeningSql(): string {
   return lines.join('\n');
 }
 
+/** SEC-05: encrypt confidential values written before field encryption existed. Idempotent. */
+const ENCRYPTED_COLUMNS: [table: string, columns: string[]][] = [
+  ['employees', ['cnic', 'father_cnic', 'basic_salary']],
+  ['employee_positions', ['salary']],
+  ['complaints', ['description', 'resolution_note']],
+];
+
+async function encryptLegacyValues(client: Client) {
+  const { rows: tenantRows } = await client.query<{ id: string }>('select id from tenants');
+  let updated = 0;
+  for (const { id: tenantId } of tenantRows) {
+    await client.query('BEGIN');
+    try {
+      // RLS is forced even for the owner, so act inside each tenant.
+      await client.query(`select set_config('app.tenant_id', $1, true)`, [tenantId]);
+      for (const [table, cols] of ENCRYPTED_COLUMNS) {
+        const { rows } = await client.query<Record<string, string | null>>(`select id, ${cols.join(', ')} from ${table}`);
+        for (const row of rows) {
+          const pending = cols.filter((c) => row[c] != null && !isEncrypted(row[c]));
+          if (!pending.length) continue;
+          const sets = pending.map((c, i) => `${c} = $${i + 2}`).join(', ');
+          await client.query(`update ${table} set ${sets} where id = $1`, [row.id, ...pending.map((c) => encryptField(String(row[c])))]);
+          updated++;
+        }
+      }
+      // Older payslips copied the CNIC into their snapshot; strip it.
+      await client.query(`update payslips set snapshot = snapshot - 'cnic' where snapshot ? 'cnic'`);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    }
+  }
+  return updated;
+}
+
 async function main() {
   const url = process.env.DATABASE_ADMIN_URL;
   if (!url) throw new Error('DATABASE_ADMIN_URL is required for migrations');
@@ -67,7 +104,8 @@ async function main() {
     const db = drizzle(client);
     await migrate(db, { migrationsFolder: resolve(__dirname, '../../drizzle'), migrationsSchema: 'public' });
     await client.query(hardeningSql());
-    console.log(`Migrations applied; RLS enforced on ${tenantTables().length} tenant tables.`);
+    const encrypted = await encryptLegacyValues(client);
+    console.log(`Migrations applied; RLS enforced on ${tenantTables().length} tenant tables; ${encrypted} rows encrypted.`);
   } finally {
     await client.end();
   }

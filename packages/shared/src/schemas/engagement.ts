@@ -127,6 +127,8 @@ export const tenantSettingsSchema = z.object({
   timezone: z.string().min(3).max(60).optional(),
   currency: z.string().length(3).optional(),
   directoryShowJoinDate: z.boolean().optional(),
+  /** SEC-03: inactivity timeout (minutes), managed by Operations. */
+  sessionIdleMinutes: z.coerce.number().int().min(5).max(480).optional(),
   medicalAnnualLimit: money.optional(),
   overtimeThresholdMinutes: z.coerce.number().int().min(0).max(600).optional(),
   payrollWorkingHoursBased: z.boolean().optional(),

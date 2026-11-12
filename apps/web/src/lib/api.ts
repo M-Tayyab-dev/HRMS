@@ -47,11 +47,24 @@ async function refreshSession(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * SEC-03: the API ends a session after the inactivity time set by Operations. Only requests made while a
+ * person is actually using the page extend it – background polling (e.g. notification counts) does not.
+ */
+let lastInteraction = Date.now();
+if (typeof window !== 'undefined') {
+  for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+    window.addEventListener(ev, () => { lastInteraction = Date.now(); }, { passive: true, capture: true });
+  }
+}
+const userActive = () => Date.now() - lastInteraction < 60_000;
+
 type Body = Record<string, unknown> | unknown[] | FormData | undefined;
 
 async function request<T>(method: string, path: string, body?: Body, retried = false): Promise<T> {
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   const headers: Record<string, string> = {};
+  if (userActive()) headers['x-user-active'] = '1';
   if (method !== 'GET') {
     await ensureCsrf();
     headers['x-csrf-token'] = readCookie('hrms_csrf') ?? '';

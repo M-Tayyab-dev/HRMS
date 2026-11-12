@@ -7,9 +7,10 @@ import { toast } from 'sonner';
 import { DecisionButtons, DepartmentSelect, EmployeeSelect } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardBody, CardHeader, PageHeader, Stat, StatusBadge } from '@/components/ui/display';
-import { Checkbox, Field, FormGrid, Input, Textarea } from '@/components/ui/form';
+import { Checkbox, Field, FormGrid, Input, Select, Textarea } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
+import { Bars, Donut, Line } from '@/components/ui/charts';
 import { api, qs } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
@@ -44,40 +45,113 @@ function CorrectionDialog({ open, onOpenChange, defaultDate }: { open: boolean; 
   );
 }
 
+interface Dash {
+  month: string;
+  percentage: number | null;
+  daysRecorded: number;
+  counts: { present: number; late: number; absent: number; leave: number };
+  figures: { workedMinutes: number; scheduledMinutes: number; overtimeMinutes: number; lateMinutes: number; averageCheckIn: string | null; averageBreakMinutes: number | null; foodEligibleDays: number | null };
+  daily: { date: string; status: string; workedMinutes: number; scheduledMinutes: number }[];
+  trend: { month: string; percentage: number | null; late: number }[];
+  latest: { date: string; status: string; checkIn: string | null; checkOut: string | null; workedMinutes: number; breakMinutes: number; overtimeMinutes: number; lateMinutes: number }[];
+  colors: Record<string, string>;
+}
+
+const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v}%`);
+
 function MyAttendance() {
   const [month, setMonth] = useState(todayLocal().slice(0, 7));
+  const [showAll, setShowAll] = useState(false);
   const { from, to } = monthBounds(month);
-  const { data: days, isLoading } = useApi<Day[]>(`/attendance/days${qs({ from, to })}`);
+  const { data: dash, isLoading: dashLoading } = useApi<Dash>(`/attendance/me/dashboard${qs({ month })}`);
+  const { data: days, isLoading } = useApi<Day[]>(showAll ? `/attendance/days${qs({ from, to })}` : null);
   const { data: corrections } = useApi<Correction[]>('/attendance/corrections?mine=true');
   const [corr, setCorr] = useState<{ open: boolean; date?: string }>({ open: false });
-  const sum = useMemo(() => {
-    const d = days ?? [];
-    return { worked: d.reduce((a, x) => a + x.workedMinutes, 0), scheduled: d.reduce((a, x) => a + x.scheduledMinutes, 0), ot: d.reduce((a, x) => a + x.overtimeMinutes, 0), late: d.filter((x) => x.status === 'LATE').length, absent: d.filter((x) => x.status === 'ABSENT').length };
-  }, [days]);
+  const f = dash?.figures;
+  const col = (k: string) => dash?.colors[k] ?? '#999';
+  const correctBtn = (d: { date: string }) => <Button size="sm" variant="ghost" onClick={() => setCorr({ open: true, date: d.date })}>Request correction</Button>;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Input type="month" className="w-auto" aria-label="Month" value={month} max={todayLocal().slice(0, 7)} onChange={(e) => setMonth(e.target.value)} />
+        <div className="flex items-center gap-3">
+          <Input type="month" className="w-auto" aria-label="Month" value={month} max={todayLocal().slice(0, 7)} onChange={(e) => setMonth(e.target.value)} />
+          <div>
+            <p className="text-sm font-semibold">{monthLabel(month)}</p>
+            <p className="text-xs text-muted-foreground">Attendance {pct(dash?.percentage)}</p>
+          </div>
+        </div>
         <Button variant="outline" onClick={() => setCorr({ open: true })}><Plus className="h-4 w-4" /> Request correction</Button>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Hours worked" value={hours(sum.worked)} hint={`of ${hours(sum.scheduled)} scheduled`} />
-        <Stat label="Overtime" tone="success" value={hours(sum.ot)} />
-        <Stat label="Late / irregular days" tone="warning" value={sum.late} />
-        <Stat label="Absences" tone="danger" value={sum.absent} />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader title="This month" description={`${dash?.daysRecorded ?? 0} working days recorded`} />
+          <CardBody>
+            <Donut
+              center={pct(dash?.percentage)}
+              sub="attendance"
+              slices={[
+                { label: 'Present', value: dash?.counts.present ?? 0, color: col('PRESENT') },
+                { label: 'Late', value: dash?.counts.late ?? 0, color: col('LATE') },
+                { label: 'Absent', value: dash?.counts.absent ?? 0, color: col('ABSENT') },
+                { label: 'Leave', value: dash?.counts.leave ?? 0, color: col('ON_LEAVE') },
+              ]}
+            />
+          </CardBody>
+        </Card>
+        <div className="grid grid-cols-2 gap-4 lg:col-span-2 lg:grid-cols-3">
+          <Stat label="Total working hours" value={hours(f?.workedMinutes ?? 0)} hint={`of ${hours(f?.scheduledMinutes ?? 0)} shift hours`} />
+          <Stat label="Overtime" tone="success" value={hours(f?.overtimeMinutes ?? 0)} />
+          <Stat label="Total late time" tone="warning" value={`${f?.lateMinutes ?? 0} min`} />
+          <Stat label="Average check-in" value={f?.averageCheckIn ?? '—'} />
+          <Stat label="Average break" value={f?.averageBreakMinutes == null ? '—' : `${f.averageBreakMinutes} min`} />
+          <Stat label="Food-allowance days" value={f?.foodEligibleDays ?? '—'} hint={f?.foodEligibleDays === null ? 'Not enabled for your department' : 'eligible this month'} />
+        </div>
       </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title="Daily working hours" description="Bars show hours worked; the dashed line is the shift." />
+          <CardBody>
+            <Bars format={hours} items={(dash?.daily ?? []).map((d) => ({ label: String(Number(d.date.slice(8))), value: d.workedMinutes, target: d.scheduledMinutes, color: col(d.status), title: `${date(d.date)}: ${hours(d.workedMinutes)} of ${hours(d.scheduledMinutes)}` }))} />
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader title="6-month attendance trend" />
+          <CardBody>
+            <Line max={100} format={(n) => `${n}%`} points={(dash?.trend ?? []).map((t) => ({ label: monthLabel(t.month).slice(0, 3), value: t.percentage }))} />
+          </CardBody>
+        </Card>
+      </div>
+
       <Card>
-        <CardHeader title={monthLabel(month)} description="Captured from the biometric device. Skipped your break? You may leave early by the break length." />
-        <DataTable loading={isLoading} rows={days} rowKey={(d) => d.id} empty="No attendance recorded this month" columns={[
+        <CardHeader title="Latest records" description="Your 5 most recent days." action={<Button size="sm" variant="outline" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Hide full history' : 'View all'}</Button>} />
+        <DataTable loading={dashLoading} rows={dash?.latest} rowKey={(d) => d.date} empty="No attendance recorded yet" columns={[
           { key: 'd', header: 'Date', cell: (d) => <span className="whitespace-nowrap">{date(d.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span> },
-          { key: 'in', header: 'In / out', cell: (d) => <span className="tabular-nums">{time(d.checkIn)} – {time(d.checkOut)}</span> },
-          { key: 'w', header: 'Worked', cell: (d) => <span className="tabular-nums">{hours(d.workedMinutes)}</span> },
-          { key: 'b', header: 'Break', hideOnMobile: true, cell: (d) => (d.skippedBreak ? <Badge tone="info">skipped</Badge> : <span className="text-muted-foreground">{hours(d.breakMinutes)}</span>) },
-          { key: 'x', header: 'Notes', hideOnMobile: true, cell: (d) => <div className="flex flex-wrap gap-1">{d.lateMinutes > 0 && <Badge tone="warning">{d.lateMinutes}m late</Badge>}{d.earlyLeave && <Badge tone="warning">left early</Badge>}{d.overtimeMinutes > 0 && <Badge tone="success">+{hours(d.overtimeMinutes)} OT</Badge>}{d.workFromHome && <Badge tone="info">WFH</Badge>}</div> },
           { key: 's', header: 'Status', cell: (d) => <StatusBadge status={d.status} /> },
-          { key: 'c', header: '', cell: (d) => (['ABSENT', 'LATE'].includes(d.status) ? <Button size="sm" variant="ghost" onClick={() => setCorr({ open: true, date: d.date })}>Correct</Button> : null) },
+          { key: 'i', header: 'Check-in', cell: (d) => <span className="tabular-nums">{time(d.checkIn)}{d.lateMinutes > 0 && <Badge tone="warning" className="ml-1">{d.lateMinutes}m late</Badge>}</span> },
+          { key: 'o', header: 'Check-out', cell: (d) => <span className="tabular-nums">{time(d.checkOut)}</span> },
+          { key: 'w', header: 'Working hours', cell: (d) => <span className="tabular-nums">{hours(d.workedMinutes)}</span> },
+          { key: 'b', header: 'Break', hideOnMobile: true, cell: (d) => hours(d.breakMinutes) },
+          { key: 'ot', header: 'Overtime', hideOnMobile: true, cell: (d) => (d.overtimeMinutes ? hours(d.overtimeMinutes) : '—') },
+          { key: 'c', header: '', cell: correctBtn },
         ]} />
       </Card>
+
+      {showAll && (
+        <Card>
+          <CardHeader title={`Full history · ${monthLabel(month)}`} description="Captured from the biometric device. Skipped your break? You may leave early by the break length." />
+          <DataTable loading={isLoading} rows={days} rowKey={(d) => d.id} empty="No attendance recorded this month" columns={[
+            { key: 'd', header: 'Date', cell: (d) => <span className="whitespace-nowrap">{date(d.date, { weekday: 'short', day: 'numeric', month: 'short' })}</span> },
+            { key: 'in', header: 'In / out', cell: (d) => <span className="tabular-nums">{time(d.checkIn)} – {time(d.checkOut)}</span> },
+            { key: 'w', header: 'Worked', cell: (d) => <span className="tabular-nums">{hours(d.workedMinutes)}</span> },
+            { key: 'b', header: 'Break', hideOnMobile: true, cell: (d) => (d.skippedBreak ? <Badge tone="info">skipped</Badge> : <span className="text-muted-foreground">{hours(d.breakMinutes)}</span>) },
+            { key: 'x', header: 'Notes', hideOnMobile: true, cell: (d) => <div className="flex flex-wrap gap-1">{d.lateMinutes > 0 && <Badge tone="warning">{d.lateMinutes}m late</Badge>}{d.earlyLeave && <Badge tone="warning">left early</Badge>}{d.overtimeMinutes > 0 && <Badge tone="success">+{hours(d.overtimeMinutes)} OT</Badge>}{d.workFromHome && <Badge tone="info">WFH</Badge>}</div> },
+            { key: 's', header: 'Status', cell: (d) => <StatusBadge status={d.status} /> },
+            { key: 'c', header: '', cell: correctBtn },
+          ]} />
+        </Card>
+      )}
       {!!corrections?.length && (
         <Card>
           <CardHeader title="My correction requests" />
@@ -161,14 +235,85 @@ function Approvals() {
   );
 }
 
-interface Device { id: string; name: string; apiKeyPrefix: string; lastSeenAt: string | null; isActive: boolean }
+interface Device { id: string; name: string; protocol: 'ZKTECO_ADMS' | 'HIKVISION_ISAPI' | 'GENERIC'; serialNumber: string | null; location: string | null; apiKeyPrefix: string; lastSeenAt: string | null; lastSyncAt: string | null; isActive: boolean; online: boolean }
+interface Held { deviceUserId: string; punches: number; firstAt: string; lastAt: string; devices: string | null }
+
+const PROTOCOLS: Record<Device['protocol'], string> = { ZKTECO_ADMS: 'ZKTeco (ADMS / Cloud Server)', HIKVISION_ISAPI: 'Hikvision (ISAPI HTTP listening)', GENERIC: 'Other (JSON API)' };
+
+function DeviceSetup({ protocol, apiKey }: { protocol: Device['protocol']; apiKey?: string }) {
+  const host = typeof window !== 'undefined' ? window.location.host : 'your-hrms-domain';
+  if (protocol === 'ZKTECO_ADMS') {
+    return <p className="text-xs text-muted-foreground">On the device: <b>Comm. → Cloud Server Setting</b>, server address <code className="rounded bg-muted px-1">{host}</code>, port 443 (HTTPS on) or 80. The device is recognised by its serial number; punches stored offline are sent when it reconnects.</p>;
+  }
+  if (protocol === 'HIKVISION_ISAPI') {
+    return <p className="break-all text-xs text-muted-foreground">On the device: <b>Network → Advanced → HTTP Listening</b>, URL <code className="rounded bg-muted px-1">https://{host}/api/v1/attendance/hikvision/{apiKey ?? '<device key>'}</code>, and enable attendance status.</p>;
+  }
+  return <p className="text-xs text-muted-foreground">POST JSON to <code className="rounded bg-muted px-1">/api/v1/attendance/device/punches</code> with header <code className="rounded bg-muted px-1">X-Device-Key</code>.</p>;
+}
+
+function BiometricDevices() {
+  const { data: devices } = useApi<Device[]>('/attendance/devices', { refetchInterval: 60_000 });
+  const { data: held } = useApi<Held[]>('/attendance/held-punches');
+  const [form, setForm] = useState<{ name: string; protocol: Device['protocol']; serialNumber: string; location: string }>({ name: '', protocol: 'ZKTECO_ADMS', serialNumber: '', location: '' });
+  const [created, setCreated] = useState<{ apiKey: string; protocol: Device['protocol'] } | null>(null);
+  const create = useAction<typeof form, { apiKey: string; protocol: Device['protocol'] }>('post', '/attendance/devices', { invalidate: ['/attendance/devices'], onSuccess: (r) => { setCreated({ apiKey: r.apiKey, protocol: r.protocol }); setForm({ name: '', protocol: form.protocol, serialNumber: '', location: '' }); } });
+  const revoke = useAction<string>('del', (id) => `/attendance/devices/${id}`, { invalidate: ['/attendance/devices'], success: 'Device revoked' });
+  const [assign, setAssign] = useState<Record<string, string>>({});
+  const map = useAction<{ deviceUserId: string; employeeId: string }, { released: number }>('post', '/attendance/held-punches/assign', { invalidate: ['/attendance'], onSuccess: (r) => toast.success(`${r.released} punches added to attendance`) });
+  const discard = useAction<{ deviceUserId: string }>('post', '/attendance/held-punches/discard', { invalidate: ['/attendance/held-punches'], success: 'Punches discarded' });
+  return (
+    <>
+      <Card className="lg:col-span-2">
+        <CardHeader title="Biometric devices" description="Each device is registered to this company. Devices push punches to the HRMS over the internet; no static IP or VPN needed." />
+        <CardBody className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Field label="Name" className="lg:col-span-1">{(a) => <Input {...a} placeholder="Main entrance" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
+            <Field label="Type" className="lg:col-span-2">{(a) => <Select {...a} value={form.protocol} onChange={(e) => setForm({ ...form, protocol: e.target.value as Device['protocol'] })}>{Object.entries(PROTOCOLS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}</Field>
+            <Field label={form.protocol === 'ZKTECO_ADMS' ? 'Serial number (required)' : 'Serial number'}>{(a) => <Input {...a} value={form.serialNumber} onChange={(e) => setForm({ ...form, serialNumber: e.target.value })} />}</Field>
+            <Field label="Location">{(a) => <Input {...a} placeholder="Head office, ground floor" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />}</Field>
+          </div>
+          <Button disabled={form.name.trim().length < 2 || (form.protocol === 'ZKTECO_ADMS' && !form.serialNumber.trim())} loading={create.isPending} onClick={() => create.mutate({ ...form, serialNumber: form.serialNumber.trim() || undefined, location: form.location.trim() || undefined } as typeof form)}><Cpu className="h-4 w-4" /> Register device</Button>
+          <DeviceSetup protocol={form.protocol} />
+          <DataTable rows={devices} rowKey={(d) => d.id} empty="No devices registered" columns={[
+            { key: 'n', header: 'Device', cell: (d) => <div><p className="font-medium">{d.name}</p><p className="text-xs text-muted-foreground">{PROTOCOLS[d.protocol]}{d.serialNumber ? ` · SN ${d.serialNumber}` : ''}{d.location ? ` · ${d.location}` : ''}</p></div> },
+            { key: 's', header: 'Status', cell: (d) => (!d.isActive ? <Badge>revoked</Badge> : d.online ? <Badge tone="success">online</Badge> : <Badge tone="danger">offline</Badge>) },
+            { key: 'l', header: 'Last sync', hideOnMobile: true, cell: (d) => <span className="text-xs text-muted-foreground">{d.lastSyncAt ? dateTime(d.lastSyncAt) : 'never'}<br />seen {d.lastSeenAt ? dateTime(d.lastSeenAt) : 'never'}</span> },
+            { key: 'x', header: '', cell: (d) => (d.isActive ? <Button size="sm" variant="ghost" className="text-danger" onClick={() => revoke.mutate(d.id)}>Revoke</Button> : null) },
+          ]} />
+        </CardBody>
+      </Card>
+      <Card className="lg:col-span-2">
+        <CardHeader title="Unrecognised device users" description="Punches from a device user ID that isn't linked to an employee are held here. Link the ID to an employee to add the punches to attendance." />
+        <DataTable rows={held} rowKey={(h) => h.deviceUserId} empty="Nothing waiting – every device user is linked" columns={[
+          { key: 'u', header: 'Device user ID', cell: (h) => <span className="font-mono">{h.deviceUserId}</span> },
+          { key: 'p', header: 'Punches', cell: (h) => <span>{h.punches}<span className="block text-xs text-muted-foreground">{dateTime(h.firstAt)} – {dateTime(h.lastAt)}</span></span> },
+          { key: 'd', header: 'Device', hideOnMobile: true, cell: (h) => h.devices ?? '—' },
+          { key: 'a', header: 'Link to employee', cell: (h) => (
+            <div className="flex min-w-64 items-center gap-2">
+              <EmployeeSelect aria-label={`Employee for device user ${h.deviceUserId}`} value={assign[h.deviceUserId] ?? ''} onChange={(e) => setAssign({ ...assign, [h.deviceUserId]: e.target.value })} />
+              <Button size="sm" disabled={!assign[h.deviceUserId]} loading={map.isPending} onClick={() => map.mutate({ deviceUserId: h.deviceUserId, employeeId: assign[h.deviceUserId]! })}>Link</Button>
+              <Button size="sm" variant="ghost" className="text-danger" onClick={() => discard.mutate({ deviceUserId: h.deviceUserId })}>Discard</Button>
+            </div>
+          ) },
+        ]} />
+      </Card>
+      {created && (
+        <Dialog open onOpenChange={() => setCreated(null)} title="Device registered" description="Copy the device key now. For security it won't be shown again." footer={<Button onClick={() => setCreated(null)}>Done</Button>}>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Input readOnly value={created.apiKey} className="font-mono text-xs" aria-label="Device key" />
+              <Button variant="outline" size="icon" aria-label="Copy key" onClick={() => navigator.clipboard.writeText(created.apiKey).then(() => toast.success('Copied'))}><Copy className="h-4 w-4" /></Button>
+            </div>
+            <DeviceSetup protocol={created.protocol} apiKey={created.apiKey} />
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
 
 function Admin() {
-  const { data: devices } = useApi<Device[]>('/attendance/devices');
-  const [name, setName] = useState('');
-  const [key, setKey] = useState<string | null>(null);
-  const create = useAction<{ name: string }, { apiKey: string }>('post', '/attendance/devices', { invalidate: ['/attendance/devices'], onSuccess: (r) => { setKey(r.apiKey); setName(''); } });
-  const revoke = useAction<string>('del', (id) => `/attendance/devices/${id}`, { invalidate: ['/attendance/devices'], success: 'Device revoked' });
   const [csv, setCsv] = useState('');
   const [importing, setImporting] = useState(false);
   const [wfh, setWfh] = useState({ employeeId: '', date: todayLocal(), workFromHome: true });
@@ -196,25 +341,7 @@ function Admin() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <Card>
-        <CardHeader title="Biometric devices" description="Each device gets its own key and pushes punches to the API." />
-        <CardBody className="space-y-4">
-          <div className="flex gap-2">
-            <Input placeholder="Device name, e.g. Main entrance" aria-label="Device name" value={name} onChange={(e) => setName(e.target.value)} />
-            <Button disabled={name.trim().length < 2} loading={create.isPending} onClick={() => create.mutate({ name })}><Cpu className="h-4 w-4" /> Add</Button>
-          </div>
-          <ul className="divide-y rounded-md border">
-            {!devices?.length && <li className="p-3 text-sm text-muted-foreground">No devices registered.</li>}
-            {devices?.map((d) => (
-              <li key={d.id} className="flex items-center justify-between gap-2 p-3 text-sm">
-                <div><p className="font-medium">{d.name}</p><p className="text-xs text-muted-foreground">Key {d.apiKeyPrefix}… · last seen {d.lastSeenAt ? dateTime(d.lastSeenAt) : 'never'}</p></div>
-                {d.isActive ? <Button size="sm" variant="ghost" className="text-danger" onClick={() => revoke.mutate(d.id)}>Revoke</Button> : <Badge>revoked</Badge>}
-              </li>
-            ))}
-          </ul>
-          <p className="text-xs text-muted-foreground">Devices POST to <code className="rounded bg-muted px-1">/api/v1/attendance/device/punches</code> with header <code className="rounded bg-muted px-1">X-Device-Key</code>.</p>
-        </CardBody>
-      </Card>
+      <BiometricDevices />
       <Card>
         <CardHeader title="Import punches (CSV)" description="One punch per line: employee ID, date-time, optional type (IN/OUT/BREAK_START/BREAK_END)." />
         <CardBody className="space-y-3">
@@ -231,14 +358,6 @@ function Admin() {
           <Button disabled={!wfh.employeeId} loading={flag.isPending} onClick={() => flag.mutate(wfh)}><Home className="h-4 w-4" /> Save</Button>
         </CardBody>
       </Card>
-      {key && (
-        <Dialog open onOpenChange={() => setKey(null)} title="Device key" description="Copy it now. For security it won't be shown again." footer={<Button onClick={() => setKey(null)}>Done</Button>}>
-          <div className="flex gap-2">
-            <Input readOnly value={key} className="font-mono text-xs" aria-label="Device key" />
-            <Button variant="outline" size="icon" aria-label="Copy key" onClick={() => navigator.clipboard.writeText(key).then(() => toast.success('Copied'))}><Copy className="h-4 w-4" /></Button>
-          </div>
-        </Dialog>
-      )}
     </div>
   );
 }

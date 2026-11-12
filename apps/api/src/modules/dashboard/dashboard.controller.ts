@@ -39,6 +39,7 @@ const TABLES: Record<Exclude<WorkflowType, 'PAYROLL'>, { table: string; label: s
   RESIGNATION: { table: 'resignations', label: 'Resignation', link: '/resignations' },
   TEAM_TRANSFER: { table: 'team_transfer_requests', label: 'Team transfer', link: '/teams' },
   MEDICAL_CLAIM: { table: 'medical_claims', label: 'Medical claim', link: '/medical' },
+  LOAN_REQUEST: { table: 'loans', label: 'Loan request', link: '/loans' },
 };
 
 @Controller()

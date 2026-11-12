@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AccessController } from './access/access.controller';
 import { AttendanceController } from './attendance/attendance.controller';
+import { BiometricController } from './attendance/biometric.controller';
 import { AttendanceService } from './attendance/attendance.service';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
@@ -35,7 +36,7 @@ export class AuthModule {}
 export class EmployeesModule {}
 
 /** Part C – workforce scheduling & leave */
-@Module({ controllers: [AttendanceController, LeaveController], providers: [AttendanceService, LeaveService], exports: [AttendanceService, LeaveService] })
+@Module({ controllers: [AttendanceController, BiometricController, LeaveController], providers: [AttendanceService, LeaveService], exports: [AttendanceService, LeaveService] })
 export class WorkforceModule {}
 
 /** Part D – payroll */

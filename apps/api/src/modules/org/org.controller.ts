@@ -67,8 +67,9 @@ export class OrgController {
   async updateSettings(@Body(zp(tenantSettingsSchema)) body: TenantSettingsInput) {
     const user = currentUser();
     const full = user.permissions.has(P.TENANT_SETTINGS);
-    // Operations may only toggle the directory join-date display (B5).
-    if (!full && Object.keys(body).some((k) => k !== 'directoryShowJoinDate')) throw forbidden();
+    // Operations may only toggle the directory join-date display (B5) and set the session timeout (SEC-03).
+    const OPS_KEYS = ['directoryShowJoinDate', 'sessionIdleMinutes'];
+    if (!full && Object.keys(body).some((k) => !OPS_KEYS.includes(k))) throw forbidden();
     const tx = this.db.tx;
     const [t] = await tx.select().from(tenants).where(eq(tenants.id, user.tenantId));
     const { name, timezone, currency, ...rest } = body;
@@ -119,6 +120,7 @@ export class OrgController {
         headName: employees.fullName,
         foodAllowanceEnabled: departments.foodAllowanceEnabled,
         paidOvertimeEnabled: departments.paidOvertimeEnabled,
+        workScheduleId: departments.workScheduleId,
         isActive: departments.isActive,
       })
       .from(departments)

@@ -12,6 +12,27 @@ import { useApi } from '@/lib/hooks';
 
 interface Log { id: number; actorLabel: string | null; action: string; entityType: string | null; entityId: string | null; method: string | null; path: string | null; statusCode: number | null; ip: string | null; metadata: unknown; createdAt: string }
 
+type Changes = Record<string, { old: unknown; new: unknown }>;
+const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+
+/** AUD-04: old and new values of each changed field. */
+function ChangeTable({ log }: { log: Log | null }) {
+  const changes = (log?.metadata as { changes?: Changes } | null)?.changes;
+  if (!changes || !Object.keys(changes).length) return null;
+  return (
+    <div className="mb-4 overflow-x-auto rounded-md border">
+      <table className="w-full text-left text-xs">
+        <thead className="bg-muted/60"><tr><th className="p-2 font-medium">Field</th><th className="p-2 font-medium">Old value</th><th className="p-2 font-medium">New value</th></tr></thead>
+        <tbody className="divide-y">
+          {Object.entries(changes).map(([k, v]) => (
+            <tr key={k}><td className="p-2 font-mono">{k}</td><td className="p-2 text-danger break-all">{show(v.old)}</td><td className="p-2 text-success break-all">{show(v.new)}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** F5 – every action with timestamp and history. */
 export default function AuditPage() {
   const [page, setPage] = useState(1);
@@ -39,7 +60,8 @@ export default function AuditPage() {
         {data && <Pagination page={page} pageSize={50} total={data.total} onPage={setPage} />}
       </Card>
       <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)} title={open?.action ?? ''} size="lg">
-        <pre className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(open, null, 2)}</pre>
+        <ChangeTable log={open} />
+        <pre className="max-h-[50vh] overflow-auto rounded-md bg-muted p-3 text-xs">{JSON.stringify(open, null, 2)}</pre>
       </Dialog>
     </>
   );

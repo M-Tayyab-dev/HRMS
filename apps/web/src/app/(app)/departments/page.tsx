@@ -8,19 +8,21 @@ import { useQueryClient } from '@tanstack/react-query';
 import { EmployeeSelect, useDepartments, useLevels, type Department, type Level } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardHeader, EmptyState, LoadingRows, PageHeader } from '@/components/ui/display';
-import { Checkbox, Field, FormGrid, Input, Textarea } from '@/components/ui/form';
+import { Checkbox, Field, FormGrid, Input, Select, Textarea } from '@/components/ui/form';
 import { Dialog } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
 import { cn, money } from '@/lib/format';
+import { useApi } from '@/lib/hooks';
 
 function DepartmentDialog({ dept, open, onOpenChange }: { dept?: Department; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
   const form = useZodForm(departmentSchema);
+  const { data: schedules } = useApi<{ id: string; name: string; startTime: string; endTime: string }[]>('/work-schedules');
   useEffect(() => {
-    if (open) form.reset(dept ? { name: dept.name, code: dept.code, headEmployeeId: dept.headEmployeeId, foodAllowanceEnabled: dept.foodAllowanceEnabled, paidOvertimeEnabled: dept.paidOvertimeEnabled, isActive: dept.isActive } : { name: '', code: '', headEmployeeId: null, foodAllowanceEnabled: false, paidOvertimeEnabled: false, isActive: true });
+    if (open) form.reset(dept ? { name: dept.name, code: dept.code, headEmployeeId: dept.headEmployeeId, foodAllowanceEnabled: dept.foodAllowanceEnabled, paidOvertimeEnabled: dept.paidOvertimeEnabled, workScheduleId: dept.workScheduleId, isActive: dept.isActive } : { name: '', code: '', headEmployeeId: null, foodAllowanceEnabled: false, paidOvertimeEnabled: false, workScheduleId: null, isActive: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, dept]);
   const onSubmit = form.handleSubmit(async (v) => {
@@ -42,6 +44,12 @@ function DepartmentDialog({ dept, open, onOpenChange }: { dept?: Department; ope
           <Field label="Code" required error={fieldError(form, 'code')} hint="e.g. SALES">{(a) => <Input {...a} {...form.register('code')} />}</Field>
         </FormGrid>
         <Field label="Head of department">{(a) => <EmployeeSelect {...a} placeholder="None" {...form.register('headEmployeeId', { setValueAs: (v) => (v === '' ? null : v) })} />}</Field>
+        <Field label="Shift hours" hint="Late minutes and overtime are counted from this shift. No grace period.">{(a) => (
+          <Select {...a} {...form.register('workScheduleId', { setValueAs: (v) => (v === '' ? null : v) })}>
+            <option value="">Company default</option>
+            {schedules?.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.startTime.slice(0, 5)}–{s.endTime.slice(0, 5)})</option>)}
+          </Select>
+        )}</Field>
         <div className="flex flex-col gap-2">
           <Checkbox label="Food allowance enabled (D4)" {...form.register('foodAllowanceEnabled')} />
           <Checkbox label="Paid overtime compensation available (C2)" {...form.register('paidOvertimeEnabled')} />

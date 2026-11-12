@@ -52,6 +52,7 @@ export const departmentSchema = z.object({
   headEmployeeId: uuid.nullable().optional(),
   foodAllowanceEnabled: z.boolean().default(false),
   paidOvertimeEnabled: z.boolean().default(false),
+  workScheduleId: uuid.nullable().optional(),
   isActive: z.boolean().default(true),
 });
 export type DepartmentInput = z.infer<typeof departmentSchema>;

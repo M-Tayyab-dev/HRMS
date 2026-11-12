@@ -24,10 +24,9 @@ import {
 } from '../../db/schema';
 import { AccessService } from './access.service';
 import { nextEmployeeCode, provisionTenant } from './provisioning';
-import { REFRESH_TTL_SEC, signAccessToken } from './tokens';
+import { lockMinutesFor, waitText } from './lockout';
+import { REFRESH_TTL_SEC, sessionIdleMinutes, signAccessToken } from './tokens';
 
-const MAX_FAILED = 5;
-const LOCK_MINUTES = 15;
 const INVITE_TTL_H = 72;
 const RESET_TTL_MIN = 60;
 
@@ -58,7 +57,7 @@ export class AuthService {
     private readonly mail: MailService,
   ) {}
 
-  private async issue(tx: Tx, tenantId: string, userId: string, tokenVersion: number, familyId: string = randomUUID()): Promise<SessionTokens & { id: string }> {
+  private async issue(tx: Tx, tenantId: string, userId: string, tokenVersion: number, familyId: string = randomUUID(), lastActivityAt: Date = new Date()): Promise<SessionTokens & { id: string }> {
     const secret = randomToken(32);
     const store = als.getStore();
     const [row] = await tx
@@ -69,11 +68,13 @@ export class AuthService {
         familyId,
         tokenHash: sha256(secret),
         expiresAt: new Date(Date.now() + REFRESH_TTL_SEC * 1000),
+        lastActivityAt,
         ip: store?.ip,
         userAgent: store?.userAgent?.slice(0, 300),
       })
       .returning({ id: refreshTokens.id });
-    const access = await signAccessToken({ sub: userId, tid: tenantId, ver: tokenVersion });
+    // `sid` lets every request check and extend this session's inactivity window (SEC-03).
+    const access = await signAccessToken({ sub: userId, tid: tenantId, ver: tokenVersion, sid: familyId });
     return { id: row!.id, access, refresh: `${tenantId}.${secret}` };
   }
 
@@ -161,15 +162,15 @@ export class AuthService {
 
       if (user.lockedUntil && user.lockedUntil > new Date()) {
         await this.audit.log(tx, { tenantId: tenant.id, action: 'auth.login_locked', actorUserId: user.id, actorLabel: user.email });
-        return { error: new UnauthorizedException({ message: `Account temporarily locked. Try again in ${LOCK_MINUTES} minutes or reset your password.`, code: 'LOCKED' }) };
+        return { error: new UnauthorizedException({ message: `Account temporarily locked. Try again in ${waitText(user.lockedUntil)} or reset your password.`, code: 'LOCKED' }) };
       }
       if (!ok) {
         const failed = user.failedLoginCount + 1;
-        await tx
-          .update(users)
-          .set({ failedLoginCount: failed, lockedUntil: failed >= MAX_FAILED ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null })
-          .where(eq(users.id, user.id));
-        await this.audit.log(tx, { tenantId: tenant.id, action: 'auth.login_failed', actorUserId: user.id, actorLabel: user.email, metadata: { failed } });
+        const lockMin = lockMinutesFor(failed);
+        const lockedUntil = lockMin ? new Date(Date.now() + lockMin * 60_000) : null;
+        await tx.update(users).set({ failedLoginCount: failed, lockedUntil }).where(eq(users.id, user.id));
+        await this.audit.log(tx, { tenantId: tenant.id, action: 'auth.login_failed', actorUserId: user.id, actorLabel: user.email, metadata: { failed, lockMinutes: lockMin } });
+        if (lockedUntil) return { error: new UnauthorizedException({ message: `Too many failed attempts. Your account is locked for ${waitText(lockedUntil)}. You can also reset your password.`, code: 'LOCKED' }) };
         return { error: INVALID() };
       }
       if (user.status !== 'ACTIVE') return { error: new UnauthorizedException({ message: 'This account is disabled. Contact HR.', code: 'DISABLED' }) };
@@ -198,9 +199,17 @@ export class AuthService {
         return null;
       }
       if (row.expiresAt < new Date()) return null;
+      // SEC-03: an idle session cannot be revived by refreshing.
+      const [t] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, parts.tenantId));
+      const idleMin = sessionIdleMinutes(t?.settings);
+      if (row.lastActivityAt.getTime() < Date.now() - idleMin * 60_000) {
+        await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.familyId, row.familyId), isNull(refreshTokens.revokedAt)));
+        await this.audit.log(tx, { tenantId: parts.tenantId, action: 'auth.session_idle_timeout', actorUserId: row.userId, metadata: { idleMinutes: idleMin } });
+        return null;
+      }
       const [user] = await tx.select().from(users).where(eq(users.id, row.userId)).limit(1);
       if (!user || user.status !== 'ACTIVE') return null;
-      const next = await this.issue(tx, parts.tenantId, user.id, user.tokenVersion, row.familyId);
+      const next = await this.issue(tx, parts.tenantId, user.id, user.tokenVersion, row.familyId, row.lastActivityAt);
       await tx.update(refreshTokens).set({ revokedAt: new Date(), replacedById: next.id }).where(eq(refreshTokens.id, row.id));
       return next;
     });

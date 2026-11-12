@@ -19,10 +19,21 @@ export interface AccessClaims {
   sub: string; // user id
   tid: string; // tenant id
   ver: number; // token version (bumped to revoke)
+  sid?: string; // session (refresh-token family) id, for the inactivity timeout
 }
 
+/** SEC-03: minutes without user activity before a session ends; set by Operations (default 30). */
+export const DEFAULT_IDLE_MINUTES = 30;
+export function sessionIdleMinutes(settings: { sessionIdleMinutes?: number } | null | undefined): number {
+  const v = settings?.sessionIdleMinutes;
+  return typeof v === 'number' && v >= 5 ? v : DEFAULT_IDLE_MINUTES;
+}
+
+/** Sent by the web app only when a person (not a background poll) used the page in the last minute. */
+export const ACTIVITY_HEADER = 'x-user-active';
+
 export async function signAccessToken(c: AccessClaims): Promise<string> {
-  return new SignJWT({ tid: c.tid, ver: c.ver })
+  return new SignJWT({ tid: c.tid, ver: c.ver, ...(c.sid ? { sid: c.sid } : {}) })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(c.sub)
     .setIssuer(ISSUER)
@@ -36,7 +47,7 @@ export async function verifyAccessToken(token: string): Promise<AccessClaims | n
   try {
     const { payload } = await jwtVerify(token, key(), { issuer: ISSUER, audience: AUDIENCE, algorithms: ['HS256'] });
     if (typeof payload.sub !== 'string' || typeof payload.tid !== 'string' || typeof payload.ver !== 'number') return null;
-    return { sub: payload.sub, tid: payload.tid, ver: payload.ver };
+    return { sub: payload.sub, tid: payload.tid, ver: payload.ver, sid: typeof payload.sid === 'string' ? payload.sid : undefined };
   } catch {
     return null;
   }

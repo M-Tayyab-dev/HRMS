@@ -12,8 +12,8 @@ import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { useAction, useApi } from '@/lib/hooks';
 
-interface S { name: string; slug: string; timezone: string; currency: string; settings: { directoryShowJoinDate: boolean; medicalAnnualLimit: number; overtimeThresholdMinutes: number; payrollWorkingHoursBased: boolean } }
-interface WS { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; graceMinutes: number; workingDays: number[]; isDefault: boolean }
+interface S { name: string; slug: string; timezone: string; currency: string; settings: { directoryShowJoinDate: boolean; sessionIdleMinutes?: number; medicalAnnualLimit: number; overtimeThresholdMinutes: number; payrollWorkingHoursBased: boolean } }
+interface WS { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; workingDays: number[]; isDefault: boolean }
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function Company() {
@@ -24,7 +24,7 @@ function Company() {
   const full = can(P.TENANT_SETTINGS);
   const save = useAction('patch', '/settings', {
     invalidate: ['/settings', '/directory'], success: 'Settings saved', onSuccess: () => refresh(),
-    body: () => (full ? { name: v!.name, timezone: v!.timezone, currency: v!.currency, ...v!.settings } : { directoryShowJoinDate: v!.settings.directoryShowJoinDate }),
+    body: () => (full ? { name: v!.name, timezone: v!.timezone, currency: v!.currency, ...v!.settings } : { directoryShowJoinDate: v!.settings.directoryShowJoinDate, sessionIdleMinutes: v!.settings.sessionIdleMinutes ?? 30 }),
   });
   if (!v) return null;
   const set = (patch: Partial<S['settings']>) => setV({ ...v, settings: { ...v.settings, ...patch } });
@@ -45,6 +45,7 @@ function Company() {
             <Field label="Minimum overtime to count (minutes)">{(a) => <Input {...a} type="number" value={v.settings.overtimeThresholdMinutes} onChange={(e) => set({ overtimeThresholdMinutes: Number(e.target.value) })} />}</Field>
           </FormGrid>
         )}
+        <Field label="Sign out after inactivity (minutes)" hint="People are signed out when they haven't used the app for this long. 5–480 minutes.">{(a) => <Input {...a} type="number" min={5} max={480} className="max-w-40" value={v.settings.sessionIdleMinutes ?? 30} onChange={(e) => set({ sessionIdleMinutes: Number(e.target.value) })} />}</Field>
         <div className="flex flex-col gap-3">
           {full && <Checkbox label="Calculate salaries from actual working hours" checked={v.settings.payrollWorkingHoursBased} onChange={(e) => set({ payrollWorkingHoursBased: e.target.checked })} />}
           <Checkbox label='Show joining month in the directory (e.g. "Since Jan 2026")' checked={v.settings.directoryShowJoinDate} onChange={(e) => set({ directoryShowJoinDate: e.target.checked })} />
@@ -60,7 +61,7 @@ function Schedules() {
   const [edit, setEdit] = useState<{ open: boolean; ws?: WS }>({ open: false });
   const form = useZodForm(workScheduleSchema);
   useEffect(() => {
-    if (edit.open) form.reset(edit.ws ? { ...edit.ws, startTime: edit.ws.startTime.slice(0, 5), endTime: edit.ws.endTime.slice(0, 5) } : { name: '', startTime: '09:00', endTime: '18:00', breakMinutes: 60, graceMinutes: 15, workingDays: [1, 2, 3, 4, 5], isDefault: false });
+    if (edit.open) form.reset(edit.ws ? { ...edit.ws, startTime: edit.ws.startTime.slice(0, 5), endTime: edit.ws.endTime.slice(0, 5) } : { name: '', startTime: '09:00', endTime: '18:00', breakMinutes: 60, workingDays: [1, 2, 3, 4, 5], isDefault: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edit]);
   const days = (form.watch('workingDays') as number[] | undefined) ?? [];
@@ -74,7 +75,6 @@ function Schedules() {
         { key: 'n', header: 'Name', cell: (w) => <span className="font-medium">{w.name} {w.isDefault && <Badge tone="primary">default</Badge>}</span> },
         { key: 't', header: 'Hours', cell: (w) => `${w.startTime.slice(0, 5)} – ${w.endTime.slice(0, 5)}` },
         { key: 'b', header: 'Break', cell: (w) => `${w.breakMinutes} min` },
-        { key: 'g', header: 'Grace', hideOnMobile: true, cell: (w) => `${w.graceMinutes} min` },
         { key: 'd', header: 'Days', hideOnMobile: true, cell: (w) => w.workingDays.map((d) => DAYS[d]).join(', ') },
       ]} />
       <Dialog open={edit.open} onOpenChange={(o) => setEdit({ open: o, ws: edit.ws })} title={edit.ws ? 'Edit schedule' : 'New schedule'}
@@ -85,7 +85,6 @@ function Schedules() {
             <Field label="Start" error={fieldError(form, 'startTime')}>{(a) => <Input {...a} type="time" {...form.register('startTime')} />}</Field>
             <Field label="End" error={fieldError(form, 'endTime')}>{(a) => <Input {...a} type="time" {...form.register('endTime')} />}</Field>
             <Field label="Break (minutes)" error={fieldError(form, 'breakMinutes')}>{(a) => <Input {...a} type="number" {...form.register('breakMinutes', num)} />}</Field>
-            <Field label="Late grace (minutes)" error={fieldError(form, 'graceMinutes')}>{(a) => <Input {...a} type="number" {...form.register('graceMinutes', num)} />}</Field>
           </FormGrid>
           <fieldset>
             <legend className="mb-2 text-sm font-medium">Working days</legend>

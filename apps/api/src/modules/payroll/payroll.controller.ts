@@ -4,10 +4,13 @@ import {
   PERMISSIONS as P,
   decision,
   foodAllowanceRuleSchema,
+  loanDecisionSchema,
   loanRepaymentSchema,
+  loanRequestSchema,
   loanSchema,
   medicalClaimSchema,
   medicalDecisionSchema,
+  payrollReopenSchema,
   payrollRunSchema,
   payslipAdjustmentSchema,
   salaryComponentSchema,
@@ -190,6 +193,20 @@ export class PayrollController {
     return { id, status: 'PAID' };
   }
 
+  /** PAY-08: an approved run is locked; HR reopens it with a reason (audited), which unbooks its side effects. */
+  @Post('runs/:id/reopen')
+  @RequireAny(P.PAYROLL_PROCESS)
+  @Audit('payroll.run_reopened', 'payroll_run')
+  async reopen(@Param('id', ParseUUIDPipe) id: string, @Body(zp(payrollReopenSchema)) body: z.infer<typeof payrollReopenSchema>) {
+    const tx = this.db.tx;
+    const run = one(await tx.select().from(payrollRuns).where(eq(payrollRuns.id, id)), 'Payroll run');
+    if (run.status !== 'APPROVED') throw badRequest(run.status === 'PAID' ? 'Salaries for this month were already paid; it can no longer be reopened' : 'Only approved payroll can be reopened', 'NOT_LOCKED');
+    await this.svc.reopen(id);
+    await tx.update(payrollRuns).set({ status: 'DRAFT', currentStep: null, reopenedAt: new Date(), reopenReason: body.reason }).where(eq(payrollRuns.id, id));
+    await this.notify.notifyPermission(P.PAYROLL_APPROVE_OPS, { type: 'payroll.reopened', title: `Payroll ${run.period} was reopened by HR`, body: body.reason, link: `/payroll/runs/${id}` }, currentUser().userId);
+    return { id, status: 'DRAFT' };
+  }
+
   @Post('payslips/:id/adjustments')
   @RequireAny(P.PAYROLL_PROCESS)
   @Audit('payroll.payslip_adjusted', 'payslip')
@@ -274,9 +291,9 @@ export class PayrollController {
   /* ---------------- Loans (D2) ---------------- */
 
   @Get('loans')
-  async loans() {
+  async loans(@Query(zp(z.object({ mine: z.coerce.boolean().optional() }))) query: { mine?: boolean }) {
     const u = currentUser();
-    const all = u.permissions.has(P.LOANS_MANAGE);
+    const all = u.permissions.has(P.LOANS_MANAGE) && !query.mine;
     const q = this.db.tx
       .select({ l: loans, fullName: employees.fullName, paid: sql<number>`coalesce((select sum(amount) from loan_repayments r where r.loan_id = ${loans.id}), 0)::float` })
       .from(loans)
@@ -294,6 +311,49 @@ export class PayrollController {
     const loan = one(await this.db.tx.insert(loans).values({ ...body, tenantId: u.tenantId, createdByUserId: u.userId }).returning());
     await this.notify.notifyEmployees([body.employeeId], { type: 'loan.created', title: `A loan of ${body.principal} was recorded for you`, link: '/loans' });
     return loan;
+  }
+
+  /** LON-04: employees request a loan from their own portal, optionally with supporting documents. */
+  @Post('loans/requests')
+  @UseInterceptors(FilesInterceptor('files', 5, { limits: { fileSize: config().MAX_UPLOAD_MB * 1024 * 1024 } }))
+  @Audit('loan.requested', 'loan')
+  async requestLoan(@UploadedFiles() files: UploadedFileLike[] | undefined, @Body(zp(loanRequestSchema)) body: z.infer<typeof loanRequestSchema>) {
+    const employeeId = this.scope.requireEmployee();
+    if (body.installment > body.principal) throw badRequest('Instalment cannot exceed the loan amount');
+    const [open] = await this.db.tx.select({ id: loans.id }).from(loans).where(and(eq(loans.employeeId, employeeId), eq(loans.status, 'PENDING'))).limit(1);
+    if (open) throw badRequest('You already have a loan request waiting for HR', 'ALREADY_PENDING');
+    const saved: string[] = [];
+    for (const f of files ?? []) saved.push((await this.storage.save(f, 'document')).id);
+    const u = currentUser();
+    const row = one(await this.db.tx.insert(loans).values({ tenantId: u.tenantId, employeeId, principal: body.principal, installment: body.installment, startPeriod: body.startPeriod, reason: body.reason, status: 'PENDING', fileIds: saved, requestedByEmployee: true, createdByUserId: u.userId }).returning());
+    const wf = await this.approvals.submit('LOAN_REQUEST', row.id, employeeId, { title: `Loan request (${body.principal})`, link: '/loans' });
+    await this.db.tx.update(loans).set({ status: wf.status === 'APPROVED' ? 'ACTIVE' : 'PENDING', currentStep: wf.currentStep }).where(eq(loans.id, row.id));
+    return { ...row, currentStep: wf.currentStep };
+  }
+
+  @Post('loans/:id/decision')
+  @RequireAny(P.LOANS_MANAGE)
+  @Audit('loan.request_decided', 'loan')
+  async decideLoan(@Param('id', ParseUUIDPipe) id: string, @Body(zp(loanDecisionSchema)) body: z.infer<typeof loanDecisionSchema>) {
+    const tx = this.db.tx;
+    const loan = one(await tx.select().from(loans).where(eq(loans.id, id)), 'Loan');
+    if (loan.status !== 'PENDING') throw badRequest('This loan request was already decided');
+    const installment = body.installment ?? loan.installment;
+    if (body.approve && installment > loan.principal) throw badRequest('Instalment cannot exceed the loan amount');
+    const wf = await this.approvals.decide('LOAN_REQUEST', { id, status: 'PENDING', currentStep: loan.currentStep, employeeId: loan.employeeId }, body.approve, body.comment, { title: 'Loan request', link: '/loans' });
+    const status = wf.status === 'APPROVED' ? 'ACTIVE' : wf.status === 'REJECTED' ? 'REJECTED' : 'PENDING';
+    await tx.update(loans).set({ status, currentStep: wf.currentStep, installment, startPeriod: body.startPeriod ?? loan.startPeriod }).where(eq(loans.id, id));
+    return { id, status };
+  }
+
+  @Get('loans/:id/files/:index')
+  async loanFile(@Param('id', ParseUUIDPipe) id: string, @Param('index', ParseIntPipe) index: number) {
+    const loan = one(await this.db.tx.select().from(loans).where(eq(loans.id, id)), 'Loan');
+    const u = currentUser();
+    if (loan.employeeId !== u.employeeId && !u.permissions.has(P.LOANS_MANAGE)) throw forbidden();
+    const fileId = loan.fileIds[index];
+    if (!fileId) throw badRequest('No such file');
+    return this.storage.stream(fileId, 'attachment');
   }
 
   @Get('loans/:id/repayments')

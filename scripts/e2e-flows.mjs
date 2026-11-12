@@ -106,7 +106,7 @@ async function main() {
 
   // ---- Biometric attendance & overtime (C1, C2)
   const dev = await admin.post('/attendance/devices', { name: 'Front door' });
-  expect(dev.status === 201 && dev.data.apiKey, 'device registered');
+  expect(dev.status === 201 && dev.data.apiKey, 'device registered', dev);
   const d1 = prevWeekday(today, 1);
   const d2 = prevWeekday(today, 2);
   const devRes = await fetch('http://localhost:4000/api/v1/attendance/device/punches', {
@@ -167,6 +167,66 @@ async function main() {
   expect(pdf.headers.get('content-type') === 'application/pdf' && pdfBytes.subarray(0, 5).toString() === '%PDF-', 'salary slip PDF generated');
   const otherSlip = (await HR.get(`/payroll/runs/${run.data.id}`)).data.payslips.find((p) => p.employeeId !== emp.id);
   expect((await E.get(`/payroll/payslips/${otherSlip.id}`)).status === 403, 'employee cannot read another payslip');
+
+  // ---- SRS v1.1: individual attendance dashboard (ADB), late minutes (ATT-03)
+  const dash = (await E.get(`/attendance/me/dashboard?month=${d2.slice(0, 7)}`)).data;
+  expect(dash.counts.late >= 1 && dash.figures.lateMinutes >= 40 && dash.trend.length === 6 && dash.latest.length <= 5, 'attendance dashboard: donut counts, late minutes, 6-month trend, latest 5', dash);
+
+  // ---- PAY-08: approved payroll is locked; HR reopens with a reason
+  expect((await HR.post(`/payroll/payslips/${otherSlip.id}/adjustments`, { kind: 'BONUS', label: 'Late bonus', amount: 100 })).status === 400, 'approved payroll is locked');
+  expect((await HR.post(`/payroll/runs/${run.data.id}/reopen`, {})).status === 400, 'reopen needs a reason');
+  expect((await E.post(`/payroll/runs/${run.data.id}/reopen`, { reason: 'Not mine to reopen' })).status === 403, 'employee cannot reopen payroll');
+  expect((await HR.post(`/payroll/runs/${run.data.id}/reopen`, { reason: 'Missed an Eid bonus' })).data.status === 'DRAFT', 'HR reopens approved payroll');
+  const reopenAudit = (await admin.get('/access/audit?action=payroll.run_reopened')).data.items[0];
+  expect(reopenAudit?.metadata?.changes?.status?.old === 'APPROVED' && reopenAudit.metadata.changes.status.new === 'DRAFT', 'reopen audited with old and new values (AUD-04)', reopenAudit);
+
+  // ---- LON-04: employee loan request → HR
+  const nextMonth = addDays(`${month}-28`, 7).slice(0, 7);
+  const loanReq = await E.post('/payroll/loans/requests', { principal: 60000, installment: 5000, startPeriod: nextMonth, reason: 'Family emergency' });
+  expect(loanReq.status === 201 && loanReq.data.status === 'PENDING', 'employee requests a loan', loanReq);
+  expect((await E.post('/payroll/loans/requests', { principal: 1000, installment: 500, startPeriod: nextMonth, reason: 'Second request' })).status === 400, 'only one pending loan request');
+  expect((await HR.post(`/payroll/loans/${loanReq.data.id}/decision`, { approve: true, installment: 6000 })).data.status === 'ACTIVE', 'HR approves loan request');
+  const myLoans = (await E.get('/payroll/loans')).data;
+  expect(myLoans.some((l) => l.id === loanReq.data.id && l.installment === 6000 && l.outstanding === 60000), 'employee sees approved loan and balance', myLoans);
+
+  // ---- BIO-01..04: ZKTeco ADMS push, duplicates, unknown users held for HR
+  const sn = `ZK${randomBytes(4).toString('hex').toUpperCase()}`;
+  expect((await admin.post('/attendance/devices', { name: 'Gate ZK', protocol: 'ZKTECO_ADMS', location: 'Main gate' })).status === 400, 'ZKTeco device needs a serial number');
+  expect((await admin.post('/attendance/devices', { name: 'Gate ZK', protocol: 'ZKTECO_ADMS', serialNumber: sn, location: 'Main gate' })).status === 201, 'ZKTeco device registered with serial and location');
+  const hs = await fetch(`http://localhost:4000/iclock/cdata?SN=${sn}&options=all&pushver=2.4.1`);
+  expect(hs.status === 200 && (await hs.text()).includes(`GET OPTION FROM: ${sn}`), 'ADMS handshake');
+  const d3 = prevWeekday(today, 3);
+  // Status codes: 0 check-in, 2 break-out, 3 break-in, 1 check-out.
+  const attlog = [`${emp.employeeCode}\t${d3} 09:00:00\t0\t1`, `${emp.employeeCode}\t${d3} 13:00:00\t2\t1`, `${emp.employeeCode}\t${d3} 14:00:00\t3\t1`, `${emp.employeeCode}\t${d3} 18:00:00\t1\t1`, `9999\t${d3} 09:05:00\t0\t1`, ''].join('\n');
+  const up1 = await fetch(`http://localhost:4000/iclock/cdata?SN=${sn}&table=ATTLOG&Stamp=1`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: attlog });
+  expect(up1.status === 200 && (await up1.text()) === 'OK: 5', 'ADMS ATTLOG upload acknowledged');
+  const up2 = await fetch(`http://localhost:4000/iclock/cdata?SN=${sn}&table=ATTLOG&Stamp=1`, { method: 'POST', body: attlog });
+  expect(up2.status === 200, 'late re-upload after outage accepted');
+  const d3day = (await E.get(`/attendance/days?from=${d3}&to=${d3}`)).data[0];
+  expect(d3day?.status === 'PRESENT' && d3day.workedMinutes === 480 && d3day.breakMinutes === 60, 'device punches became attendance without duplicates', d3day);
+  expect((await fetch(`http://localhost:4000/iclock/getrequest?SN=UNKNOWN${sn}`)).status === 403, 'unregistered device rejected');
+  const heldList = (await admin.get('/attendance/held-punches')).data;
+  const held9999 = heldList.find((h) => h.deviceUserId === '9999');
+  expect(held9999?.punches === 1 && heldList.some((h) => h.deviceUserId === 'NOPE-1') && !Number.isNaN(Date.parse(held9999.firstAt)), 'unknown device users held for HR', heldList);
+  const mapped = await admin.post('/attendance/held-punches/assign', { deviceUserId: '9999', employeeId: tl.id });
+  expect(mapped.data.released === 1 && !(await admin.get('/attendance/held-punches')).data.some((h) => h.deviceUserId === '9999'), 'HR links device user; held punch released', mapped);
+  expect((await admin.post('/attendance/held-punches/discard', { deviceUserId: 'NOPE-1' })).data.discarded === 1, 'HR discards unknown punches');
+  const zkDev = (await admin.get('/attendance/devices')).data.find((d) => d.serialNumber === sn);
+  expect(zkDev?.online === true && zkDev.lastSyncAt, 'device shows online with last sync (BIO-07)', zkDev);
+
+  // ---- Hikvision ISAPI listener
+  const hik = await admin.post('/attendance/devices', { name: 'Lobby Hik', protocol: 'HIKVISION_ISAPI' });
+  const d4 = prevWeekday(today, 4);
+  const hikRes = await fetch(`http://localhost:4000/api/v1/attendance/hikvision/${hik.data.apiKey}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ dateTime: `${d4}T09:00:00+05:00`, eventType: 'AccessControllerEvent', AccessControllerEvent: { employeeNoString: emp.employeeCode, attendanceStatus: 'checkIn' } }),
+  });
+  expect(hikRes.status === 200 && (await hikRes.json()).received === 1, 'Hikvision event accepted');
+
+  // ---- SEC-03: Operations sets the inactivity timeout
+  expect((await OPS.req('PATCH', '/settings', { sessionIdleMinutes: 45 })).status === 200, 'operations sets session timeout');
+  expect((await OPS.req('PATCH', '/settings', { medicalAnnualLimit: 1 })).status === 403, 'operations cannot change other settings');
 
   // ---- Anonymous complaint (F3)
   const fd = new FormData();

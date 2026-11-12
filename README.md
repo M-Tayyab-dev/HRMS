@@ -42,6 +42,15 @@ node scripts/e2e-flows.mjs   # full multi-role workflows + tenant isolation
 `infra/docker-compose.yml` runs Postgres, migrations, API and web with non-root, read-only containers.
 Put an HTTPS reverse proxy in front of the `web` service. CI is in `.github/workflows/ci.yml`.
 
+## Biometric devices (SRS 5.2)
+
+Register each device under **Attendance → Devices & import**, then point the device at the HRMS:
+
+- **ZKTeco** (ADMS / Push SDK): *Comm. → Cloud Server Setting* → server = your HRMS host, HTTPS on. The device is matched by the serial number you registered and calls `/iclock/cdata`.
+- **Hikvision** (ISAPI): *Network → Advanced → HTTP Listening* → `https://<host>/api/v1/attendance/hikvision/<device key>`. ISUP 5.0 needs a separate gateway and isn't supported.
+
+Device user IDs are matched to an employee's biometric ID (or employee code). Unknown IDs are held for HR to link or discard.
+
 ## Module map
 
 | Spec | Where |
