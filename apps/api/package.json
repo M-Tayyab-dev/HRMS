@@ -11,7 +11,8 @@
     "db:migrate": "node --env-file-if-exists=../../.env --enable-source-maps dist/db/migrate.js",
     "db:seed": "node --env-file-if-exists=../../.env --enable-source-maps dist/db/seed.js",
     "test": "jest",
-    "test:e2e": "jest --config test/jest-e2e.config.js --runInBand"
+    "test:e2e": "jest --config test/jest-e2e.config.js --runInBand",
+    "platform:admin": "node --env-file-if-exists=../../.env --enable-source-maps dist/db/create-platform-admin.js"
   },
   "dependencies": {
     "@hrms/shared": "*",

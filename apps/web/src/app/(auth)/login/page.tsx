@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/form';
 import { api, ApiError } from '@/lib/api';
 import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
+import { SITE } from '@/lib/site';
 
 function LoginForm() {
   const router = useRouter();
@@ -71,10 +72,7 @@ function LoginForm() {
         </Button>
       </form>
       <p className="mt-8 text-center text-sm text-muted-foreground">
-        New company?{' '}
-        <Link href="/signup" className="font-medium text-primary hover:underline">
-          Create a workspace
-        </Link>
+        New company? Ask your {SITE.name} provider to set up your workspace.
       </p>
     </>
   );

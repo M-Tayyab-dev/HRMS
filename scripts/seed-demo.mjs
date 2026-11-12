@@ -3,7 +3,7 @@
 // Login details are written to demo-credentials.local.md (git-ignored).
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { Client } from './smoke.mjs';
+import { Client, createCompany, platformClient } from './smoke.mjs';
 
 const API = process.env.API_URL ?? 'http://localhost:4000/api/v1';
 const TZ = 'Asia/Karachi';
@@ -46,9 +46,7 @@ async function main() {
   const password = `Demo${randomBytes(9).toString('base64url')}1a`;
   console.log(`Seeding workspace "${ws}"…`);
 
-  const admin = new Client();
-  await admin.get('/auth/csrf');
-  must(await admin.post('/auth/signup', { companyName: 'Nimbus Technologies', workspace: ws, adminName: 'Sara Admin', email: `admin@${domain}`, password }), 'signup');
+  const admin = await createCompany(await platformClient(), { companyName: 'Nimbus Technologies', workspace: ws, adminName: 'Sara Admin', email: `admin@${domain}`, password });
 
   const depts = must(await admin.get('/departments'), 'departments');
   const byCode = Object.fromEntries(depts.map((d) => [d.code, d]));

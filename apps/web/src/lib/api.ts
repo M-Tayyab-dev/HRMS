@@ -77,7 +77,8 @@ async function request<T>(method: string, path: string, body?: Body, retried = f
     body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
   });
 
-  if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
+  // The platform console has its own session and login page.
+  if (res.status === 401 && !retried && !path.startsWith('/auth/') && !path.startsWith('/platform/')) {
     if (await refreshSession()) return request<T>(method, path, body, true);
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
       window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;

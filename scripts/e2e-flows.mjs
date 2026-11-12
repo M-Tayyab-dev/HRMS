@@ -1,6 +1,6 @@
 // Full workflow test against a running local API. Usage: node scripts/e2e-flows.mjs
 import { randomBytes } from 'node:crypto';
-import { Client, expect, testPassword } from './smoke.mjs';
+import { Client, createCompany, expect, platformClient, testPassword } from './smoke.mjs';
 
 const TZ = 'Asia/Karachi';
 const ymd = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
@@ -37,9 +37,8 @@ async function login(workspace, email, password) {
 async function main() {
   const ws = `e2e-${randomBytes(3).toString('hex')}`;
   const pw = testPassword();
-  const admin = new Client();
-  await admin.get('/auth/csrf');
-  expect((await admin.post('/auth/signup', { companyName: 'E2E Ltd', workspace: ws, adminName: 'Sam Super', email: `sam@${ws}.test`, password: pw })).status === 201, 'tenant A signup');
+  const platform = await platformClient();
+  const admin = await createCompany(platform, { companyName: 'E2E Ltd', workspace: ws, adminName: 'Sam Super', email: `sam@${ws}.test`, password: pw });
 
   const depts = (await admin.get('/departments')).data;
   const sales = depts.find((d) => d.code === 'SALES');
@@ -273,9 +272,9 @@ async function main() {
   }
 
   // ---- Tenant isolation (RLS)
-  const other = new Client();
-  await other.get('/auth/csrf');
-  await other.post('/auth/signup', { companyName: 'Other Co', workspace: `${ws}-b`, adminName: 'Bob', email: `bob@${ws}-b.test`, password: pw });
+  const other = await createCompany(platform, { companyName: 'Other Co', workspace: `${ws}-b`, adminName: 'Bob', email: `bob@${ws}-b.test`, password: pw });
+  const suspended = await platform.patch(`/platform/companies/${(await platform.get('/platform/companies')).data.find((c) => c.slug === `${ws}-b`).id}`, { status: 'SUSPENDED' });
+  expect(suspended.data.status === 'SUSPENDED', 'platform owner suspends a company');
   expect((await other.get(`/employees/${emp.id}`)).status === 404, 'other tenant cannot read employee (RLS)');
   expect((await other.get(`/payroll/payslips/${slips[0].id}`)).status === 403, 'other tenant cannot read payslip');
   const otherList = (await other.get('/employees')).data;

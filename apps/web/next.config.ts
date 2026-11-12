@@ -27,6 +27,11 @@ const config: NextConfig = {
       source: '/api/v1/:path*',
       destination: `${api}/api/v1/:path*`,
     },
+    // ZKTeco biometric devices call fixed /iclock/* paths (BIO-01).
+    {
+      source: '/iclock/:path*',
+      destination: `${api}/iclock/:path*`,
+    },
   ];
 },
   async headers() {

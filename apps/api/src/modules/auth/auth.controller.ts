@@ -5,9 +5,7 @@ import {
   forgotPasswordSchema,
   loginSchema,
   resetPasswordSchema,
-  signupSchema,
   type LoginInput,
-  type SignupInput,
 } from '@hrms/shared';
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
@@ -30,14 +28,7 @@ export class AuthController {
     return { csrfToken: issueCsrfCookie(res) };
   }
 
-  @Public()
-  @Throttle({ default: { limit: 5, ttl: 3600_000 } })
-  @Post('signup')
-  async signup(@Body(zp(signupSchema)) body: SignupInput, @Res({ passthrough: true }) res: Response) {
-    const t = await this.auth.signup(body);
-    setSessionCookies(res, t.access, t.refresh);
-    return { ok: true };
-  }
+  // No public sign-up: companies and their Super Admins are created by platform owners (/platform).
 
   @Public()
   @Throttle(STRICT)

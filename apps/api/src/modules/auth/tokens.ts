@@ -73,3 +73,38 @@ export function issueCsrfCookie(res: Response): string {
   res.cookie(CSRF_COOKIE, token, { httpOnly: false, secure: config().COOKIE_SECURE, sameSite: 'strict', path: '/' });
   return token;
 }
+
+/* ---------------- Platform owner sessions (separate from company sessions) ---------------- */
+
+export const PLATFORM_COOKIE = 'hrms_pt';
+const PLATFORM_AUDIENCE = 'hrms-platform';
+export const PLATFORM_TTL_SEC = 8 * 60 * 60;
+
+export async function signPlatformToken(adminId: string, ver: number): Promise<string> {
+  return new SignJWT({ ver })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setSubject(adminId)
+    .setIssuer(ISSUER)
+    .setAudience(PLATFORM_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime(`${PLATFORM_TTL_SEC}s`)
+    .sign(key());
+}
+
+export async function verifyPlatformToken(token: string): Promise<{ sub: string; ver: number } | null> {
+  try {
+    const { payload } = await jwtVerify(token, key(), { issuer: ISSUER, audience: PLATFORM_AUDIENCE, algorithms: ['HS256'] });
+    if (typeof payload.sub !== 'string' || typeof payload.ver !== 'number') return null;
+    return { sub: payload.sub, ver: payload.ver };
+  } catch {
+    return null;
+  }
+}
+
+export function setPlatformCookie(res: Response, token: string) {
+  res.cookie(PLATFORM_COOKIE, token, { ...base(), path: '/api/v1/platform', maxAge: PLATFORM_TTL_SEC * 1000 });
+}
+
+export function clearPlatformCookie(res: Response) {
+  res.clearCookie(PLATFORM_COOKIE, { ...base(), path: '/api/v1/platform' });
+}

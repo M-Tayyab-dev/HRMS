@@ -80,6 +80,23 @@ export const tenants = pgTable('tenants', {
   updatedAt: updatedAt(),
 });
 
+/**
+ * Platform owners: the SaaS operator's accounts. They create client companies and their Super Admins;
+ * there is no public sign-up. Not tenant data, so no tenant_id / RLS.
+ */
+export const platformAdmins = pgTable('platform_admins', {
+  id: id(),
+  email: text('email').notNull().unique(),
+  name: text('name').notNull(),
+  passwordHash: text('password_hash').notNull(),
+  failedLoginCount: integer('failed_login_count').notNull().default(0),
+  lockedUntil: ts('locked_until'),
+  lastLoginAt: ts('last_login_at'),
+  tokenVersion: integer('token_version').notNull().default(0),
+  createdByAdminId: uuid('created_by_admin_id'),
+  createdAt: createdAt(),
+});
+
 /* ======================= Identity & access (A1) ======================= */
 
 export const users = pgTable(
@@ -1086,4 +1103,4 @@ export const jobs = pgTable(
 );
 
 /** Tables without tenant_id RLS (platform + infra). Everything else gets RLS. */
-export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials'];
+export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins'];

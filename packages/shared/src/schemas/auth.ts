@@ -8,16 +8,34 @@ export const workspaceSlug = z
   .toLowerCase()
   .regex(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/, '3–40 lowercase letters, numbers or dashes');
 
-export const signupSchema = z.object({
+/**
+ * A new client company and its first Super Admin. Only platform owners can create companies (no public sign-up).
+ * Without a password the Super Admin receives an invite email to set one.
+ */
+export const createCompanySchema = z.object({
   companyName: trimmed(2, 120),
   workspace: workspaceSlug,
   adminName: trimmed(2, 120),
   email: z.email().toLowerCase(),
-  password,
-  timezone: z.string().default('Asia/Karachi'),
-  currency: z.string().length(3).default('PKR'),
+  password: password.optional(),
+  mustChangePassword: z.boolean().default(true),
+  timezone: z.string().min(3).max(60).default('Asia/Karachi'),
+  currency: z.string().length(3).toUpperCase().default('PKR'),
 });
-export type SignupInput = z.infer<typeof signupSchema>;
+export type CreateCompanyInput = z.infer<typeof createCompanySchema>;
+
+export const platformLoginSchema = z.object({
+  email: z.email().toLowerCase(),
+  password: z.string().min(1).max(128),
+});
+
+export const platformAdminSchema = z.object({
+  name: trimmed(2, 120),
+  email: z.email().toLowerCase(),
+  password,
+});
+
+export const companyStatusSchema = z.object({ status: z.enum(['ACTIVE', 'SUSPENDED']) });
 
 export const loginSchema = z.object({
   workspace: workspaceSlug,

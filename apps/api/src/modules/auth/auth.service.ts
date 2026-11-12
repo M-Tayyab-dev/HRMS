@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import type { LoginInput, SignupInput } from '@hrms/shared';
+import type { CreateCompanyInput, LoginInput } from '@hrms/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { config } from '../../config';
@@ -78,9 +78,13 @@ export class AuthService {
     return { id: row!.id, access, refresh: `${tenantId}.${secret}` };
   }
 
-  /* ---------------- Sign-up (new tenant) ---------------- */
+  /* ---------------- New client company (platform owners only) ---------------- */
 
-  async signup(input: SignupInput): Promise<SessionTokens> {
+  /**
+   * Creates a company (tenant) with its default structure and first Super Admin. There is no public sign-up:
+   * this is called only from the platform console. Without a password the Super Admin is emailed an invite.
+   */
+  async createCompany(input: CreateCompanyInput, createdBy: string): Promise<{ tenantId: string; userId: string; invited: boolean }> {
     const [existing] = await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, input.workspace)).limit(1);
     if (existing) throw conflict('That workspace name is taken', 'WORKSPACE_TAKEN');
 
@@ -96,9 +100,10 @@ export class AuthService {
         .values({
           tenantId: tenant!.id,
           email: input.email,
-          passwordHash: await hashPassword(input.password),
-          status: 'ACTIVE',
-          passwordChangedAt: new Date(),
+          passwordHash: input.password ? await hashPassword(input.password) : null,
+          status: input.password ? 'ACTIVE' : 'INVITED',
+          passwordChangedAt: input.password ? new Date() : null,
+          mustChangePassword: !!input.password && input.mustChangePassword,
           canPost: true,
         })
         .returning();
@@ -142,8 +147,9 @@ export class AuthService {
         { tenantId: tenant!.id, userId: user!.id, role: 'SUPER_ADMIN' },
         { tenantId: tenant!.id, userId: user!.id, role: 'EMPLOYEE' },
       ]);
-      await this.audit.log(tx, { tenantId: tenant!.id, action: 'tenant.signup', actorUserId: user!.id, actorLabel: input.email, entityType: 'tenant', entityId: tenant!.id });
-      return this.issue(tx, tenant!.id, user!.id, 0);
+      await this.audit.log(tx, { tenantId: tenant!.id, action: 'tenant.created', actorLabel: `platform:${createdBy}`, entityType: 'tenant', entityId: tenant!.id, metadata: { superAdmin: input.email, invited: !input.password } });
+      if (!input.password) await this.sendTokenEmail(tx, tenant!.id, { id: user!.id, email: input.email }, 'INVITE');
+      return { tenantId: tenant!.id, userId: user!.id, invited: !input.password };
     });
   }
 

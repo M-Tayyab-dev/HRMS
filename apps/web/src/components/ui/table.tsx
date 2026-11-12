@@ -35,8 +35,41 @@ export function DataTable<T>({
   if (loading) return <LoadingRows />;
   if (error) return <ErrorState message={error.message} />;
   if (!rows?.length) return <EmptyState title={empty} description={emptyDescription} />;
+  const [title, ...rest] = columns;
+  const labelled = rest.filter((c) => hasHeader(c.header));
+  const actions = rest.filter((c) => !hasHeader(c.header));
   return (
-    <div className="overflow-x-auto">
+    <>
+      {/* Phones: one card per row – first column as the title, the rest as label/value pairs. */}
+      <ul className="divide-y md:hidden">
+        {rows.map((r) => (
+          <li
+            key={rowKey(r)}
+            onClick={onRowClick ? () => onRowClick(r) : undefined}
+            onKeyDown={onRowClick ? (e) => (e.key === 'Enter' ? onRowClick(r) : undefined) : undefined}
+            tabIndex={onRowClick ? 0 : undefined}
+            className={cn('space-y-2.5 px-4 py-3.5 text-sm', onRowClick && 'cursor-pointer active:bg-muted/60')}
+          >
+            {title && <div className="min-w-0 font-medium">{title.cell(r)}</div>}
+            {labelled.length > 0 && (
+              <dl className="grid grid-cols-[minmax(0,40%)_1fr] gap-x-3 gap-y-1.5">
+                {labelled.map((c) => (
+                  <div key={c.key} className="contents">
+                    <dt className="text-xs text-muted-foreground">{c.header}</dt>
+                    <dd className="min-w-0 break-words">{c.cell(r)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            {actions.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                {actions.map((c) => <div key={c.key}>{c.cell(r)}</div>)}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    <div className="hidden overflow-x-auto md:block">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b bg-muted/50 text-left">
@@ -66,8 +99,11 @@ export function DataTable<T>({
         </tbody>
       </table>
     </div>
+    </>
   );
 }
+
+const hasHeader = (h: ReactNode) => h !== '' && h !== null && h !== undefined && h !== false;
 
 export function Pagination({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (p: number) => void }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));

@@ -15,6 +15,13 @@
       "when": 1794480344042,
       "tag": "0001_srs_v1_1_gaps",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794481948631,
+      "tag": "0002_platform_admins",
+      "breakpoints": true
     }
   ]
 }

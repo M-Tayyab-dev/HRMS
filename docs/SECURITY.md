@@ -3,8 +3,9 @@
 | Area | Control |
 |---|---|
 | Tenant isolation | Postgres Row-Level Security (FORCE) on all 51 tenant tables; app connects as `hrms_app` (no BYPASSRLS); tenant comes only from the verified session. Verified by `scripts/e2e-flows.mjs`. |
+| Company creation | No public sign-up. Only platform owners (separate accounts, own session cookie, lockout) create companies and their Super Admins; the first owner is created from the command line (`npm run platform:admin`). |
 | Passwords | Argon2id (m=19 MiB, t=2, p=1); 12+ chars with mixed case and digits; constant-time handling for unknown accounts. |
-| Brute force | Per-IP rate limits (login 10/min, signup 5/h, reset 5/15 min); account lock after 5 failures for 15 min, doubling on every further failure (30, 60, 120 … min, max 24 h) – SEC-04. |
+| Brute force | Per-IP rate limits (login 10/min, reset 5/15 min); account lock after 5 failures for 15 min, doubling on every further failure (30, 60, 120 … min, max 24 h) – SEC-04. |
 | Sessions | 15-min HS256 access token + 14-day rotating refresh token (hashed at rest, reuse detection revokes the family); `HttpOnly; SameSite=Strict; Secure` cookies; `tokenVersion` revokes all tokens on password change / disable. Users are re-validated on every request. Sessions end after the inactivity time Operations sets (default 30 min); only requests made while the person is using the page extend it, background polling does not, and an idle session cannot be refreshed – SEC-03. |
 | CSRF | SameSite=Strict + double-submit token header on every mutation. |
 | Authorisation | Permission strings per role (editable per tenant, can't grant what you don't hold); data scope (own / team / all) enforced in services; no self-approval in workflows; maker-checker on payroll. |

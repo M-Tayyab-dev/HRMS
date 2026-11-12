@@ -30,10 +30,12 @@
   --danger-soft: #fef2f2;
   --info: #1e3a8a;
   --info-soft: #eef2ff;
-  --sidebar: #0b1220;
-  --sidebar-foreground: #cbd5e1;
-  --sidebar-active: #1e293b;
-  --sidebar-heading: #64748b;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #334155;
+  --sidebar-active: #eff6ff;
+  --sidebar-active-foreground: #1d4ed8;
+  --sidebar-heading: #94a3b8;
+  --sidebar-border: #e2e8f0;
 }
 
 .dark {
@@ -59,10 +61,12 @@
   --danger-soft: #450a0a;
   --info: #93c5fd;
   --info-soft: #172554;
-  --sidebar: #070b14;
+  --sidebar: #0b1220;
   --sidebar-foreground: #cbd5e1;
   --sidebar-active: #1e293b;
+  --sidebar-active-foreground: #ffffff;
   --sidebar-heading: #64748b;
+  --sidebar-border: #1f2937;
 }
 
 @theme inline {
@@ -93,6 +97,8 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-heading: var(--sidebar-heading);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
+  --color-sidebar-border: var(--sidebar-border);
   --radius-lg: 0.75rem;
   --radius-md: 0.5rem;
 }
@@ -133,5 +139,13 @@
 @media print {
   .no-print {
     display: none !important;
+  }
+}
+
+/* Horizontal tab bars scroll by swipe without a visible scrollbar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
 }

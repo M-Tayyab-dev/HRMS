@@ -23,11 +23,34 @@ npm run dev:api        # terminal 2 – API on :4000
 npm run dev:web        # terminal 3 – web on http://localhost:3000
 ```
 
-Then either create your own company at <http://localhost:3000/signup>, or load a demo company:
+There is **no public sign-up**. Create your platform-owner account once (uses `PLATFORM_ADMIN_*` from `.env`, or pass flags):
+
+```bash
+npm run build -w @hrms/api && npm run platform:admin -- --email you@example.com --name "Your Name"
+```
+
+Sign in at <http://localhost:3000/platform/login>, then **New company** creates a client workspace and its Super Admin
+(who gets an invite email, or a temporary password you set). Or load a demo company:
 
 ```bash
 node scripts/seed-demo.mjs   # login details are written to demo-credentials.local.md
 ```
+
+## Going live (SaaS)
+
+All deployment settings are environment variables – no code edits. Set these on the hosting platform:
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL`, `DATABASE_ADMIN_URL` | App (RLS) and migration connections |
+| `APP_URL` | Public URL, used in emails |
+| `JWT_SECRET`, `DATA_HMAC_SECRET`, `DATA_ENCRYPTION_KEY` | Secrets – generate once, never change after data exists |
+| `COOKIE_SECURE=true`, `NODE_ENV=production` | Required in production |
+| `SMTP_URL`, `MAIL_FROM` | Outgoing email |
+| `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_APP_TAGLINE`, `NEXT_PUBLIC_SUPPORT_EMAIL` | Branding |
+| `API_INTERNAL_URL` | Only when web and API run as separate servers (not on Vercel) |
+
+Then run `npm run db:migrate` and `npm run platform:admin -- --email … --name …` once against the production database.
 
 ## Tests
 

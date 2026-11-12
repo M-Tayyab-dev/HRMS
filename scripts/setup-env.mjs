@@ -17,6 +17,7 @@ const out = template
   .replace('postgres://hrms_app:change-me@', `postgres://hrms_app:${appPw}@`)
   .replace('JWT_SECRET=change-me', `JWT_SECRET=${secret(48)}`)
   .replace('DATA_HMAC_SECRET=change-me', `DATA_HMAC_SECRET=${secret(48)}`)
-  .replace(/^DATA_ENCRYPTION_KEY=$/m, `DATA_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`);
+  .replace(/^DATA_ENCRYPTION_KEY=$/m, `DATA_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`)
+  .replace('PLATFORM_ADMIN_PASSWORD=change-me', `PLATFORM_ADMIN_PASSWORD=${secret(18)}Aa1`);
 writeFileSync('.env', out, { mode: 0o600 });
 console.log('Created .env with fresh secrets.');

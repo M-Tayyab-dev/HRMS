@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
 import { cn, relative } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
-import { LogoutIcon, NAV, type NavItem } from '@/lib/nav';
+import { activeItem, LogoutIcon, matches, NAV, type NavGroup, type NavItem } from '@/lib/nav';
 import { useTheme } from '../theme';
 import { Button } from '../ui/button';
 import { Avatar, Badge, Skeleton } from '../ui/display';
@@ -80,51 +80,81 @@ function NotificationBell() {
   );
 }
 
-function SideNav({ onNavigate }: { onNavigate?: () => void }) {
-  const pathname = usePathname();
+/** Nav entries this person may open, with groups that end up empty removed. */
+function useVisibleNav(): NavGroup[] {
   const { can, isTeamLead, me } = useAuth();
-  const { data: inbox } = useApi<unknown[]>('/approvals/inbox', { refetchInterval: 120_000 });
   const visible = (i: NavItem) => {
     if (i.employeeOnly && !me?.employee) return false;
     if (i.teamLead && !isTeamLead) return false;
     if (i.any?.length && !can(...i.any)) return false;
     return true;
   };
+  return NAV.map((g) => ({ ...g, items: g.items.filter(visible) })).filter((g) => g.items.length > 0);
+}
+
+function SideNav({ onNavigate }: { onNavigate?: () => void }) {
+  const pathname = usePathname();
+  const groups = useVisibleNav();
+  const { data: inbox } = useApi<unknown[]>('/approvals/inbox', { refetchInterval: 120_000 });
   return (
-    <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-      {NAV.map((s, idx) => {
-        const items = s.items.filter(visible);
-        if (!items.length) return null;
-        return (
-          <div key={s.label ?? idx}>
-            {s.label && <p className="mb-1.5 px-2 text-[11px] font-semibold tracking-wider text-sidebar-heading uppercase">{s.label}</p>}
-            <ul className="space-y-0.5">
-              {items.map((i) => {
-                const active = pathname === i.href || (i.href !== '/dashboard' && pathname.startsWith(`${i.href}/`));
-                return (
-                  <li key={i.href}>
-                    <Link
-                      href={i.href}
-                      onClick={onNavigate}
-                      aria-current={active ? 'page' : undefined}
-                      className={cn(
-                        'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-white',
-                        active && 'bg-sidebar-active font-medium text-white',
-                      )}
-                    >
-                      <i.icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                      <span className="truncate">{i.label}</span>
-                      {i.href === '/approvals' && !!inbox?.length && (
-                        <span className="ml-auto rounded-full bg-primary px-1.5 text-[10px] font-semibold text-white">{inbox.length}</span>
-                      )}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })}
+    <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 py-4">
+      <ul className="space-y-1">
+        {groups.map((g) => {
+          const active = g.items.some((i) => matches(pathname, i.href));
+          return (
+            <li key={g.label}>
+              <Link
+                href={g.items[0]!.href}
+                onClick={onNavigate}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-active hover:text-sidebar-active-foreground',
+                  active && 'bg-sidebar-active font-semibold text-sidebar-active-foreground',
+                )}
+              >
+                <g.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                <span className="truncate">{g.label}</span>
+                {g.label === 'Approvals' && !!inbox?.length && (
+                  <span className="ml-auto rounded-full bg-primary px-1.5 text-[10px] font-semibold text-white">{inbox.length}</span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
+
+/** Pages of the current section as tabs (e.g. Community → Feed · Announcements · Birthdays). */
+function SectionTabs() {
+  const pathname = usePathname();
+  const groups = useVisibleNav();
+  const group = groups.find((g) => g.items.some((i) => matches(pathname, i.href)));
+  if (!group || group.items.length < 2) return null;
+  const current = activeItem(pathname, group.items);
+  return (
+    <nav aria-label={group.label} className="no-scrollbar -mx-4 mb-6 overflow-x-auto overflow-y-hidden border-b px-4 sm:mx-0 sm:px-0">
+      <ul className="flex min-w-max gap-1">
+        {group.items.map((i) => {
+          const on = current?.href === i.href;
+          return (
+            <li key={i.href}>
+              <Link
+                href={i.href}
+                aria-current={on ? 'page' : undefined}
+                className={cn(
+                  '-mb-px flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm whitespace-nowrap transition-colors',
+                  on ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
+                )}
+              >
+                <i.icon className="h-4 w-4" aria-hidden />
+                {i.label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }
@@ -157,19 +187,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   const sidebar = (
-    <div className="flex h-full flex-col bg-sidebar">
-      <div className="flex h-14 items-center gap-2 border-b border-white/10 px-4">
+    <div className="flex h-full flex-col border-r border-sidebar-border bg-sidebar">
+      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
         <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white">
           <Building className="h-4 w-4" aria-hidden />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">{me.tenant.name}</p>
+          <p className="truncate text-sm font-semibold text-foreground">{me.tenant.name}</p>
           <p className="truncate text-[11px] text-sidebar-heading">{me.tenant.slug}</p>
         </div>
       </div>
       <SideNav onNavigate={() => setMobileOpen(false)} />
-      <div className="border-t border-white/10 p-3">
-        <button onClick={logout} className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground hover:bg-sidebar-active hover:text-white">
+      <div className="border-t border-sidebar-border p-3">
+        <button onClick={logout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground hover:bg-danger-soft hover:text-danger">
           <LogoutIcon className="h-4 w-4" aria-hidden /> Log out
         </button>
       </div>
@@ -186,7 +216,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <div className="absolute inset-0 bg-slate-950/60" onClick={() => setMobileOpen(false)} />
           <div className="absolute inset-y-0 left-0 w-72 max-w-[85%]">{sidebar}</div>
-          <Button variant="ghost" size="icon" className="absolute top-3 right-3 text-white" onClick={() => setMobileOpen(false)} aria-label="Close menu">
+          <Button variant="ghost" size="icon" className="absolute top-3 right-3 bg-card" onClick={() => setMobileOpen(false)} aria-label="Close menu">
             <X className="h-5 w-5" />
           </Button>
         </div>
@@ -233,6 +263,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       <main id="main" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+        <SectionTabs />
         {children}
       </main>
     </div>
