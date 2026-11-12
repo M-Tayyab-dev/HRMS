@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ROLES, ALL_PERMISSIONS } from '../permissions';
 import { MODULES } from '../modules';
-import { currencyCode, password, timeZone, trimmed } from './common';
+import { currencyCode, emailDomain, password, timeZone, trimmed } from './common';
 
 export const workspaceSlug = z
   .string()
@@ -22,6 +22,8 @@ export const createCompanySchema = z.object({
   mustChangePassword: z.boolean().default(true),
   /** Subscription plan; its modules and employee limit are copied to the company. */
   planId: z.uuid().optional(),
+  /** Login email domain; defaults to one made from the company name. */
+  emailDomain: emailDomain.optional(),
   timezone: timeZone.default('Asia/Karachi'),
   currency: currencyCode.default('PKR'),
 });
@@ -47,6 +49,7 @@ export const companyUpdateSchema = z.object({
   planId: z.uuid().nullable().optional(),
   modules: z.array(z.enum(MODULES)).optional(),
   maxEmployees: z.coerce.number().int().min(1).max(100000).nullable().optional(),
+  emailDomain: emailDomain.optional(),
 });
 export type CompanyUpdateInput = z.infer<typeof companyUpdateSchema>;
 

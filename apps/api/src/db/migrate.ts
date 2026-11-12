@@ -55,6 +55,10 @@ export function hardeningSql(): string {
     `CREATE POLICY tenants_read ON tenants FOR SELECT USING (true);`,
     `CREATE POLICY tenants_insert ON tenants FOR INSERT WITH CHECK (true);`,
     `CREATE POLICY tenants_update ON tenants FOR UPDATE USING (id = ${cur}) WITH CHECK (id = ${cur});`,
+    // Deleting a company is only possible for the database owner (maintenance scripts), one company at a time;
+    // the app role has no DELETE on tenants at all.
+    `DROP POLICY IF EXISTS tenants_delete ON tenants;`,
+    `CREATE POLICY tenants_delete ON tenants FOR DELETE USING (id = ${cur});`,
   );
   return lines.join('\n');
 }

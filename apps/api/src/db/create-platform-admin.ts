@@ -18,7 +18,7 @@ import { platformAdmins } from './schema';
 async function main() {
   const { values } = parseArgs({ options: { email: { type: 'string' }, name: { type: 'string' } } });
   const email = values.email ?? process.env.PLATFORM_ADMIN_EMAIL;
-  const name = values.name ?? process.env.PLATFORM_ADMIN_NAME ?? 'Platform owner';
+  const name = values.name ?? process.env.PLATFORM_ADMIN_NAME ?? 'Super Admin';
   const generated = !process.env.PLATFORM_ADMIN_PASSWORD;
   const password = process.env.PLATFORM_ADMIN_PASSWORD || `${randomToken(12)}Aa1!`;
   const input = platformAdminSchema.parse({ email, name, password });
@@ -33,10 +33,10 @@ async function main() {
     const [existing] = await db.select({ id: platformAdmins.id, ver: platformAdmins.tokenVersion }).from(platformAdmins).where(eq(platformAdmins.email, input.email));
     if (existing) {
       await db.update(platformAdmins).set({ passwordHash: hash, name: input.name, failedLoginCount: 0, lockedUntil: null, tokenVersion: existing.ver + 1 }).where(eq(platformAdmins.id, existing.id));
-      console.log(`Platform owner ${input.email} already existed – password reset.`);
+      console.log(`Super Admin ${input.email} already existed – password reset.`);
     } else {
       await db.insert(platformAdmins).values({ email: input.email, name: input.name, passwordHash: hash });
-      console.log(`Platform owner ${input.email} created.`);
+      console.log(`Super Admin ${input.email} created.`);
     }
     if (generated) console.log(`Password (shown once – store it safely): ${input.password}`);
     console.log('Sign in at <APP_URL>/platform/login');

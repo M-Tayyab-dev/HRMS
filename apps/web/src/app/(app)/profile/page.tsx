@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { CareerTimeline, DocumentsPanel } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardBody, CardHeader, KeyValue, PageHeader, Skeleton, StatusBadge } from '@/components/ui/display';
-import { Field, FormGrid, Input, Select, Textarea } from '@/components/ui/form';
+import { Field, FormGrid, Input, Select, Textarea, CnicInput, PhoneInput } from '@/components/ui/form';
 import { Tabs } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -79,9 +79,9 @@ function PersonalForm({ emp }: { emp: EmployeeDetail }) {
       <CardBody>
         <FormGrid>
           <Field label="Full name" error={fieldError(form, 'fullName')}>{(a) => <Input {...a} {...form.register('fullName')} />}</Field>
-          <Field label="CNIC number" error={fieldError(form, 'cnic')} hint="e.g. 35202-1234567-1">{(a) => <Input {...a} inputMode="numeric" {...form.register('cnic', empty)} />}</Field>
+          <Field label="CNIC number" error={fieldError(form, 'cnic')} hint="e.g. 35202-1234567-1">{(a) => <CnicInput {...a} {...form.register('cnic', empty)} />}</Field>
           <Field label="Father's name" error={fieldError(form, 'fatherName')}>{(a) => <Input {...a} {...form.register('fatherName', empty)} />}</Field>
-          <Field label="Father's CNIC" error={fieldError(form, 'fatherCnic')}>{(a) => <Input {...a} inputMode="numeric" {...form.register('fatherCnic', empty)} />}</Field>
+          <Field label="Father's CNIC" error={fieldError(form, 'fatherCnic')}>{(a) => <CnicInput {...a} {...form.register('fatherCnic', empty)} />}</Field>
           <Field label="Blood group" error={fieldError(form, 'bloodGroup')}>
             {(a) => (
               <Select {...a} {...form.register('bloodGroup', empty)}>
@@ -90,8 +90,8 @@ function PersonalForm({ emp }: { emp: EmployeeDetail }) {
               </Select>
             )}
           </Field>
-          <Field label="Contact number" error={fieldError(form, 'contactNo')}>{(a) => <Input {...a} type="tel" autoComplete="tel" {...form.register('contactNo', empty)} />}</Field>
-          <Field label="Emergency contact number" error={fieldError(form, 'emergencyContact')}>{(a) => <Input {...a} type="tel" {...form.register('emergencyContact', empty)} />}</Field>
+          <Field label="Contact number" error={fieldError(form, 'contactNo')}>{(a) => <PhoneInput {...a} {...form.register('contactNo', empty)} />}</Field>
+          <Field label="Emergency contact number" error={fieldError(form, 'emergencyContact')}>{(a) => <PhoneInput {...a} {...form.register('emergencyContact', empty)} />}</Field>
         </FormGrid>
         <div className="mt-5 flex justify-end">
           <Button type="submit" loading={form.formState.isSubmitting}>Save changes</Button>

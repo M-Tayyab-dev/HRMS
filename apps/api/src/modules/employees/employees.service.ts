@@ -14,9 +14,10 @@ import { alias } from 'drizzle-orm/pg-core';
 import { currentUser, type AuthUser } from '../../common/context';
 import { badRequest, conflict, forbidden } from '../../common/errors';
 import { addDays, todayIn } from '../../common/tz';
-import { inIds, like, offset, one, page, tenantInfo } from '../../common/util';
+import { emailInUse, inIds, like, offset, one, page, tenantInfo } from '../../common/util';
 import { NotificationsService } from '../../core/notifications.service';
 import { ScopeService } from '../../core/scope.service';
+import { hashPassword } from '../../common/crypto';
 import { DbService } from '../../db/db.service';
 import {
   departments,
@@ -142,8 +143,8 @@ export class EmployeesService {
     const actor = currentUser();
     for (const r of input.roles) if (!canAssignRole(actor.roles, r)) throw forbidden(`You cannot grant the ${r} role`);
     const { level } = await this.validatePlacement(input.departmentId, input.levelId);
-    const [dupe] = await tx.select({ id: users.id }).from(users).where(eq(users.email, input.email));
-    if (dupe) throw conflict('A user with this email already exists', 'EMAIL_TAKEN');
+    await this.assertCompanyEmail(input.email);
+    if (await emailInUse(this.db, input.email)) throw conflict('This email is already used by another account. Every account needs its own email.', 'EMAIL_TAKEN');
     // Subscription limit on active employees.
     const [plan] = await tx.select({ max: tenants.maxEmployees }).from(tenants).where(eq(tenants.id, actor.tenantId));
     if (plan?.max) {
@@ -189,12 +190,34 @@ export class EmployeesService {
       changeType: 'JOINED',
       recordedByUserId: actor.userId,
     });
-    const user = one(await tx.insert(users).values({ tenantId: actor.tenantId, email: input.email, employeeId: emp.id, status: 'INVITED' }).returning());
+    // HR either emails an invitation or sets the first password (the person can be asked to change it).
+    const user = one(
+      await tx
+        .insert(users)
+        .values({
+          tenantId: actor.tenantId,
+          email: input.email,
+          employeeId: emp.id,
+          status: input.password ? 'ACTIVE' : 'INVITED',
+          passwordHash: input.password ? await hashPassword(input.password) : null,
+          passwordChangedAt: input.password ? new Date() : null,
+          mustChangePassword: !!input.password && input.mustChangePassword,
+        })
+        .returning(),
+    );
     const roles = [...new Set([...input.roles, 'EMPLOYEE'])];
     await tx.insert(userRoles).values(roles.map((role) => ({ tenantId: actor.tenantId, userId: user.id, role })));
     await tx.update(employees).set({ userId: user.id }).where(eq(employees.id, emp.id));
-    if (input.sendInvite) await this.auth.sendTokenEmail(tx, actor.tenantId, user, 'INVITE', actor.userId);
+    if (input.sendInvite && !input.password) await this.auth.sendTokenEmail(tx, actor.tenantId, user, 'INVITE', actor.userId);
     return { ...emp, userId: user.id };
+  }
+
+  /** New or changed login emails must use the company's email domain (when one is set). */
+  private async assertCompanyEmail(email: string) {
+    const [t] = await this.db.tx.select({ domain: tenants.emailDomain }).from(tenants).where(eq(tenants.id, currentUser().tenantId));
+    if (t?.domain && !email.toLowerCase().endsWith(`@${t.domain}`)) {
+      throw badRequest(`Company emails must end with @${t.domain}`, 'EMAIL_DOMAIN');
+    }
   }
 
   async update(id: string, input: EmployeeUpdateInput) {
@@ -202,10 +225,14 @@ export class EmployeesService {
     const cur = one(await tx.select().from(employees).where(eq(employees.id, id)), 'Employee');
     if (input.departmentId || input.levelId) await this.validatePlacement(input.departmentId ?? cur.departmentId, input.levelId ?? cur.levelId);
     if (input.reportingManagerId === id) throw badRequest('An employee cannot report to themselves');
+    if (input.email && input.email !== cur.email) await this.assertCompanyEmail(input.email);
+    if (input.email && input.email !== cur.email && (await emailInUse(this.db, input.email, cur.userId ?? undefined))) {
+      throw conflict('This email is already used by another account. Every account needs its own email.', 'EMAIL_TAKEN');
+    }
     if (input.email && input.email !== cur.email && cur.userId) {
       await tx.update(users).set({ email: input.email }).where(eq(users.id, cur.userId));
     }
-    const { roles: _r, sendInvite: _s, ...rest } = input as EmployeeUpdateInput & { roles?: unknown; sendInvite?: unknown };
+    const { roles: _r, sendInvite: _s, password: _p, mustChangePassword: _m, ...rest } = input as EmployeeUpdateInput & { roles?: unknown; sendInvite?: unknown; password?: unknown; mustChangePassword?: unknown };
     const updated = one(await tx.update(employees).set(rest).where(eq(employees.id, id)).returning());
     // Level/department/salary changes through edit are recorded as an adjustment in the position history.
     if (input.levelId && input.levelId !== cur.levelId) {

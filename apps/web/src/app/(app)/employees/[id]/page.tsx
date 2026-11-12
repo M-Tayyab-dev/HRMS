@@ -10,7 +10,7 @@ import { DepartmentSelect, EmployeeSelect, useLevels } from '@/components/domain
 import { CareerTimeline, DocumentsPanel } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardBody, CardHeader, ErrorState, KeyValue, Skeleton, StatusBadge } from '@/components/ui/display';
-import { Field, FormGrid, Input, Select, Textarea } from '@/components/ui/form';
+import { Field, FormGrid, Input, Select, Textarea, CnicInput, PhoneInput, CompanyEmailInput } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -21,6 +21,7 @@ import type { EmployeeDetail } from '../../profile/page';
 
 function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
+  const { me } = useAuth();
   const [v, setV] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
   const { data: levels } = useLevels((v.departmentId as string) ?? emp.departmentId);
@@ -59,10 +60,10 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
       footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} loading={busy}>Save</Button></>}>
       <FormGrid cols={3}>
         <Field label="Full name">{(a) => <Input {...a} value={s('fullName')} onChange={set('fullName')} />}</Field>
-        <Field label="Company email">{(a) => <Input {...a} type="email" value={s('email')} onChange={set('email')} />}</Field>
+        <Field label="Company email">{(a) => <CompanyEmailInput {...a} domain={me?.tenant.emailDomain} value={s('email')} onChange={(v) => setV((x) => ({ ...x, email: v }))} />}</Field>
         <Field label="Designation">{(a) => <Input {...a} value={s('designation')} onChange={set('designation')} />}</Field>
         <Field label="Department">{(a) => <DepartmentSelect {...a} value={s('departmentId')} onChange={(e) => setV((x) => ({ ...x, departmentId: e.target.value, levelId: '' }))} />}</Field>
-        <Field label="Level">{(a) => <Select {...a} value={s('levelId')} onChange={set('levelId')}><option value="">Select…</option>{levels?.map((l) => <option key={l.id} value={l.id}>{l.code} – {l.title}</option>)}</Select>}</Field>
+        <Field label="Level" hint="Choosing a level fills in its default salary">{(a) => <Select {...a} value={s('levelId')} onChange={(e) => { const l = levels?.find((x) => x.id === e.target.value); setV((x) => ({ ...x, levelId: e.target.value, ...(l ? { basicSalary: l.defaultSalary } : {}) })); }}><option value="">Select…</option>{levels?.map((l) => <option key={l.id} value={l.id}>{l.code} – {l.title}</option>)}</Select>}</Field>
         <Field label="Basic salary">{(a) => <Input {...a} type="number" value={s('basicSalary')} onChange={set('basicSalary')} />}</Field>
         <Field label="Joining date">{(a) => <Input {...a} type="date" value={s('joiningDate')} onChange={set('joiningDate')} />}</Field>
         <Field label="Date of birth">{(a) => <Input {...a} type="date" value={s('dateOfBirth')} onChange={set('dateOfBirth')} />}</Field>
@@ -70,11 +71,11 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         <Field label="Reporting manager">{(a) => <EmployeeSelect {...a} placeholder="None" value={s('reportingManagerId')} onChange={set('reportingManagerId')} filter={(e) => e.id !== emp.id} />}</Field>
         <Field label="Hierarchy">{(a) => <Select {...a} value={s('hierarchyTier')} onChange={set('hierarchyTier')}>{HIERARCHY_TIERS.map((t) => <option key={t} value={t}>{HIERARCHY_LABELS[t]}</option>)}</Select>}</Field>
         <Field label="Blood group">{(a) => <Select {...a} value={s('bloodGroup')} onChange={set('bloodGroup')}><option value="">—</option>{BLOOD_GROUPS.map((b) => <option key={b}>{b}</option>)}</Select>}</Field>
-        <Field label="CNIC">{(a) => <Input {...a} value={s('cnic')} onChange={set('cnic')} />}</Field>
+        <Field label="CNIC">{(a) => <CnicInput {...a} value={s('cnic')} onChange={set('cnic')} />}</Field>
         <Field label="Father's name">{(a) => <Input {...a} value={s('fatherName')} onChange={set('fatherName')} />}</Field>
-        <Field label="Father's CNIC">{(a) => <Input {...a} value={s('fatherCnic')} onChange={set('fatherCnic')} />}</Field>
-        <Field label="Contact number">{(a) => <Input {...a} value={s('contactNo')} onChange={set('contactNo')} />}</Field>
-        <Field label="Emergency contact">{(a) => <Input {...a} value={s('emergencyContact')} onChange={set('emergencyContact')} />}</Field>
+        <Field label="Father's CNIC">{(a) => <CnicInput {...a} value={s('fatherCnic')} onChange={set('fatherCnic')} />}</Field>
+        <Field label="Contact number">{(a) => <PhoneInput {...a} value={s('contactNo')} onChange={set('contactNo')} />}</Field>
+        <Field label="Emergency contact">{(a) => <PhoneInput {...a} value={s('emergencyContact')} onChange={set('emergencyContact')} />}</Field>
       </FormGrid>
     </Dialog>
   );

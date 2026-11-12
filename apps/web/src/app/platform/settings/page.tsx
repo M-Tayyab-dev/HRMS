@@ -78,7 +78,7 @@ function Owners() {
   const [open, setOpen] = useState(false);
   return (
     <Card>
-      <CardHeader title="Platform owners" description="People who run this platform. Only an existing owner can add another." action={<Button size="sm" variant="outline" onClick={() => setOpen(true)}><ShieldCheck className="h-4 w-4" /> Add owner</Button>} />
+      <CardHeader title="Super Admins" description="People who run the whole platform: companies, plans and settings. Only an existing Super Admin can add another." action={<Button size="sm" variant="outline" onClick={() => setOpen(true)}><ShieldCheck className="h-4 w-4" /> Add Super Admin</Button>} />
       <DataTable rows={data} rowKey={(o) => o.id} columns={[
         { key: 'n', header: 'Name', cell: (o) => <div><p className="font-medium">{o.name}</p><p className="text-xs text-muted-foreground">{o.email}</p></div> },
         { key: 'l', header: 'Last sign-in', cell: (o) => (o.lastLoginAt ? dateTime(o.lastLoginAt) : 'never') },
@@ -128,7 +128,7 @@ export default function PlatformSettingsPage() {
       <PageHeader title="Platform settings" description="Settings that apply to every company." />
       <Tabs tabs={[
         { value: 'plans', label: 'Plans & pricing', content: <Plans /> },
-        { value: 'owners', label: 'Platform owners', content: <Owners /> },
+        { value: 'owners', label: 'Super Admins', content: <Owners /> },
         { value: 'email', label: 'Email', content: <Email myEmail={me.email} /> },
       ]} />
     </>

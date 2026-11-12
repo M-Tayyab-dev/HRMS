@@ -5,12 +5,14 @@ import { toast } from 'sonner';
 import { ApiError, api } from './api';
 
 /** GET with caching. `path = null` disables the query. */
-export function useApi<T>(path: string | null, opts: { enabled?: boolean; refetchInterval?: number } = {}) {
+export function useApi<T>(path: string | null, opts: { enabled?: boolean; refetchInterval?: number; fresh?: boolean } = {}) {
   return useQuery<T, ApiError>({
     queryKey: [path],
     queryFn: () => api.get<T>(path!),
     enabled: path !== null && (opts.enabled ?? true),
     refetchInterval: opts.refetchInterval,
+    // `fresh`: always reload when the page opens or regains focus (lists that can change outside this tab).
+    ...(opts.fresh ? { staleTime: 0, refetchOnMount: 'always' as const, refetchOnWindowFocus: true } : {}),
   });
 }
 

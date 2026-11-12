@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_TIERS, DOC_CATEGORIES } from '../enums';
 import { ROLES } from '../permissions';
-import { cnic, isoDate, money, optionalText, phone, trimmed, uuid } from './common';
+import { cnic, isoDate, money, optionalText, password, phone, trimmed, uuid } from './common';
 
 /** B1 – fields the employee may edit themselves. */
 export const selfProfileSchema = z.object({
@@ -29,11 +29,14 @@ export const employeeSchema = selfProfileSchema.extend({
   workScheduleId: uuid.nullable().optional(),
   roles: z.array(z.enum(ROLES)).default(['EMPLOYEE']),
   sendInvite: z.boolean().default(true),
+  /** Without an invitation, HR sets the first password (optional otherwise). */
+  password: password.optional(),
+  mustChangePassword: z.boolean().default(true),
 });
 export type EmployeeInput = z.infer<typeof employeeSchema>;
 
 export const employeeUpdateSchema = employeeSchema
-  .omit({ roles: true, sendInvite: true })
+  .omit({ roles: true, sendInvite: true, password: true, mustChangePassword: true })
   .partial()
   .extend({ employmentStatus: z.enum(EMPLOYMENT_STATUSES).optional() });
 export type EmployeeUpdateInput = z.infer<typeof employeeUpdateSchema>;

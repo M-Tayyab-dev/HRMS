@@ -107,7 +107,7 @@ export class AccessController {
     if (changed.some((r) => !canAssignRole(actor.roles, r))) throw forbidden('You cannot grant or revoke that role');
     if (target.roles.includes('SUPER_ADMIN') && !next.includes('SUPER_ADMIN')) {
       const [{ n }] = (await tx.select({ n: sql<number>`count(*)::int` }).from(userRoles).where(eq(userRoles.role, 'SUPER_ADMIN'))) as [{ n: number }];
-      if (n <= 1) throw badRequest('There must be at least one Super Admin');
+      if (n <= 1) throw badRequest('There must be at least one Company Admin');
     }
     await tx.delete(userRoles).where(eq(userRoles.userId, id));
     await tx.insert(userRoles).values(next.map((role) => ({ tenantId: actor.tenantId, userId: id, role })));
@@ -178,7 +178,7 @@ export class AccessController {
   @Audit('access.role_permissions_changed', 'role')
   async setRolePermissions(@Param('role') role: string, @Body(zp(rolePermissionsSchema)) body: z.infer<typeof rolePermissionsSchema>) {
     if (!ROLES.includes(role as Role)) throw badRequest('Unknown role');
-    if (role === 'SUPER_ADMIN') throw badRequest('Super Admin always has full access');
+    if (role === 'SUPER_ADMIN') throw badRequest('The Company Admin always has full access');
     const actor = currentUser();
     this.access.forgetAll();
     // Nobody can grant a permission they don't hold themselves (prevents privilege escalation).

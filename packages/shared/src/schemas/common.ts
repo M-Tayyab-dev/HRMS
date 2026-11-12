@@ -65,5 +65,15 @@ export const timeZone = z
     }
   }, 'Choose a time zone from the list');
 
+/** Email domain such as "prepecom.com" (lower case, no @). */
+export const emailDomain = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^(?=.{3,100}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, 'Enter a domain like company.com');
+
+/** Suggested company email domain from its name: "Prep Ecom Align" → "prepecomalign.com". */
+export const suggestEmailDomain = (name: string) => `${name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60) || 'company'}.com`;
+
 /** ISO 4217 currency code, e.g. "PKR". */
 export const currencyCode = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, 'Choose a currency from the list');

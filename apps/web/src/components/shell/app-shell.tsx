@@ -1,6 +1,6 @@
 'use client';
 
-import { MODULE_INFO } from '@hrms/shared';
+import { MODULE_INFO, ROLE_LABELS } from '@hrms/shared';
 import { Bell, Lock, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -269,7 +269,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 .filter((r) => r !== 'EMPLOYEE')
                 .map((r) => (
                   <Badge key={r} tone="primary">
-                    {r.replace('_', ' ').toLowerCase()}
+                    {ROLE_LABELS[r]}
                   </Badge>
                 ))}
             </span>

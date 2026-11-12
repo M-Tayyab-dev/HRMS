@@ -1,8 +1,8 @@
 import { PERMISSIONS, type Paginated } from '@hrms/shared';
 import { eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
-import type { Tx } from '../db/db.service';
-import { tenants, type TenantSettings } from '../db/schema';
+import type { DbService, Tx } from '../db/db.service';
+import { tenants, userDirectory, type TenantSettings } from '../db/schema';
 import { currentUser } from './context';
 import { conflict, forbidden, notFound } from './errors';
 
@@ -46,7 +46,7 @@ export function scoped(col: AnyPgColumn, ids: string[] | null): SQL | undefined 
 /** Permanent deletes need the "Delete records" permission on top of the module's manage permission. */
 export function requireDelete() {
   if (!currentUser().permissions.has(PERMISSIONS.DATA_DELETE)) {
-    throw forbidden('Deleting needs the "Delete records" permission. Ask your Super Admin to grant it.');
+    throw forbidden('Deleting needs the "Delete records" permission. Ask your Company Admin to grant it.');
   }
 }
 
@@ -71,4 +71,10 @@ export async function deleteSafely(tx: Tx, what: string, fn: () => Promise<unkno
     if (code === '23503') throw conflict(`${what} is still linked to other records and can't be deleted. Deactivate it instead.`, 'IN_USE');
     throw e;
   }
+}
+
+/** Emails are unique across all companies; one primary-key lookup in the platform-wide directory. */
+export async function emailInUse(db: DbService, email: string, exceptUserId?: string): Promise<boolean> {
+  const [row] = await db.root.select({ userId: userDirectory.userId }).from(userDirectory).where(eq(userDirectory.email, email.toLowerCase())).limit(1);
+  return !!row && row.userId !== exceptUserId;
 }

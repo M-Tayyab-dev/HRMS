@@ -1,14 +1,14 @@
 'use client';
 
-import { MODULE_INFO, MODULES, createCompanySchema, platformAdminSchema, type Module } from '@hrms/shared';
-import { Building2, LogOut, Settings } from 'lucide-react';
+import { MODULE_INFO, MODULES, createCompanySchema, platformAdminSchema, suggestEmailDomain, type Module } from '@hrms/shared';
+import { Building2, Copy, LogOut, RefreshCw, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
-import { Checkbox, Field, FormGrid, Input, Select } from '@/components/ui/form';
+import { Checkbox, CompanyEmailInput, Field, FormGrid, Input, Select } from '@/components/ui/form';
 import { Dialog } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { cn, money } from '@/lib/format';
@@ -77,36 +77,81 @@ export const planLabel = (p: Plan) => `${p.name} – ${money(p.priceMonthly, p.c
 
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
+/** Strong, easy-to-read password (no 0/O, 1/l/I) with upper, lower and digits. */
+export function generatePassword(length = 16): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const all = upper + lower + digits;
+  const pick = (set: string) => set[crypto.getRandomValues(new Uint32Array(1))[0]! % set.length]!;
+  const chars = [pick(upper), pick(lower), pick(digits), ...Array.from({ length: length - 3 }, () => pick(all))];
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.getRandomValues(new Uint32Array(1))[0]! % (i + 1);
+    [chars[i], chars[j]] = [chars[j]!, chars[i]!];
+  }
+  return chars.join('');
+}
+
+/** Shown once after a company is created with generated sign-in details. */
+export function CredentialsDialog({ creds, onClose }: { creds: { company: string; workspace: string; email: string; password: string } | null; onClose: () => void }) {
+  if (!creds) return null;
+  const url = typeof window !== 'undefined' ? `${window.location.origin}/login` : '/login';
+  const text = `${creds.company}\nSign in: ${url}\nEmail: ${creds.email}\nTemporary password: ${creds.password}\n(You'll be asked to choose your own password.)`;
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()} title="Company Admin sign-in details" description="Copy them now and share them securely. The password is not stored in readable form and is never emailed."
+      footer={<><Button variant="outline" onClick={() => navigator.clipboard.writeText(text).then(() => toast.success('Copied'))}><Copy className="h-4 w-4" /> Copy all</Button><Button onClick={onClose}>Done</Button></>}>
+      <dl className="space-y-3 text-sm">
+        {[['Company', creds.company], ['Sign-in page', url], ['Email', creds.email], ['Temporary password', creds.password]].map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+            <div className="min-w-0"><dt className="text-xs text-muted-foreground">{k}</dt><dd className={cn('truncate font-medium', k === 'Temporary password' && 'font-mono')}>{v}</dd></div>
+            <Button size="icon" variant="ghost" aria-label={`Copy ${k}`} onClick={() => navigator.clipboard.writeText(v!).then(() => toast.success(`${k} copied`))}><Copy className="h-4 w-4" /></Button>
+          </div>
+        ))}
+      </dl>
+    </Dialog>
+  );
+}
+
 export function NewCompanyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const router = useRouter();
   const { data: plans } = useApi<Plan[]>(open ? '/platform/plans' : null);
-  const [setPassword, setSetPassword] = useState(false);
+  // Default: generate sign-in details now; alternative: email a link so they choose their own password.
+  const [setPassword, setSetPassword] = useState(true);
+  const [creds, setCreds] = useState<{ company: string; workspace: string; email: string; password: string; tenantId: string } | null>(null);
   const blank = { companyName: '', workspace: '', adminName: '', email: '', password: undefined, mustChangePassword: true, planId: undefined, timezone: 'Asia/Karachi', currency: 'PKR' };
   const form = useZodForm(createCompanySchema, blank);
   useEffect(() => {
     if (open) {
-      form.reset(blank);
-      setSetPassword(false);
+      form.reset({ ...blank, password: generatePassword() } as never);
+      setSetPassword(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   const create = useAction<unknown, { tenantId: string; invited: boolean }>('post', '/platform/companies', {
     invalidate: ['/platform/companies', '/platform/plans'],
     onSuccess: (r) => {
-      toast.success(r.invited ? 'Company created. A welcome email with a link to set a password was sent to the Super Admin.' : 'Company created. A welcome email was sent; share the temporary password securely.');
       onOpenChange(false);
-      router.push(`/platform/companies/${r.tenantId}`);
+      if (r.invited) {
+        toast.success('Company created. A welcome email with a link to set a password was sent to the Company Admin.');
+        router.push(`/platform/companies/${r.tenantId}`);
+      } else {
+        const v = form.getValues();
+        setCreds({ company: v.companyName, workspace: v.workspace, email: v.email, password: v.password as string, tenantId: r.tenantId });
+      }
     },
   });
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="New company" description="Creates the workspace with default departments, levels and leave types, and emails its first Super Admin." size="lg"
+    <>
+    <CredentialsDialog creds={creds} onClose={() => { const id = creds?.tenantId; setCreds(null); if (id) router.push(`/platform/companies/${id}`); }} />
+    <Dialog open={open} onOpenChange={onOpenChange} title="New company" description="Creates the workspace with default departments, levels and leave types, and emails its first Company Admin." size="lg"
       footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={create.isPending} onClick={form.handleSubmit((v) => create.mutate(setPassword ? v : { ...v, password: undefined }))}>Create company</Button></>}>
       <div className="space-y-4">
         <FormGrid>
-          <Field label="Company name" required error={fieldError(form, 'companyName')}>{(a) => <Input {...a} {...form.register('companyName', { onChange: (e) => { if (!form.getFieldState('workspace').isDirty) form.setValue('workspace', slugify(e.target.value)); } })} />}</Field>
+          <Field label="Company name" required error={fieldError(form, 'companyName')}>{(a) => <Input {...a} {...form.register('companyName', { onChange: (e) => { if (!form.getFieldState('workspace').isDirty) form.setValue('workspace', slugify(e.target.value)); if (!form.getFieldState('emailDomain').isDirty) form.setValue('emailDomain', suggestEmailDomain(e.target.value)); } })} />}</Field>
           <Field label="Workspace" required error={fieldError(form, 'workspace')} hint="Used to sign in, e.g. acme">{(a) => <Input {...a} autoCapitalize="none" {...form.register('workspace')} />}</Field>
-          <Field label="Super Admin name" required error={fieldError(form, 'adminName')}>{(a) => <Input {...a} {...form.register('adminName')} />}</Field>
-          <Field label="Super Admin email" required error={fieldError(form, 'email')} hint="The welcome email goes here">{(a) => <Input {...a} type="email" {...form.register('email')} />}</Field>
+          <Field label="Company Admin name" required error={fieldError(form, 'adminName')}>{(a) => <Input {...a} {...form.register('adminName')} />}</Field>
+          <Field label="Email domain" required error={fieldError(form, 'emailDomain')} hint="Everyone's login email ends with this">{(a) => <Input {...a} autoCapitalize="none" placeholder="company.com" {...form.register('emailDomain', { setValueAs: (x) => (x === '' ? undefined : String(x).replace(/^@/, '').toLowerCase()) })} />}</Field>
+          <Field label="Company Admin email" required error={fieldError(form, 'email')} hint="Login email; the welcome email also goes here">{(a) => <CompanyEmailInput {...a} domain={form.watch('emailDomain')} value={form.watch('email')} onChange={(v) => form.setValue('email', v, { shouldValidate: form.formState.isSubmitted })} placeholder="admin" />}</Field>
           <Field label="Plan" error={fieldError(form, 'planId')} hint="Decides which modules the company gets">{(a) => (
             <Select {...a} {...form.register('planId', { setValueAs: (v) => (v === '' ? undefined : v) })}>
               <option value="">All modules (no plan)</option>
@@ -116,20 +161,36 @@ export function NewCompanyDialog({ open, onOpenChange }: { open: boolean; onOpen
           <Field label="Time zone" error={fieldError(form, 'timezone')}>{(a) => <Combobox {...a} value={form.watch('timezone')} onChange={(tz) => form.setValue('timezone', tz, { shouldDirty: true })} options={timeZoneOptions()} searchPlaceholder="Search city, region or UTC offset…" />}</Field>
           <Field label="Currency" error={fieldError(form, 'currency')}>{(a) => <Combobox {...a} value={form.watch('currency')} onChange={(c) => form.setValue('currency', c, { shouldDirty: true })} options={currencyOptions()} renderValue={(o) => o.value} searchPlaceholder="Search currency…" />}</Field>
         </FormGrid>
-        <Checkbox label="Set a temporary password instead of emailing a set-password link" checked={setPassword} onChange={(e) => setSetPassword(e.target.checked)} />
+        <fieldset className="space-y-2">
+          <legend className="mb-1 text-sm font-medium">Company Admin sign-in</legend>
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="radio" name="admin-access" className="mt-1 accent-[var(--primary)]" checked={setPassword} onChange={() => { setSetPassword(true); if (!form.getValues('password')) form.setValue('password', generatePassword()); }} />
+            <span><span className="font-medium">Generate sign-in details now</span><span className="block text-xs text-muted-foreground">You see the email and a temporary password to share. They choose their own password at first sign-in.</span></span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="radio" name="admin-access" className="mt-1 accent-[var(--primary)]" checked={!setPassword} onChange={() => setSetPassword(false)} />
+            <span><span className="font-medium">Email a link to set their own password</span><span className="block text-xs text-muted-foreground">Nobody else ever sees their password.</span></span>
+          </label>
+        </fieldset>
         {setPassword && (
-          <Field label="Temporary password" required error={fieldError(form, 'password')} hint="They must change it at first sign-in. It is not included in the email.">{(a) => <Input {...a} type="password" autoComplete="new-password" {...form.register('password')} />}</Field>
+          <Field label="Temporary password" required error={fieldError(form, 'password')} hint="Generated for you; you can edit it. A welcome email is still sent, without the password.">{(a) => (
+            <div className="flex gap-2">
+              <Input {...a} className="font-mono" autoComplete="off" {...form.register('password')} />
+              <Button type="button" variant="outline" onClick={() => form.setValue('password', generatePassword(), { shouldValidate: true })}><RefreshCw className="h-4 w-4" /> New</Button>
+            </div>
+          )}</Field>
         )}
       </div>
     </Dialog>
+    </>
   );
 }
 
 export function NewOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const form = useZodForm(platformAdminSchema, { name: '', email: '', password: '' });
-  const add = useAction('post', '/platform/admins', { invalidate: ['/platform/admins'], success: 'Platform owner added', onSuccess: () => { form.reset(); onOpenChange(false); } });
+  const add = useAction('post', '/platform/admins', { invalidate: ['/platform/admins'], success: 'Super Admin added', onSuccess: () => { form.reset(); onOpenChange(false); } });
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Add platform owner" description="Platform owners manage every company, plan and platform setting."
+    <Dialog open={open} onOpenChange={onOpenChange} title="Add Super Admin" description="Super Admins manage every company, plan and platform setting."
       footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={add.isPending} onClick={form.handleSubmit((v) => add.mutate(v))}>Add owner</Button></>}>
       <div className="space-y-4">
         <Field label="Name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} {...form.register('name')} />}</Field>

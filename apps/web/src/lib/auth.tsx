@@ -34,6 +34,8 @@ export interface Me {
     timezone: string;
     currency: string;
     logoFileId: string | null;
+    /** Login emails of this company end with @emailDomain. */
+    emailDomain: string | null;
     /** Feature modules in the company's plan. */
     modules: string[];
     maxEmployees: number | null;

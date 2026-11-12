@@ -277,6 +277,10 @@ async function main() {
   expect((await emailOnly.post('/auth/login', { email: `esha@${ws}.test`, password: pw })).status === 200, 'sign in with email and password only');
   expect((await emailOnly.post('/auth/login', { email: `nobody-${ws}@example.test`, password: pw })).status === 401, 'unknown email is rejected');
 
+  // ---- Emails are unique across all companies
+  const dupCompany = await platform.post('/platform/companies', { companyName: 'Dup Co', workspace: `${ws}-dup`, adminName: 'Dup', email: `ESHA@${ws}.test`, password: pw, mustChangePassword: false });
+  expect(dupCompany.status === 409 && dupCompany.data.code === 'EMAIL_TAKEN', 'an email already used in one company cannot be used for another', dupCompany);
+
   // ---- Deleting records needs the "Delete records" permission (Super Admin by default)
   const pol = await HR.post('/policies', { category: 'COMPANY', title: 'Temporary policy', content: 'Draft text to be removed.' });
   expect(pol.status === 201, 'HR creates a policy', pol);
@@ -312,7 +316,18 @@ async function main() {
   expect(suspended.data.status === 'SUSPENDED', 'platform owner suspends a company');
   expect((await other.get('/employees')).status === 401, 'suspended company is locked out immediately');
 
+  // ---- Company email domain and direct corrections by HR
+  const wrongDomain = await admin.post('/employees', { fullName: 'Wrong Domain', email: 'wrong@elsewhere.test', departmentId: sales.id, levelId: lvl('L1').id, designation: 'Associate', joiningDate: today, sendInvite: false });
+  expect(wrongDomain.status === 400 && wrongDomain.data.code === 'EMAIL_DOMAIN', 'employee emails must use the company email domain', wrongDomain);
+  const fixDay = prevWeekday(today, 5);
+  const fixed = await HR.post('/attendance/days/correct', { employeeId: emp.id, date: fixDay, checkIn: '09:00', checkOut: '18:00', note: 'Device was offline' });
+  expect(fixed.status === 201 && fixed.data.day?.status === 'PRESENT', 'HR corrects a day directly, no approval needed', fixed);
+  expect((await E.post('/attendance/days/correct', { employeeId: emp.id, date: fixDay, checkIn: '08:00', note: 'Trying myself' })).status === 403, 'employees cannot correct attendance directly');
+
   console.log(`\nAll flows passed for workspace "${ws}".`);
+  // Test companies are removed afterwards so they don't pile up.
+  const { deleteTestCompanies } = await import('./cleanup-test-companies.mjs');
+  await deleteTestCompanies([ws, `${ws}-b`]);
 }
 
 main().catch((e) => {

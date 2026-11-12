@@ -24,8 +24,8 @@ export default function PlatformLoginPage() {
   });
   return (
     <div className="mx-auto max-w-sm pt-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Platform sign in</h1>
-      <p className="mt-1 text-sm text-muted-foreground">For the service operator. Company staff sign in at the regular login page.</p>
+      <h1 className="text-2xl font-semibold tracking-tight">Super Admin sign in</h1>
+      <p className="mt-1 text-sm text-muted-foreground">For Super Admins who run the platform. Company staff sign in at the regular login page.</p>
       <Card className="mt-6">
         <CardBody>
           <form onSubmit={onSubmit} className="space-y-4" noValidate>

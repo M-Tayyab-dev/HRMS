@@ -1,8 +1,8 @@
 'use client';
 
 import { PERMISSIONS as P, attendanceCorrectionSchema } from '@hrms/shared';
-import { Copy, Cpu, FileUp, Home, Plus } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Copy, Cpu, FileUp, Home, Pencil, Plus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { DecisionButtons, DepartmentSelect, EmployeeSelect } from '@/components/domain';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,36 @@ function CorrectionDialog({ open, onOpenChange, defaultDate }: { open: boolean; 
           <Field label="Correct check-out" error={fieldError(form, 'checkOut')}>{(a) => <Input {...a} type="time" {...form.register('checkOut', empty)} />}</Field>
         </FormGrid>
         <Field label="Reason" required error={fieldError(form, 'reason')}>{(a) => <Textarea {...a} rows={3} {...form.register('reason')} />}</Field>
+      </div>
+    </Dialog>
+  );
+}
+
+/** HR / Company Admin: fix anyone's day directly (applied at once, kept in the audit log). */
+function DirectCorrectionDialog({ open, onOpenChange, employeeId, date: defaultDate }: { open: boolean; onOpenChange: (o: boolean) => void; employeeId?: string; date?: string }) {
+  const { me } = useAuth();
+  const [v, setV] = useState({ employeeId: '', date: todayLocal(), checkIn: '', checkOut: '', note: '' });
+  useEffect(() => {
+    if (open) setV({ employeeId: employeeId ?? me?.employee?.id ?? '', date: defaultDate ?? todayLocal(), checkIn: '', checkOut: '', note: '' });
+  }, [open, employeeId, defaultDate, me]);
+  const save = useAction('post', '/attendance/days/correct', {
+    invalidate: ['/attendance', '/dashboard', '/calendar'],
+    success: 'Attendance corrected',
+    body: () => ({ employeeId: v.employeeId, date: v.date, note: v.note, ...(v.checkIn ? { checkIn: v.checkIn } : {}), ...(v.checkOut ? { checkOut: v.checkOut } : {}) }),
+    onSuccess: () => onOpenChange(false),
+  });
+  const ready = v.employeeId && v.date && (v.checkIn || v.checkOut) && v.note.trim().length >= 3;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="Correct attendance" description="Applied immediately – no approval needed. The original device punches and your note stay in the audit log."
+      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={!ready} loading={save.isPending} onClick={() => save.mutate(undefined)}>Save correction</Button></>}>
+      <div className="space-y-4">
+        <Field label="Employee" required>{(a) => <EmployeeSelect {...a} value={v.employeeId} onChange={(e) => setV({ ...v, employeeId: e.target.value })} />}</Field>
+        <FormGrid cols={3}>
+          <Field label="Date" required>{(a) => <Input {...a} type="date" max={todayLocal()} value={v.date} onChange={(e) => setV({ ...v, date: e.target.value })} />}</Field>
+          <Field label="Check-in">{(a) => <Input {...a} type="time" value={v.checkIn} onChange={(e) => setV({ ...v, checkIn: e.target.value })} />}</Field>
+          <Field label="Check-out">{(a) => <Input {...a} type="time" value={v.checkOut} onChange={(e) => setV({ ...v, checkOut: e.target.value })} />}</Field>
+        </FormGrid>
+        <Field label="Reason" required hint="e.g. Device was offline, confirmed with Team Lead">{(a) => <Textarea {...a} rows={2} value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} />}</Field>
       </div>
     </Dialog>
   );
@@ -104,6 +134,10 @@ function MyAttendance() {
   const { data: days, isLoading } = useApi<Day[]>(showAll ? `/attendance/days${qs({ from, to })}` : null);
   const { data: corrections } = useApi<Correction[]>('/attendance/corrections?mine=true');
   const [corr, setCorr] = useState<{ open: boolean; date?: string }>({ open: false });
+  const { can } = useAuth();
+  const manager = can(P.ATTENDANCE_MANAGE); // HR / Company Admin fix attendance directly
+  const [fix, setFix] = useState<{ open: boolean; date?: string }>({ open: false });
+  const correct = (d?: string) => (manager ? setFix({ open: true, date: d }) : setCorr({ open: true, date: d }));
   const f = dash?.figures;
   const col = (k: string) => dash?.colors[k] ?? '#999';
   const statusCols = [
@@ -119,7 +153,7 @@ function MyAttendance() {
             {lastMonths(12).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </Select>
         )}</Field>
-        <Button onClick={() => setCorr({ open: true })}><Plus className="h-4 w-4" /> Request correction</Button>
+        <Button onClick={() => correct()}>{manager ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />} {manager ? 'Correct attendance' : 'Request correction'}</Button>
       </div>
 
       {/* Summary */}
@@ -205,7 +239,7 @@ function MyAttendance() {
             { key: 'w', header: 'Working hours', cell: (d) => <span className="tabular-nums">{dur(d.workedMinutes)}</span> },
             { key: 'b', header: 'Break', hideOnMobile: true, cell: (d) => (d.skippedBreak ? <Badge tone="info">skipped</Badge> : d.breakMinutes ? `${d.breakMinutes}m` : '—') },
             { key: 'ot', header: 'Overtime', hideOnMobile: true, cell: (d) => (d.overtimeMinutes ? `${d.overtimeMinutes}m` : '—') },
-            { key: 'c', header: <span className="sr-only">Actions</span>, cell: (d) => <Button size="sm" variant="ghost" onClick={() => setCorr({ open: true, date: d.date })}>Request correction</Button> },
+            { key: 'c', header: <span className="sr-only">Actions</span>, cell: (d) => <Button size="sm" variant="ghost" onClick={() => correct(d.date)}>{manager ? 'Correct' : 'Request correction'}</Button> },
           ]} />
         </Card>
       )}
@@ -222,6 +256,7 @@ function MyAttendance() {
         </Card>
       )}
       <CorrectionDialog open={corr.open} defaultDate={corr.date} onOpenChange={(o) => setCorr({ open: o })} />
+      <DirectCorrectionDialog open={fix.open} date={fix.date} onOpenChange={(o) => setFix({ open: o })} />
     </div>
   );
 }
@@ -230,6 +265,8 @@ interface DailyRow { employeeId: string; employeeCode: string; fullName: string;
 interface MonthlyRow { employeeId: string; employeeCode: string; fullName: string; departmentName: string; present: number; late: number; absent: number; onLeave: number; halfDay: number; workedMinutes: number; scheduledMinutes: number; lateMinutes: number; overtimeMinutes: number }
 
 function Reports() {
+  const { can } = useAuth();
+  const [fix, setFix] = useState<{ open: boolean; employeeId?: string }>({ open: false });
   const [day, setDay] = useState(todayLocal());
   const [month, setMonth] = useState(todayLocal().slice(0, 7));
   const [dept, setDept] = useState('');
@@ -259,8 +296,10 @@ function Reports() {
           { key: 'w', header: 'Worked', hideOnMobile: true, cell: (r) => hours(r.workedMinutes ?? 0) },
           { key: 'l', header: 'Late', hideOnMobile: true, cell: (r) => (r.lateMinutes ? `${r.lateMinutes}m` : '—') },
           { key: 's', header: 'Status', cell: (r) => <StatusBadge status={r.status} /> },
+          ...(can(P.ATTENDANCE_MANAGE) ? [{ key: 'fix', header: <span className="sr-only">Correct</span>, cell: (r: DailyRow) => <Button size="sm" variant="ghost" onClick={() => setFix({ open: true, employeeId: r.employeeId })}><Pencil className="h-3.5 w-3.5" /> Correct</Button> }] : []),
         ]} />
       </Card>
+      <DirectCorrectionDialog open={fix.open} employeeId={fix.employeeId} date={day} onOpenChange={(o) => setFix({ open: o })} />
       <Card>
         <CardHeader title="Monthly report" action={<div className="flex gap-2"><Input type="month" className="w-auto" aria-label="Month" value={month} onChange={(e) => setMonth(e.target.value)} /><Button variant="outline" size="sm" onClick={exportCsv}>Export CSV</Button></div>} />
         <DataTable loading={ml} rows={monthly} rowKey={(r) => r.employeeId} empty="No attendance for this month" columns={[

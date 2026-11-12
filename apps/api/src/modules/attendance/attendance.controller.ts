@@ -486,6 +486,33 @@ export class AttendanceController {
     await this.svc.ingest(punches, 'CORRECTION');
   }
 
+  /**
+   * HR / Company Admin fix a day directly (no approval needed for people who manage attendance).
+   * Stored as correction punches, so the original device punches stay in the history and the audit log.
+   */
+  @Post('days/correct')
+  @RequireAny(P.ATTENDANCE_MANAGE)
+  @Audit('attendance.corrected_directly', 'employee')
+  async correctDirectly(@Body(zp(z.object({
+    employeeId: z.uuid(),
+    date: z.iso.date(),
+    checkIn: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+    checkOut: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+    note: z.string().trim().min(3).max(300),
+  }))) body: { employeeId: string; date: string; checkIn?: string; checkOut?: string; note: string }) {
+    if (!body.checkIn && !body.checkOut) throw badRequest('Enter a check-in or check-out time');
+    if (body.checkIn && body.checkOut && body.checkOut <= body.checkIn) throw badRequest('Check-out must be after check-in');
+    const t = await this.svc.tenant();
+    if (body.date > todayIn(t.timezone)) throw badRequest('You cannot correct a future day');
+    const note = `Corrected by ${currentUser().email}: ${body.note}`;
+    const punches = [];
+    if (body.checkIn) punches.push({ employeeId: body.employeeId, at: zonedInstant(body.date, body.checkIn, t.timezone), type: 'IN' as const, note });
+    if (body.checkOut) punches.push({ employeeId: body.employeeId, at: zonedInstant(body.date, body.checkOut, t.timezone), type: 'OUT' as const, note });
+    await this.svc.ingest(punches, 'CORRECTION');
+    const [day] = await this.db.tx.select().from(attendanceDays).where(and(eq(attendanceDays.employeeId, body.employeeId), eq(attendanceDays.date, body.date)));
+    return { id: body.employeeId, day: day ?? null };
+  }
+
   @Post('corrections/:id/decision')
   @Audit('attendance.correction_decided', 'attendance_correction')
   async decideCorrection(@Param('id', ParseUUIDPipe) id: string, @Body(zp(decision)) body: DecisionInput) {

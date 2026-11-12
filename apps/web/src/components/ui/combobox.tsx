@@ -99,7 +99,7 @@ export function Combobox({
             className,
           )}
         >
-          <span className={cn('min-w-0 truncate', !selected && 'text-muted-foreground/70')}>
+          <span className={cn('min-w-0 truncate', !selected && 'text-muted-foreground/70')} title={selected?.label}>
             {selected ? (renderValue ? renderValue(selected) : selected.label) : (value || placeholder)}
           </span>
           <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -109,7 +109,7 @@ export function Combobox({
         <P.Content
           align="start"
           sideOffset={4}
-          className="z-50 w-[var(--radix-popover-trigger-width)] min-w-64 overflow-hidden rounded-md border bg-card shadow-lg"
+          className="z-50 w-[var(--radix-popover-trigger-width)] min-w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border bg-card shadow-lg"
           onOpenAutoFocus={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).querySelector('input')?.focus(); }}
         >
           <div className="flex items-center gap-2 border-b px-3">
@@ -140,7 +140,7 @@ export function Combobox({
                 className={cn('flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm', i === active && 'bg-muted')}
               >
                 <Check className={cn('h-4 w-4 shrink-0 text-primary', o.value === value ? 'opacity-100' : 'opacity-0')} aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                <span className="min-w-0 flex-1 truncate" title={o.label}>{o.label}</span>
                 {o.hint && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{o.hint}</span>}
               </li>
             ))}

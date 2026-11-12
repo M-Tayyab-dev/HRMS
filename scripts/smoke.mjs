@@ -64,12 +64,13 @@ export async function platformClient() {
 
 /** Creates a company with a Super Admin and returns a Client signed in as that admin. */
 export async function createCompany(platform, { companyName, workspace, adminName, email, password }) {
-  const r = await platform.post('/platform/companies', { companyName, workspace, adminName, email, password, mustChangePassword: false });
+  // Test companies use their admin's email domain (e.g. acme-1a2b3c.test).
+  const r = await platform.post('/platform/companies', { companyName, workspace, adminName, email, password, mustChangePassword: false, emailDomain: email.split('@')[1] });
   expect(r.status === 201, `company ${workspace} created`, r);
   const c = new Client();
   await c.get('/auth/csrf');
   const l = await c.post('/auth/login', { workspace, email, password });
-  expect(l.status === 200, `super admin of ${workspace} signs in`, l);
+  expect(l.status === 200, `company admin of ${workspace} signs in`, l);
   return c;
 }
 
@@ -82,7 +83,7 @@ async function main() {
   await anonSignup.get('/auth/csrf');
   const pub = await anonSignup.post('/auth/signup', { companyName: 'Acme', workspace, adminName: 'Ada Admin', email, password });
   expect(pub.status === 404, 'public sign-up does not exist', pub);
-  expect((await anonSignup.post('/platform/companies', { companyName: 'Acme', workspace, adminName: 'Ada', email, password })).status === 401, 'creating a company needs a platform owner');
+  expect((await anonSignup.post('/platform/companies', { companyName: 'Acme', workspace, adminName: 'Ada', email, password })).status === 401, 'creating a company needs a Super Admin');
 
   const platform = await platformClient();
   const noCsrf = await platform.post('/platform/companies', { companyName: 'Acme', workspace, adminName: 'Ada Admin', email, password }, { csrf: false });
@@ -90,7 +91,7 @@ async function main() {
   const c = await createCompany(platform, { companyName: 'Acme Corp', workspace, adminName: 'Ada Admin', email, password });
 
   const me = await c.get('/auth/me');
-  expect(me.status === 200 && me.data.user.roles.includes('SUPER_ADMIN'), 'me returns super admin', me);
+  expect(me.status === 200 && me.data.user.roles.includes('SUPER_ADMIN'), 'me returns company admin', me);
 
   const anon = new Client();
   const unauth = await anon.get('/auth/me');
@@ -104,6 +105,8 @@ async function main() {
   const refreshed = await anon.post('/auth/refresh');
   expect(refreshed.status === 200, 'refresh rotates session', refreshed);
   console.log(JSON.stringify({ workspace, email }));
+  const { deleteTestCompanies } = await import('./cleanup-test-companies.mjs');
+  await deleteTestCompanies([workspace]);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

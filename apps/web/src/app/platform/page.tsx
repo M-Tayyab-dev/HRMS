@@ -13,7 +13,7 @@ import { NewCompanyDialog, PlatformNav, usePlatformMe, type CompanyRow } from '.
 /** Landing page after a platform owner signs in: pick a company, or open platform-wide settings. */
 export default function PlatformPage() {
   const { data: me, isLoading } = usePlatformMe();
-  const { data: companies, isLoading: cl } = useApi<CompanyRow[]>(me ? '/platform/companies' : null);
+  const { data: companies, isLoading: cl } = useApi<CompanyRow[]>(me ? '/platform/companies' : null, { fresh: true });
   const [q, setQ] = useState('');
   const [newCompany, setNewCompany] = useState(false);
   const shown = useMemo(() => {
@@ -25,14 +25,14 @@ export default function PlatformPage() {
   return (
     <>
       <PlatformNav me={me} />
-      <PageHeader title="Choose a company" description="Open a company to manage its plan, modules and Super Admins, or change settings that apply to all companies."
+      <PageHeader title="Choose a company" description="Open a company to manage its plan, modules and Company Admins, or change settings that apply to all companies."
         actions={<Button onClick={() => setNewCompany(true)}><Plus className="h-4 w-4" /> New company</Button>} />
 
       <Link href="/platform/settings" className="mb-6 flex items-center gap-4 rounded-xl border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-primary-soft/40">
         <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-soft text-primary"><Settings className="h-5 w-5" aria-hidden /></span>
         <span className="min-w-0 flex-1">
           <span className="block font-medium">General settings for all companies</span>
-          <span className="block text-sm text-muted-foreground">Plans and pricing, platform owners and outgoing email.</span>
+          <span className="block text-sm text-muted-foreground">Plans and pricing, Super Admins and outgoing email.</span>
         </span>
         <ChevronRight className="h-5 w-5 text-muted-foreground" aria-hidden />
       </Link>

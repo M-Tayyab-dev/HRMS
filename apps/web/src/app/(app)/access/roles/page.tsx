@@ -71,7 +71,7 @@ export default function RolesPage() {
 
   return (
     <>
-      <PageHeader title="Roles & permissions" description="Choose a role, then switch on what it can do. Super Admin always has full access. You can only grant permissions you hold yourself." />
+      <PageHeader title="Roles & permissions" description="Choose a role, then switch on what it can do. The Company Admin always has full access (within your plan). You can only grant permissions you hold yourself." />
 
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Role">
         {editable.map((r) => (

@@ -1,11 +1,12 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import type { CreateCompanyInput, LoginInput } from '@hrms/shared';
+import { suggestEmailDomain, type CreateCompanyInput, type LoginInput } from '@hrms/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { config } from '../../config';
 import { als } from '../../common/context';
 import { hashPassword, randomToken, sha256, verifyPassword } from '../../common/crypto';
 import { badRequest, conflict } from '../../common/errors';
+import { emailInUse } from '../../common/util';
 import { AuditService } from '../../core/audit.service';
 import { MailService } from '../../core/mail.service';
 import { DbService, type Tx } from '../../db/db.service';
@@ -90,13 +91,24 @@ export class AuthService {
     const [existing] = await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, input.workspace)).limit(1);
     if (existing) throw conflict('That workspace name is taken', 'WORKSPACE_TAKEN');
 
+    if (await emailInUse(this.db, input.email)) throw conflict('This email is already used by another account. Use a different email for the Company Admin.', 'EMAIL_TAKEN');
     const plan = input.planId ? (await this.db.root.select().from(platformPlans).where(eq(platformPlans.id, input.planId)))[0] : undefined;
     if (input.planId && !plan) throw badRequest('Choose a valid plan', 'PLAN_NOT_FOUND');
+
+    // Company email domain: the one given, or one made from the company name (then the workspace) that is free.
+    const domainTaken = async (d: string) => (await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.emailDomain, d)).limit(1)).length > 0;
+    let domain = input.emailDomain ?? suggestEmailDomain(input.companyName);
+    if (await domainTaken(domain)) {
+      if (input.emailDomain) throw conflict(`The email domain ${domain} is already used by another company`, 'DOMAIN_TAKEN');
+      domain = suggestEmailDomain(input.workspace);
+      if (await domainTaken(domain)) domain = `${input.workspace.replace(/[^a-z0-9]/g, '')}${Date.now().toString(36).slice(-4)}.com`;
+    }
 
     return this.db.root.transaction(async (tx) => {
       const [tenant] = await tx
         .insert(tenants)
         .values({
+          emailDomain: domain,
           name: input.companyName,
           slug: input.workspace,
           timezone: input.timezone,
@@ -331,14 +343,14 @@ export class AuthService {
       text: [
         `Hi ${admin.name},`,
         '',
-        `Your company workspace "${tenant?.name}" has been created and you are its Super Admin.`,
+        `Your company workspace "${tenant?.name}" has been created and you are its Company Admin.`,
         '',
         `Workspace: ${tenant?.slug}`,
         `Your email: ${admin.email}`,
         '',
         action,
         '',
-        'As Super Admin you can add employees, departments and levels, and decide what each role may do under Access & roles.',
+        'As Company Admin you can add employees, departments and levels, and decide what each role may do under Access & roles.',
         '',
         'If you did not expect this email, you can ignore it.',
       ].join('\n'),
@@ -450,7 +462,7 @@ export class AuthService {
       },
       employee: emp ?? null,
       onboardingRequired: !!emp && !emp.onboardingCompletedAt,
-      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, logoFileId: tenant!.logoFileId, modules: tenant!.modules, maxEmployees: tenant!.maxEmployees, settings: tenant!.settings },
+      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, logoFileId: tenant!.logoFileId, emailDomain: tenant!.emailDomain, modules: tenant!.modules, maxEmployees: tenant!.maxEmployees, settings: tenant!.settings },
     };
   }
 }

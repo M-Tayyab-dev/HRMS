@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Doc } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader, PageHeader } from '@/components/ui/display';
-import { Field, FormGrid, Input } from '@/components/ui/form';
+import { Field, FormGrid, Input, CnicInput, PhoneInput } from '@/components/ui/form';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/hooks';
@@ -86,8 +86,8 @@ export default function OnboardingPage() {
         <CardHeader title="2. Essential details" description="Skip any field you've already provided." />
         <CardBody>
           <FormGrid>
-            <Field label="CNIC number" hint="e.g. 35202-1234567-1">{(a) => <Input {...a} value={cnic} onChange={(e) => setCnic(e.target.value)} inputMode="numeric" />}</Field>
-            <Field label="Emergency contact number">{(a) => <Input {...a} value={emergency} onChange={(e) => setEmergency(e.target.value)} type="tel" />}</Field>
+            <Field label="CNIC number" hint="e.g. 35202-1234567-1">{(a) => <CnicInput {...a} value={cnic} onChange={(e) => setCnic(e.target.value)} />}</Field>
+            <Field label="Emergency contact number">{(a) => <PhoneInput {...a} value={emergency} onChange={(e) => setEmergency(e.target.value)} />}</Field>
           </FormGrid>
         </CardBody>
       </Card>

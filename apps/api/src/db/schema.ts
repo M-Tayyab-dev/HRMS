@@ -75,8 +75,10 @@ export const tenants = pgTable('tenants', {
   timezone: text('timezone').notNull().default('Asia/Karachi'),
   currency: text('currency').notNull().default('PKR'),
   settings: jsonb('settings').$type<TenantSettings>().notNull().default(DEFAULT_TENANT_SETTINGS),
-  /** Company logo shown in the app header (uploaded by a Super Admin). */
+  /** Company logo shown in the app header (uploaded by the Company Admin). */
   logoFileId: uuid('logo_file_id'),
+  /** Login emails of this company end with @<emailDomain>; HR only types the name part. */
+  emailDomain: text('email_domain').unique(),
   /** Subscription: plan, the modules it unlocks (editable per company) and the employee limit. */
   planId: uuid('plan_id'),
   modules: jsonb('modules').$type<string[]>().notNull().default(sql`'["ATTENDANCE","LEAVE","PAYROLL","PERFORMANCE","COMPLIANCE","COMMUNITY","BIOMETRIC"]'::jsonb`),
@@ -99,7 +101,8 @@ export const userDirectory = pgTable(
       .references(() => tenants.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.email, t.tenantId] }), index('user_directory_user_idx').on(t.userId)],
+  // One account per email across the whole platform: the primary key makes the uniqueness check a single index lookup.
+  (t) => [primaryKey({ columns: [t.email] }), index('user_directory_user_idx').on(t.userId), index('user_directory_tenant_idx').on(t.tenantId)],
 );
 
 /** Subscription plans the platform sells (e.g. Starter, Professional). Not tenant data. */

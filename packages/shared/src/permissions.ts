@@ -6,7 +6,7 @@ export const ROLES = ['SUPER_ADMIN', 'HR', 'OPERATIONS', 'TEAM_LEAD', 'EMPLOYEE'
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
-  SUPER_ADMIN: 'Super Admin',
+  SUPER_ADMIN: 'Company Admin', // top role inside one company (the platform owner is the Super Admin)
   HR: 'HR',
   OPERATIONS: 'Operations',
   TEAM_LEAD: 'Team Lead',
