@@ -25,7 +25,7 @@ function PlanDialog({ plan, open, onOpenChange }: { plan?: Plan; open: boolean; 
     if (open) form.reset(plan ? { name: plan.name, description: plan.description ?? undefined, priceMonthly: plan.priceMonthly, currency: plan.currency, modules: plan.modules, maxEmployees: plan.maxEmployees, isActive: plan.isActive } : { name: '', description: undefined, priceMonthly: 0, currency: settings?.defaultCurrency ?? 'PKR', modules: ['ATTENDANCE', 'LEAVE'], maxEmployees: null, isActive: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, plan, settings?.defaultCurrency]);
-  const done = { invalidate: ['/platform/plans'], success: 'Plan saved', onSuccess: () => onOpenChange(false) };
+  const done = { invalidate: ['/platform/plans', '/public/plans'], success: 'Plan saved', onSuccess: () => onOpenChange(false) };
   const create = useAction('post', '/platform/plans', done);
   const update = useAction('put', () => `/platform/plans/${plan!.id}`, done);
   const modules = (form.watch('modules') ?? []) as Module[];
@@ -36,8 +36,7 @@ function PlanDialog({ plan, open, onOpenChange }: { plan?: Plan; open: boolean; 
       <div className="space-y-4">
         <FormGrid>
           <Field label="Name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} {...form.register('name')} />}</Field>
-          <Field label="Monthly price" required error={fieldError(form, 'priceMonthly')}>{(a) => <Input {...a} type="number" min={0} {...form.register('priceMonthly', { valueAsNumber: true })} />}</Field>
-          <Field label="Currency" error={fieldError(form, 'currency')}>{(a) => <Combobox {...a} value={form.watch('currency') ?? ''} onChange={(c) => form.setValue('currency', c, { shouldDirty: true, shouldValidate: true })} options={currencyOptions()} renderValue={(o) => o.value} searchPlaceholder="Search currency…" />}</Field>
+          <Field label={`Monthly price (${settings?.defaultCurrency ?? 'PKR'})`} hint="Currency is set for the whole platform in General." required error={fieldError(form, 'priceMonthly')}>{(a) => <Input {...a} type="number" min={0} {...form.register('priceMonthly', { valueAsNumber: true })} />}</Field>
           <Field label="Employee limit" hint="Leave empty for no limit" error={fieldError(form, 'maxEmployees')}>{(a) => <Input {...a} type="number" min={1} {...form.register('maxEmployees', { setValueAs: (v) => (v === '' || v === null ? null : Number(v)) })} />}</Field>
         </FormGrid>
         <Field label="Description" error={fieldError(form, 'description')}>{(a) => <Textarea {...a} rows={2} {...form.register('description')} />}</Field>
@@ -128,12 +127,12 @@ interface PlatformSettings { defaultCurrency: string; copyright: string | null }
 
 function General() {
   const { data } = useApi<PlatformSettings>('/platform/settings');
-  const form = useZodForm(platformSettingsSchema, { defaultCurrency: 'PKR', applyToPlans: false, copyright: undefined });
+  const form = useZodForm(platformSettingsSchema, { defaultCurrency: 'PKR', copyright: undefined });
   useEffect(() => {
-    if (data) form.reset({ defaultCurrency: data.defaultCurrency, applyToPlans: false, copyright: data.copyright ?? undefined });
+    if (data) form.reset({ defaultCurrency: data.defaultCurrency, copyright: data.copyright ?? undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
-  const save = useAction('put', '/platform/settings', { invalidate: ['/platform/settings', '/platform/plans', '/public/branding'], success: 'Settings saved' });
+  const save = useAction('put', '/platform/settings', { invalidate: ['/platform/settings', '/platform/plans', '/public/branding', '/public/plans'], success: 'Settings saved. Every plan now uses this currency.' });
   const copyright = form.watch('copyright');
   const preview = (copyright || `© {year} HRMS`).replaceAll('{year}', String(new Date().getFullYear()));
   if (!data) return <Skeleton className="h-64" />;
@@ -142,11 +141,10 @@ function General() {
       <CardHeader title="General" description="Defaults and branding shared by every company." />
       <CardBody className="space-y-5">
         <FormGrid>
-          <Field label="Default currency" hint="Used for new plans and prices on the platform." error={fieldError(form, 'defaultCurrency')}>{(a) => (
+          <Field label="Platform currency" hint="All plans and the homepage show prices in this currency. Changing it updates every plan at once (the numbers stay the same)." error={fieldError(form, 'defaultCurrency')}>{(a) => (
             <Combobox {...a} value={form.watch('defaultCurrency')} onChange={(c) => form.setValue('defaultCurrency', c, { shouldDirty: true, shouldValidate: true })} options={currencyOptions()} renderValue={(o) => o.value} searchPlaceholder="Search currency…" />
           )}</Field>
         </FormGrid>
-        <Checkbox label="Also switch all existing plans to this currency (prices stay the same numbers)" {...form.register('applyToPlans')} />
         <Field label="Sign-in page footer" hint="Shown at the bottom of the login pages. Write {year} for the current year. Leave empty for the default." error={fieldError(form, 'copyright')}>{(a) => (
           <Input {...a} maxLength={200} placeholder="© {year} Your Company. All rights reserved." {...form.register('copyright')} />
         )}</Field>

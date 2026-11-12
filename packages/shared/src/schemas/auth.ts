@@ -67,9 +67,8 @@ export type PlanInput = z.infer<typeof planSchema>;
 
 /** Platform-wide settings (Super Admin → Platform settings → General). */
 export const platformSettingsSchema = z.object({
+  /** The platform's currency: every plan (and the homepage) is priced in it. */
   defaultCurrency: currencyCode,
-  /** Also switch every existing plan to the default currency. */
-  applyToPlans: z.boolean().default(false),
   copyright: z.string().trim().max(200).optional().transform((v) => v || undefined),
 });
 export type PlatformSettingsInput = z.infer<typeof platformSettingsSchema>;

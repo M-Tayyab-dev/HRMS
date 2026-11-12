@@ -191,7 +191,8 @@ export class PlatformController {
     await this.requireAdmin(req);
     const [dupe] = await this.db.root.select({ id: platformPlans.id }).from(platformPlans).where(eq(platformPlans.name, body.name));
     if (dupe) throw conflict('A plan with this name already exists', 'NAME_TAKEN');
-    const [row] = await this.db.root.insert(platformPlans).values({ ...body, maxEmployees: body.maxEmployees ?? null }).returning();
+    const { defaultCurrency } = await this.settings.get();
+    const [row] = await this.db.root.insert(platformPlans).values({ ...body, currency: defaultCurrency, maxEmployees: body.maxEmployees ?? null }).returning();
     return row;
   }
 
@@ -199,7 +200,8 @@ export class PlatformController {
   @Put('plans/:id')
   async updatePlan(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body(zp(planSchema)) body: PlanInput) {
     await this.requireAdmin(req);
-    const [row] = await this.db.root.update(platformPlans).set({ ...body, maxEmployees: body.maxEmployees ?? null }).where(eq(platformPlans.id, id)).returning();
+    const { defaultCurrency } = await this.settings.get();
+    const [row] = await this.db.root.update(platformPlans).set({ ...body, currency: defaultCurrency, maxEmployees: body.maxEmployees ?? null }).where(eq(platformPlans.id, id)).returning();
     if (!row) throw notFound('Plan');
     return row;
   }

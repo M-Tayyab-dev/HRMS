@@ -62,7 +62,8 @@ export class PlatformSettingsService {
     const values = { defaultCurrency: input.defaultCurrency, copyright: input.copyright ?? null };
     await this.db.root.transaction(async (tx) => {
       await tx.insert(platformSettings).values({ id: 'default', ...values }).onConflictDoUpdate({ target: platformSettings.id, set: { ...values, updatedAt: new Date() } });
-      if (input.applyToPlans) await tx.update(platformPlans).set({ currency: input.defaultCurrency });
+      // One platform currency: every plan follows it, so prices everywhere (console, homepage) match.
+      await tx.update(platformPlans).set({ currency: input.defaultCurrency });
     });
     this.cache = null;
     return this.get();

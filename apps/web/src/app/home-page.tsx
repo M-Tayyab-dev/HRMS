@@ -306,21 +306,30 @@ function Roles() {
 }
 
 function Pricing() {
-  const { data: plans, isLoading } = useApi<PublicPlan[]>('/public/plans');
+  // Always fresh, so plan or currency edits by the Super Admin show on the next visit.
+  const { data: plans, isLoading, isError, refetch, isFetching } = useApi<PublicPlan[]>('/public/plans', { fresh: true });
   const ref = useRef<HTMLDivElement>(null);
   const featured = plans && plans.length >= 3 ? Math.floor(plans.length / 2) : -1;
   useLayoutEffect(() => {
     if (!plans?.length || !ref.current) return;
     const ctx = gsap.context(() => {
       gsap.matchMedia().add('(prefers-reduced-motion: no-preference)', () => {
-        gsap.from('[data-anim="plan"]', { y: 40, opacity: 0, duration: 0.7, stagger: 0.12, ease: 'power3.out', scrollTrigger: { trigger: ref.current, start: 'top 80%' } });
+        // immediateRender: false keeps the cards visible until the animation actually starts, so they can never get stuck hidden.
+        gsap.from('[data-anim="plan"]', { y: 40, opacity: 0, duration: 0.7, stagger: 0.12, ease: 'power3.out', immediateRender: false, scrollTrigger: { trigger: ref.current, start: 'top 85%', once: true } });
       });
     }, ref);
+    ScrollTrigger.refresh();
     return () => ctx.revert();
   }, [plans]);
   return (
     <div ref={ref} className="mt-14 grid items-start gap-6 md:grid-cols-2 lg:grid-cols-3">
       {isLoading && [0, 1, 2].map((i) => <div key={i} className="h-96 animate-pulse rounded-2xl border bg-muted/40" />)}
+      {isError && !plans && (
+        <div className="col-span-full flex flex-col items-center gap-3 rounded-2xl border border-dashed p-10 text-center">
+          <p className="text-muted-foreground">We couldn’t load the plans just now.</p>
+          <button type="button" onClick={() => refetch()} disabled={isFetching} className="inline-flex h-10 items-center rounded-full border px-5 text-sm font-medium transition hover:bg-muted disabled:opacity-60">{isFetching ? 'Loading…' : 'Try again'}</button>
+        </div>
+      )}
       {plans?.length === 0 && <p className="col-span-full text-center text-muted-foreground">Plans are being prepared. Contact us for pricing.</p>}
       {plans?.map((p, i) => {
         const hot = i === featured;
@@ -420,15 +429,15 @@ export function HomePage() {
 
         gsap.to('[data-anim="glow"]', { yPercent: 30, ease: 'none', scrollTrigger: { trigger: root.current, start: 'top top', end: 'bottom top', scrub: true } });
         gsap.utils.toArray<HTMLElement>('[data-anim="reveal"]').forEach((el) => {
-          gsap.from(el, { y: 32, opacity: 0, duration: 0.8, ease: 'power3.out', scrollTrigger: { trigger: el, start: 'top 85%' } });
+          gsap.from(el, { y: 32, opacity: 0, duration: 0.8, ease: 'power3.out', immediateRender: false, scrollTrigger: { trigger: el, start: 'top 85%', once: true } });
         });
-        gsap.set('[data-anim="card"]', { opacity: 0 });
         ScrollTrigger.batch('[data-anim="card"]', {
-          start: 'top 90%',
+          start: 'top 92%',
+          once: true,
           onEnter: (els) => gsap.fromTo(els, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, stagger: 0.08, ease: 'power3.out', overwrite: true }),
         });
         gsap.from('[data-anim="line"]', { scaleX: 0, transformOrigin: 'left', ease: 'none', scrollTrigger: { trigger: '#how', start: 'top 70%', end: 'center 55%', scrub: true } });
-        gsap.from('[data-anim="cta"]', { scale: 0.94, opacity: 0, duration: 0.9, ease: 'power3.out', scrollTrigger: { trigger: '[data-anim="cta"]', start: 'top 85%' } });
+        gsap.from('[data-anim="cta"]', { scale: 0.94, opacity: 0, duration: 0.9, ease: 'power3.out', immediateRender: false, scrollTrigger: { trigger: '[data-anim="cta"]', start: 'top 85%', once: true } });
 
         return () => hero?.removeEventListener('pointermove', onMove);
       });

@@ -350,7 +350,11 @@ async function main() {
 
   // ---- Platform settings: default currency and sign-in footer
   const before = (await platform.get('/platform/settings')).data;
-  const saved = await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, copyright: '© {year} Test Footer', applyToPlans: false });
+  const altCurrency = before.defaultCurrency === 'USD' ? 'EUR' : 'USD';
+  expect((await platform.put('/platform/settings', { defaultCurrency: altCurrency })).status === 200, 'Super Admin changes the platform currency');
+  const pub = (await new Client().get('/public/plans')).data;
+  expect(pub.length > 0 && pub.every((p) => p.currency === altCurrency), 'every plan (and the homepage) follows the platform currency', pub);
+  const saved = await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, copyright: '© {year} Test Footer' });
   expect(saved.status === 200 && saved.data.copyright === '© {year} Test Footer', 'Super Admin saves platform settings', saved);
   const brand = (await new Client().get('/public/branding')).data;
   expect(brand.copyright === `© ${new Date().getFullYear()} Test Footer`, 'sign-in footer shows the saved text with the year', brand);
