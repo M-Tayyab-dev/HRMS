@@ -18,8 +18,17 @@ const config: NextConfig = {
   transpilePackages: ['@hrms/shared'],
   // Same-origin API proxy: session cookies stay SameSite=Strict and no CORS is needed.
   async rewrites() {
-    return [{ source: '/api/v1/:path*', destination: `${api}/api/v1/:path*` }];
-  },
+  if (process.env.VERCEL) {
+    return [];
+  }
+
+  return [
+    {
+      source: '/api/v1/:path*',
+      destination: `${api}/api/v1/:path*`,
+    },
+  ];
+},
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
