@@ -11,7 +11,7 @@ import {
 import { and, asc, desc, eq, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { als, currentUser, type AuthUser } from '../../common/context';
-import { Audit, RequireAny } from '../../common/decorators';
+import { Audit, RequireAny, RequireModule } from '../../common/decorators';
 import { badRequest, forbidden } from '../../common/errors';
 import { addDays, todayIn } from '../../common/tz';
 import { one, tenantInfo } from '../../common/util';
@@ -37,6 +37,7 @@ const feedQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+@RequireModule('COMMUNITY')
 @Controller()
 export class CommunityController {
   constructor(

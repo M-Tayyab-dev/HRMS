@@ -77,7 +77,25 @@ export const tenants = pgTable('tenants', {
   settings: jsonb('settings').$type<TenantSettings>().notNull().default(DEFAULT_TENANT_SETTINGS),
   /** Company logo shown in the app header (uploaded by a Super Admin). */
   logoFileId: uuid('logo_file_id'),
+  /** Subscription: plan, the modules it unlocks (editable per company) and the employee limit. */
+  planId: uuid('plan_id'),
+  modules: jsonb('modules').$type<string[]>().notNull().default(sql`'["ATTENDANCE","LEAVE","PAYROLL","PERFORMANCE","COMPLIANCE","COMMUNITY","BIOMETRIC"]'::jsonb`),
+  maxEmployees: integer('max_employees'),
   employeeSeq: integer('employee_seq').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** Subscription plans the platform sells (e.g. Starter, Professional). Not tenant data. */
+export const platformPlans = pgTable('platform_plans', {
+  id: id(),
+  name: text('name').notNull().unique(),
+  description: text('description'),
+  priceMonthly: money('price_monthly').notNull().default(0),
+  currency: text('currency').notNull().default('PKR'),
+  modules: jsonb('modules').$type<string[]>().notNull().default([]),
+  maxEmployees: integer('max_employees'),
+  isActive: boolean('is_active').notNull().default(true),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -1105,4 +1123,4 @@ export const jobs = pgTable(
 );
 
 /** Tables without tenant_id RLS (platform + infra). Everything else gets RLS. */
-export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins'];
+export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins', 'platform_plans'];

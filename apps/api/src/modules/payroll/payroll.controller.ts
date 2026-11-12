@@ -20,10 +20,10 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { config } from '../../config';
 import { currentUser } from '../../common/context';
-import { Audit, RequireAny } from '../../common/decorators';
+import { Audit, RequireAny, RequireModule } from '../../common/decorators';
 import { badRequest, forbidden } from '../../common/errors';
 import { todayIn } from '../../common/tz';
-import { one, round2, tenantInfo } from '../../common/util';
+import { one, round2, tenantInfo, requireDelete, assertUnused, countWhere } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
 import { ApprovalsService } from '../../core/approvals.service';
 import { NotificationsService } from '../../core/notifications.service';
@@ -41,12 +41,15 @@ import {
   payslips,
   salaryComponents,
   type PayslipLine,
+  compensationRequests,
+  incentives,
 } from '../../db/schema';
 import { PayrollService } from './payroll.service';
 import { renderPayslipPdf } from './payslip.pdf';
 
 const VISIBLE_RUN_STATUSES = ['APPROVED', 'PAID'] as const;
 
+@RequireModule('PAYROLL')
 @Controller('payroll')
 export class PayrollController {
   constructor(
@@ -84,6 +87,15 @@ export class PayrollController {
   @Audit('payroll.component_updated', 'salary_component')
   async updateComponent(@Param('id', ParseUUIDPipe) id: string, @Body(zp(salaryComponentSchema)) body: z.infer<typeof salaryComponentSchema>) {
     return one(await this.db.tx.update(salaryComponents).set(body).where(eq(salaryComponents.id, id)).returning(), 'Component');
+  }
+
+  @Delete('components/:id')
+  @RequireAny(P.PAYROLL_PROCESS)
+  @Audit('payroll.component_deleted', 'salary_component')
+  async removeComponent(@Param('id', ParseUUIDPipe) id: string) {
+    requireDelete();
+    one(await this.db.tx.delete(salaryComponents).where(eq(salaryComponents.id, id)).returning({ id: salaryComponents.id }), 'Component');
+    return { id, deleted: true };
   }
 
   /* ---------------- Payroll runs (HR + Operations approval) ---------------- */
@@ -181,6 +193,23 @@ export class PayrollController {
       await this.notify.notifyEmployees(emps.map((e) => e.id), { type: 'payroll.slip_ready', title: `Your salary slip for ${run.period} is ready`, link: '/payslips' });
     }
     return { id, status };
+  }
+
+  /** Only a draft (or rejected) run can be deleted; approved payroll is part of the record. */
+  @Delete('runs/:id')
+  @RequireAny(P.PAYROLL_PROCESS)
+  @Audit('payroll.run_deleted', 'payroll_run')
+  async removeRun(@Param('id', ParseUUIDPipe) id: string) {
+    requireDelete();
+    const tx = this.db.tx;
+    const run = one(await tx.select().from(payrollRuns).where(eq(payrollRuns.id, id)), 'Payroll run');
+    if (!['DRAFT', 'REJECTED'].includes(run.status)) throw badRequest('Only draft payroll can be deleted. Reopen it first if it was approved.', 'NOT_DRAFT');
+    // Items a reopened run had booked go back to "not yet paid".
+    await tx.update(compensationRequests).set({ payrollRunId: null }).where(eq(compensationRequests.payrollRunId, id));
+    await tx.update(medicalClaims).set({ payrollRunId: null }).where(eq(medicalClaims.payrollRunId, id));
+    await tx.update(incentives).set({ payrollRunId: null, status: 'APPROVED' }).where(eq(incentives.payrollRunId, id));
+    await tx.delete(payrollRuns).where(eq(payrollRuns.id, id));
+    return { id, deleted: true };
   }
 
   @Post('runs/:id/mark-paid')
@@ -362,6 +391,19 @@ export class PayrollController {
     const u = currentUser();
     if (loan.employeeId !== u.employeeId && !u.permissions.has(P.LOANS_MANAGE)) throw forbidden();
     return this.db.tx.select().from(loanRepayments).where(eq(loanRepayments.loanId, id)).orderBy(asc(loanRepayments.paidOn));
+  }
+
+  /** For loans recorded by mistake: only when nothing has been repaid yet. */
+  @Delete('loans/:id')
+  @RequireAny(P.LOANS_MANAGE)
+  @Audit('loan.deleted', 'loan')
+  async removeLoan(@Param('id', ParseUUIDPipe) id: string) {
+    requireDelete();
+    const tx = this.db.tx;
+    one(await tx.select({ id: loans.id }).from(loans).where(eq(loans.id, id)), 'Loan');
+    assertUnused('This loan', [[await countWhere(tx, loanRepayments, eq(loanRepayments.loanId, id)), 'repayment(s)']]);
+    await tx.delete(loans).where(eq(loans.id, id));
+    return { id, deleted: true };
   }
 
   @Post('loans/:id/repayments')

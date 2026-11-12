@@ -13,6 +13,8 @@ export interface AuthUser {
   /** Team ids this user leads (Team Lead data scope, F4). */
   ledTeamIds: string[];
   canPost: boolean;
+  /** Feature modules in the company's plan (permissions outside them are removed). */
+  modules: string[];
 }
 
 export interface RequestContext {

@@ -17,6 +17,7 @@ import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { date, money, monthLabel, todayLocal } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { DeleteButton } from '@/components/delete-button';
 
 interface Loan { id: string; employeeId: string; fullName: string; principal: number; installment: number; startPeriod: string; reason: string | null; status: string; fileIds: string[]; requestedByEmployee: boolean; repaid: number; outstanding: number; createdAt: string }
 interface Repayment { id: string; amount: number; paidOn: string; source: string; note: string | null }
@@ -113,6 +114,7 @@ export default function LoansPage() {
           { key: 'r', header: 'Repaid', cell: (l) => <div className="w-36"><Progress value={(l.repaid / l.principal) * 100} /><p className="mt-1 text-xs text-muted-foreground">{money(l.outstanding, currency)} outstanding</p></div> },
           { key: 'f', header: 'From', hideOnMobile: true, cell: (l) => monthLabel(l.startPeriod) },
           { key: 's', header: 'Status', cell: (l) => <StatusBadge status={l.status} /> },
+          ...(manage ? [{ key: 'del', header: <span className="sr-only">Delete</span>, cell: (l: Loan) => (l.repaid === 0 ? <DeleteButton iconOnly path={`/payroll/loans/${l.id}`} what={`${l.fullName}'s loan`} invalidate={['/payroll/loans']} detail="Only for loans recorded by mistake. Loans with repayments can't be deleted." /> : null) }] : []),
         ]} />
       </Card>
       <RequestLoanDialog open={requestOpen} onOpenChange={setRequestOpen} />

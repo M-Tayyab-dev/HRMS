@@ -1,6 +1,6 @@
 'use client';
 
-import { PERMISSION_INFO, type Permission } from '@hrms/shared';
+import { PERMISSION_INFO, permissionAllowed, type Permission } from '@hrms/shared';
 import { Lock, RotateCcw, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -46,11 +46,17 @@ export default function RolesPage() {
   }, [data]);
   const save = useAction<{ role: string; permissions: string[] }>('put', (v) => `/access/roles/${v.role}`, { invalidate: ['/access/roles'], success: 'Permissions saved', body: (v) => ({ permissions: v.permissions }) });
 
+  const { me } = useAuth();
+  const modules = me?.tenant.modules ?? [];
+  // Permissions for modules outside the company's plan aren't shown (they couldn't be used anyway).
   const groups = useMemo(() => {
     const g = new Map<string, string[]>();
-    for (const p of data?.permissions ?? []) g.set(info(p).group, [...(g.get(info(p).group) ?? []), p]);
+    for (const p of data?.permissions ?? []) {
+      if (!permissionAllowed(p as Permission, modules)) continue;
+      g.set(info(p).group, [...(g.get(info(p).group) ?? []), p]);
+    }
     return [...g];
-  }, [data]);
+  }, [data, modules]);
 
   if (isLoading || !data) return <Card><LoadingRows /></Card>;
   const editable = data.roles.filter((r) => r.editable);

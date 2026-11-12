@@ -1,133 +1,74 @@
 'use client';
 
-import { createCompanySchema, platformAdminSchema } from '@hrms/shared';
-import { Building2, LogOut, Plus, ShieldCheck } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { ChevronRight, Plus, Search, Settings } from 'lucide-react';
+import Link from 'next/link';
+import { useMemo, useState } from 'react';
+import { CompanyLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
-import { Badge, Card, CardHeader, PageHeader, Skeleton, Stat } from '@/components/ui/display';
-import { Checkbox, Field, FormGrid, Input } from '@/components/ui/form';
-import { Dialog } from '@/components/ui/overlay';
-import { DataTable } from '@/components/ui/table';
-import { api } from '@/lib/api';
-import { fieldError, useZodForm } from '@/lib/form';
-import { date, dateTime } from '@/lib/format';
-import { useAction, useApi } from '@/lib/hooks';
-import { Combobox } from '@/components/ui/combobox';
-import { currencyOptions, timeZoneOptions } from '@/lib/locale-options';
+import { Badge, Card, EmptyState, PageHeader, Skeleton } from '@/components/ui/display';
+import { Input } from '@/components/ui/form';
+import { useApi } from '@/lib/hooks';
+import { NewCompanyDialog, PlatformNav, usePlatformMe, type CompanyRow } from './shared';
 
-interface Me { id: string; name: string; email: string }
-interface Company { id: string; name: string; slug: string; status: 'ACTIVE' | 'SUSPENDED'; timezone: string; currency: string; activeEmployees: number; createdAt: string }
-interface Owner { id: string; name: string; email: string; lastLoginAt: string | null; createdAt: string }
-
-const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-
-function NewCompanyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [setPassword, setSetPassword] = useState(false);
-  const blank = { companyName: '', workspace: '', adminName: '', email: '', password: undefined, mustChangePassword: true, timezone: 'Asia/Karachi', currency: 'PKR' };
-  const form = useZodForm(createCompanySchema, blank);
-  useEffect(() => {
-    if (open) {
-      form.reset(blank);
-      setSetPassword(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  const create = useAction<unknown, { invited: boolean }>('post', '/platform/companies', {
-    invalidate: ['/platform/companies'],
-    onSuccess: (r) => {
-      toast.success(r.invited ? 'Company created. The Super Admin was emailed an invite to set a password.' : 'Company created. Share the temporary password securely.');
-      onOpenChange(false);
-    },
-  });
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="New company" description="Creates the workspace with default departments, levels and leave types, and its first Super Admin."
-      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={create.isPending} onClick={form.handleSubmit((v) => create.mutate(setPassword ? v : { ...v, password: undefined }))}>Create company</Button></>}>
-      <div className="space-y-4">
-        <FormGrid>
-          <Field label="Company name" required error={fieldError(form, 'companyName')}>{(a) => <Input {...a} {...form.register('companyName', { onChange: (e) => { if (!form.getFieldState('workspace').isDirty) form.setValue('workspace', slugify(e.target.value)); } })} />}</Field>
-          <Field label="Workspace" required error={fieldError(form, 'workspace')} hint="Used to sign in, e.g. acme">{(a) => <Input {...a} autoCapitalize="none" {...form.register('workspace')} />}</Field>
-          <Field label="Super Admin name" required error={fieldError(form, 'adminName')}>{(a) => <Input {...a} {...form.register('adminName')} />}</Field>
-          <Field label="Super Admin email" required error={fieldError(form, 'email')}>{(a) => <Input {...a} type="email" {...form.register('email')} />}</Field>
-          <Field label="Time zone" error={fieldError(form, 'timezone')}>{(a) => <Combobox {...a} value={form.watch('timezone')} onChange={(tz) => form.setValue('timezone', tz, { shouldDirty: true })} options={timeZoneOptions()} searchPlaceholder="Search city, region or UTC offset…" />}</Field>
-          <Field label="Currency" error={fieldError(form, 'currency')}>{(a) => <Combobox {...a} value={form.watch('currency')} onChange={(c) => form.setValue('currency', c, { shouldDirty: true })} options={currencyOptions()} renderValue={(o) => o.value} searchPlaceholder="Search currency…" />}</Field>
-        </FormGrid>
-        <Checkbox label="Set a temporary password instead of emailing an invite" checked={setPassword} onChange={(e) => setSetPassword(e.target.checked)} />
-        {setPassword && (
-          <Field label="Temporary password" required error={fieldError(form, 'password')} hint="They must change it at first sign-in.">{(a) => <Input {...a} type="password" autoComplete="new-password" {...form.register('password')} />}</Field>
-        )}
-      </div>
-    </Dialog>
-  );
-}
-
-function NewOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const form = useZodForm(platformAdminSchema, { name: '', email: '', password: '' });
-  const add = useAction('post', '/platform/admins', { invalidate: ['/platform/admins'], success: 'Platform owner added', onSuccess: () => { form.reset(); onOpenChange(false); } });
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Add platform owner" description="Platform owners can create and suspend companies and add other owners."
-      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={add.isPending} onClick={form.handleSubmit((v) => add.mutate(v))}>Add owner</Button></>}>
-      <div className="space-y-4">
-        <Field label="Name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} {...form.register('name')} />}</Field>
-        <Field label="Email" required error={fieldError(form, 'email')}>{(a) => <Input {...a} type="email" {...form.register('email')} />}</Field>
-        <Field label="Password" required error={fieldError(form, 'password')} hint="12+ characters with upper and lower case letters and a number">{(a) => <Input {...a} type="password" autoComplete="new-password" {...form.register('password')} />}</Field>
-      </div>
-    </Dialog>
-  );
-}
-
+/** Landing page after a platform owner signs in: pick a company, or open platform-wide settings. */
 export default function PlatformPage() {
-  const router = useRouter();
-  const { data: me, error, isLoading } = useApi<Me>('/platform/me');
-  const { data: companies, isLoading: cl } = useApi<Company[]>(me ? '/platform/companies' : null);
-  const { data: owners } = useApi<Owner[]>(me ? '/platform/admins' : null);
+  const { data: me, isLoading } = usePlatformMe();
+  const { data: companies, isLoading: cl } = useApi<CompanyRow[]>(me ? '/platform/companies' : null);
+  const [q, setQ] = useState('');
   const [newCompany, setNewCompany] = useState(false);
-  const [newOwner, setNewOwner] = useState(false);
-  const setStatus = useAction<{ id: string; status: Company['status'] }>('patch', (v) => `/platform/companies/${v.id}`, { invalidate: ['/platform/companies'], success: 'Company updated', body: (v) => ({ status: v.status }) });
+  const shown = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return (companies ?? []).filter((c) => !t || `${c.name} ${c.slug} ${c.planName ?? ''}`.toLowerCase().includes(t));
+  }, [companies, q]);
 
-  useEffect(() => {
-    if (error) router.replace('/platform/login');
-  }, [error, router]);
   if (isLoading || !me) return <Skeleton className="h-96" />;
-
-  const active = companies?.filter((c) => c.status === 'ACTIVE').length ?? 0;
   return (
     <>
-      <PageHeader
-        title="Companies"
-        description={`Signed in as ${me.name} (${me.email})`}
-        actions={<>
-          <Button onClick={() => setNewCompany(true)}><Plus className="h-4 w-4" /> New company</Button>
-          <Button variant="outline" onClick={async () => { await api.post('/platform/logout'); router.replace('/platform/login'); }}><LogOut className="h-4 w-4" /> Sign out</Button>
-        </>}
-      />
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
-        <Stat label="Companies" icon={Building2} value={companies?.length ?? 0} />
-        <Stat label="Active" tone="success" value={active} />
-        <Stat label="Employees (active)" value={companies?.reduce((a, c) => a + c.activeEmployees, 0) ?? 0} />
+      <PlatformNav me={me} />
+      <PageHeader title="Choose a company" description="Open a company to manage its plan, modules and Super Admins, or change settings that apply to all companies."
+        actions={<Button onClick={() => setNewCompany(true)}><Plus className="h-4 w-4" /> New company</Button>} />
+
+      <Link href="/platform/settings" className="mb-6 flex items-center gap-4 rounded-xl border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-primary-soft/40">
+        <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-soft text-primary"><Settings className="h-5 w-5" aria-hidden /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">General settings for all companies</span>
+          <span className="block text-sm text-muted-foreground">Plans and pricing, platform owners and outgoing email.</span>
+        </span>
+        <ChevronRight className="h-5 w-5 text-muted-foreground" aria-hidden />
+      </Link>
+
+      <div className="relative mb-4 max-w-sm">
+        <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" aria-hidden />
+        <Input className="pl-9" placeholder="Search companies…" aria-label="Search companies" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      <Card className="mb-6">
-        <DataTable loading={cl} rows={companies} rowKey={(c) => c.id} empty="No companies yet" emptyDescription="Create the first client company." columns={[
-          { key: 'n', header: 'Company', cell: (c) => <div><p className="font-medium">{c.name}</p><p className="text-xs text-muted-foreground">workspace: {c.slug}</p></div> },
-          { key: 'e', header: 'Active employees', cell: (c) => c.activeEmployees },
-          { key: 'r', header: 'Region', cell: (c) => `${c.timezone} · ${c.currency}` },
-          { key: 'd', header: 'Created', cell: (c) => date(c.createdAt) },
-          { key: 's', header: 'Status', cell: (c) => <Badge tone={c.status === 'ACTIVE' ? 'success' : 'danger'}>{c.status.toLowerCase()}</Badge> },
-          { key: 'a', header: '', cell: (c) => (c.status === 'ACTIVE'
-            ? <Button size="sm" variant="ghost" className="text-danger" onClick={() => setStatus.mutate({ id: c.id, status: 'SUSPENDED' })}>Suspend</Button>
-            : <Button size="sm" variant="outline" onClick={() => setStatus.mutate({ id: c.id, status: 'ACTIVE' })}>Reactivate</Button>) },
-        ]} />
-      </Card>
-      <Card>
-        <CardHeader title="Platform owners" description="Only an existing owner can add another." action={<Button size="sm" variant="outline" onClick={() => setNewOwner(true)}><ShieldCheck className="h-4 w-4" /> Add owner</Button>} />
-        <DataTable rows={owners} rowKey={(o) => o.id} columns={[
-          { key: 'n', header: 'Name', cell: (o) => <div><p className="font-medium">{o.name}</p><p className="text-xs text-muted-foreground">{o.email}</p></div> },
-          { key: 'l', header: 'Last sign-in', cell: (o) => (o.lastLoginAt ? dateTime(o.lastLoginAt) : 'never') },
-        ]} />
-      </Card>
+
+      {cl ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-36" />)}</div>
+      ) : !shown.length ? (
+        <Card><EmptyState title={companies?.length ? 'No company matches your search' : 'No companies yet'} description={companies?.length ? undefined : 'Create the first client company.'} /></Card>
+      ) : (
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {shown.map((c) => (
+            <li key={c.id}>
+              <Link href={`/platform/companies/${c.id}`} className="flex h-full flex-col gap-3 rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-primary/50">
+                <div className="flex items-start gap-3">
+                  <CompanyLogo name={c.name} className="h-11 w-11" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold">{c.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">workspace: {c.slug}</p>
+                  </div>
+                  <Badge tone={c.status === 'ACTIVE' ? 'success' : 'danger'}>{c.status.toLowerCase()}</Badge>
+                </div>
+                <div className="mt-auto flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{c.planName ?? 'Custom'} · {c.modules.length} modules</span>
+                  <span className="tabular-nums">{c.activeEmployees}{c.maxEmployees ? `/${c.maxEmployees}` : ''} <span className="text-muted-foreground">staff</span></span>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
       <NewCompanyDialog open={newCompany} onOpenChange={setNewCompany} />
-      <NewOwnerDialog open={newOwner} onOpenChange={setNewOwner} />
     </>
   );
 }

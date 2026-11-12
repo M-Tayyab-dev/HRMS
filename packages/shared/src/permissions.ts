@@ -19,6 +19,8 @@ export const PERMISSIONS = {
   USERS_MANAGE_ACCESS: 'users.manage_access',
   TENANT_SETTINGS: 'tenant.settings',
   AUDIT_READ: 'audit.read',
+  /** Permanently delete records (policies, surveys, unused departments…). Super Admin grants it to other roles. */
+  DATA_DELETE: 'data.delete',
 
   // Employees (B)
   EMPLOYEES_READ_ALL: 'employees.read.all',
@@ -134,6 +136,7 @@ export const PERMISSION_INFO: Record<Permission, { group: string; label: string;
   'users.manage_access': { group: 'Access & roles', label: 'Manage user access', description: 'Assign roles, disable accounts, send reset links and set passwords.' },
   'tenant.settings': { group: 'Access & roles', label: 'Company settings', description: 'Edit company name, time zone, currency and system rules.' },
   'audit.read': { group: 'Access & roles', label: 'View audit trail', description: 'See the history of every change made in the system.' },
+  'data.delete': { group: 'Access & roles', label: 'Delete records', description: 'Permanently delete policies, surveys, unused departments, levels, teams and other records they manage.' },
 
   'employees.read.all': { group: 'Employees', label: 'View all employees', description: 'Open every employee profile in the company.' },
   'employees.read.team': { group: 'Employees', label: 'View own team', description: 'Open profiles of the team they lead (salary hidden).' },

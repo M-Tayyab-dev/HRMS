@@ -1,6 +1,7 @@
 'use client';
 
-import { Bell, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
+import { MODULE_INFO } from '@hrms/shared';
+import { Bell, Lock, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -84,8 +85,9 @@ function NotificationBell() {
 
 /** Nav entries this person may open, with groups that end up empty removed. */
 function useVisibleNav(): NavGroup[] {
-  const { can, isTeamLead, me } = useAuth();
+  const { can, isTeamLead, me, hasModule } = useAuth();
   const visible = (i: NavItem) => {
+    if (i.module && !hasModule(i.module)) return false;
     if (i.employeeOnly && !me?.employee) return false;
     if (i.teamLead && !isTeamLead) return false;
     if (i.any?.length && !can(...i.any)) return false;
@@ -159,6 +161,22 @@ function SectionTabs() {
         })}
       </ul>
     </nav>
+  );
+}
+
+/** Pages of a module the company's plan doesn't include show a short explanation instead. */
+function ModuleGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const { hasModule } = useAuth();
+  const item = activeItem(pathname, NAV.flatMap((g) => g.items));
+  if (!item?.module || hasModule(item.module)) return <>{children}</>;
+  return (
+    <div className="mx-auto max-w-md rounded-xl border bg-card p-8 text-center">
+      <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-soft text-primary"><Lock className="h-5 w-5" aria-hidden /></span>
+      <h1 className="text-lg font-semibold">{MODULE_INFO[item.module].label} isn't in your plan</h1>
+      <p className="mt-1 text-sm text-muted-foreground">{MODULE_INFO[item.module].description} Contact your {SITE.name} provider to add it.</p>
+      <Link href="/dashboard" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">Back to dashboard</Link>
+    </div>
   );
 }
 
@@ -268,7 +286,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main id="main" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
         <SectionTabs />
-        {children}
+        <ModuleGate>{children}</ModuleGate>
       </main>
     </div>
   );

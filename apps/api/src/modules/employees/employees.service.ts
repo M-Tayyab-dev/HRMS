@@ -26,6 +26,7 @@ import {
   refreshTokens,
   teamMembers,
   teams,
+  tenants,
   userRoles,
   users,
 } from '../../db/schema';
@@ -143,6 +144,12 @@ export class EmployeesService {
     const { level } = await this.validatePlacement(input.departmentId, input.levelId);
     const [dupe] = await tx.select({ id: users.id }).from(users).where(eq(users.email, input.email));
     if (dupe) throw conflict('A user with this email already exists', 'EMAIL_TAKEN');
+    // Subscription limit on active employees.
+    const [plan] = await tx.select({ max: tenants.maxEmployees }).from(tenants).where(eq(tenants.id, actor.tenantId));
+    if (plan?.max) {
+      const [{ n }] = (await tx.select({ n: sql<number>`count(*)::int` }).from(employees).where(eq(employees.employmentStatus, 'ACTIVE'))) as [{ n: number }];
+      if (n >= plan.max) throw conflict(`Your plan allows ${plan.max} active employees. Contact your provider to raise the limit.`, 'PLAN_LIMIT');
+    }
 
     const salary = input.basicSalary ?? level.defaultSalary; // B7 auto-fill, HR may override
     const emp = one(

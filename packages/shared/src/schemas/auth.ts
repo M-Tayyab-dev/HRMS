@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ROLES, ALL_PERMISSIONS } from '../permissions';
+import { MODULES } from '../modules';
 import { currencyCode, password, timeZone, trimmed } from './common';
 
 export const workspaceSlug = z
@@ -19,6 +20,8 @@ export const createCompanySchema = z.object({
   email: z.email().toLowerCase(),
   password: password.optional(),
   mustChangePassword: z.boolean().default(true),
+  /** Subscription plan; its modules and employee limit are copied to the company. */
+  planId: z.uuid().optional(),
   timezone: timeZone.default('Asia/Karachi'),
   currency: currencyCode.default('PKR'),
 });
@@ -36,6 +39,30 @@ export const platformAdminSchema = z.object({
 });
 
 export const companyStatusSchema = z.object({ status: z.enum(['ACTIVE', 'SUSPENDED']) });
+
+/** Platform owner edits a company's subscription. `modules` may differ from the plan (custom deal). */
+export const companyUpdateSchema = z.object({
+  name: trimmed(2, 120).optional(),
+  status: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
+  planId: z.uuid().nullable().optional(),
+  modules: z.array(z.enum(MODULES)).optional(),
+  maxEmployees: z.coerce.number().int().min(1).max(100000).nullable().optional(),
+});
+export type CompanyUpdateInput = z.infer<typeof companyUpdateSchema>;
+
+/** A subscription plan sold to companies. */
+export const planSchema = z.object({
+  name: trimmed(2, 60),
+  description: z.string().trim().max(300).optional().transform((v) => v || undefined),
+  priceMonthly: z.coerce.number().min(0).max(100_000_000),
+  currency: currencyCode.default('PKR'),
+  modules: z.array(z.enum(MODULES)),
+  maxEmployees: z.coerce.number().int().min(1).max(100000).nullable().optional(),
+  isActive: z.boolean().default(true),
+});
+export type PlanInput = z.infer<typeof planSchema>;
+
+export const testEmailSchema = z.object({ to: z.email() });
 
 export const loginSchema = z.object({
   workspace: workspaceSlug,

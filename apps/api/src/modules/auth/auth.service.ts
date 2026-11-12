@@ -13,6 +13,7 @@ import {
   departments,
   employeePositions,
   employees,
+  platformPlans,
   guidelineAcceptances,
   guidelineVersions,
   levels,
@@ -88,10 +89,19 @@ export class AuthService {
     const [existing] = await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, input.workspace)).limit(1);
     if (existing) throw conflict('That workspace name is taken', 'WORKSPACE_TAKEN');
 
+    const plan = input.planId ? (await this.db.root.select().from(platformPlans).where(eq(platformPlans.id, input.planId)))[0] : undefined;
+    if (input.planId && !plan) throw badRequest('Choose a valid plan', 'PLAN_NOT_FOUND');
+
     return this.db.root.transaction(async (tx) => {
       const [tenant] = await tx
         .insert(tenants)
-        .values({ name: input.companyName, slug: input.workspace, timezone: input.timezone, currency: input.currency })
+        .values({
+          name: input.companyName,
+          slug: input.workspace,
+          timezone: input.timezone,
+          currency: input.currency,
+          ...(plan ? { planId: plan.id, modules: plan.modules, maxEmployees: plan.maxEmployees } : {}),
+        })
         .returning();
       await tx.execute(sql`select set_config('app.tenant_id', ${tenant!.id}, true)`);
 
@@ -148,7 +158,7 @@ export class AuthService {
         { tenantId: tenant!.id, userId: user!.id, role: 'EMPLOYEE' },
       ]);
       await this.audit.log(tx, { tenantId: tenant!.id, action: 'tenant.created', actorLabel: `platform:${createdBy}`, entityType: 'tenant', entityId: tenant!.id, metadata: { superAdmin: input.email, invited: !input.password } });
-      if (!input.password) await this.sendTokenEmail(tx, tenant!.id, { id: user!.id, email: input.email }, 'INVITE');
+      await this.sendCompanyWelcome(tx, tenant!.id, { id: user!.id, email: input.email, name: input.adminName }, !input.password);
       return { tenantId: tenant!.id, userId: user!.id, invited: !input.password };
     });
   }
@@ -256,6 +266,43 @@ export class AuthService {
     });
   }
 
+  /**
+   * Welcome email for a new company's Super Admin: an invite link to set a password, or (when the platform
+   * owner set a temporary password) the sign-in details without the password itself.
+   */
+  async sendCompanyWelcome(tx: Tx, tenantId: string, admin: { id: string; email: string; name: string }, invite: boolean) {
+    const [tenant] = await tx.select({ name: tenants.name, slug: tenants.slug }).from(tenants).where(eq(tenants.id, tenantId));
+    const app = config().APP_URL;
+    let action: string;
+    if (invite) {
+      const secret = randomToken(32);
+      await tx.update(userTokens).set({ usedAt: new Date() }).where(and(eq(userTokens.userId, admin.id), eq(userTokens.purpose, 'INVITE'), isNull(userTokens.usedAt)));
+      await tx.insert(userTokens).values({ tenantId, userId: admin.id, purpose: 'INVITE', tokenHash: sha256(secret), expiresAt: new Date(Date.now() + INVITE_TTL_H * 3600_000) });
+      const link = `${app}/reset-password?token=${encodeURIComponent(`${tenantId}.${secret}`)}&invite=1`;
+      action = `1. Set your password (this link works for ${INVITE_TTL_H} hours):\n   ${link}\n2. Then sign in at ${app}/login`;
+    } else {
+      action = `Sign in at ${app}/login with the temporary password your provider gave you. You'll be asked to choose your own password.`;
+    }
+    await this.mail.send({
+      to: admin.email,
+      subject: `Your ${tenant?.name} HR workspace is ready`,
+      text: [
+        `Hi ${admin.name},`,
+        '',
+        `Your company workspace "${tenant?.name}" has been created and you are its Super Admin.`,
+        '',
+        `Workspace: ${tenant?.slug}`,
+        `Your email: ${admin.email}`,
+        '',
+        action,
+        '',
+        'As Super Admin you can add employees, departments and levels, and decide what each role may do under Access & roles.',
+        '',
+        'If you did not expect this email, you can ignore it.',
+      ].join('\n'),
+    });
+  }
+
   /** Always succeeds from the caller's view, so accounts can't be enumerated. */
   async forgotPassword(workspace: string, email: string) {
     const [tenant] = await this.db.root.select().from(tenants).where(eq(tenants.slug, workspace)).limit(1);
@@ -356,7 +403,7 @@ export class AuthService {
       },
       employee: emp ?? null,
       onboardingRequired: !!emp && !emp.onboardingCompletedAt,
-      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, logoFileId: tenant!.logoFileId, settings: tenant!.settings },
+      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, logoFileId: tenant!.logoFileId, modules: tenant!.modules, maxEmployees: tenant!.maxEmployees, settings: tenant!.settings },
     };
   }
 }

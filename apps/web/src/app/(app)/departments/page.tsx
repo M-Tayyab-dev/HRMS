@@ -16,6 +16,7 @@ import { useAuth } from '@/lib/auth';
 import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
 import { cn, money } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
+import { DeleteButton } from '@/components/delete-button';
 
 function DepartmentDialog({ dept, open, onOpenChange }: { dept?: Department; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
@@ -37,7 +38,7 @@ function DepartmentDialog({ dept, open, onOpenChange }: { dept?: Department; ope
     }
   });
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={dept ? 'Edit department' : 'New department'} footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={onSubmit} loading={form.formState.isSubmitting}>Save</Button></>}>
+    <Dialog open={open} onOpenChange={onOpenChange} title={dept ? 'Edit department' : 'New department'} footer={<>{dept && <span className="mr-auto"><DeleteButton path={`/departments/${dept.id}`} what={`the ${dept.name} department`} invalidate={['/departments', '/levels']} onDeleted={() => onOpenChange(false)} detail="Only possible if nobody ever belonged to it. Its levels are deleted too. Otherwise untick Active." /></span>}<Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={onSubmit} loading={form.formState.isSubmitting}>Save</Button></>}>
       <div className="space-y-4">
         <FormGrid>
           <Field label="Name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} {...form.register('name')} />}</Field>
@@ -81,7 +82,7 @@ function LevelDialog({ departmentId, level, open, onOpenChange, currency }: { de
   const num = { setValueAs: (v: string) => (v === '' ? undefined : Number(v)) };
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={level ? `Edit ${level.code}` : 'Add level'} description={`Salaries in ${currency}. Changing the default does not change existing employees' salaries.`}
-      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={onSubmit} loading={form.formState.isSubmitting}>Save</Button></>}>
+      footer={<>{level && <span className="mr-auto"><DeleteButton path={`/levels/${level.id}`} what={`level ${level.code}`} invalidate={['/levels', '/departments']} onDeleted={() => onOpenChange(false)} detail="Only possible if no employee has ever held this level. Otherwise untick Active." /></span>}<Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={onSubmit} loading={form.formState.isSubmitting}>Save</Button></>}>
       <div className="space-y-4">
         <FormGrid>
           <Field label="Code" required error={fieldError(form, 'code')} hint="L0, L1, …">{(a) => <Input {...a} disabled={!!level} {...form.register('code')} />}</Field>

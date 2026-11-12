@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { money, monthLabel, todayLocal } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { DeleteButton } from '@/components/delete-button';
 
 interface TargetRow { id: string; employeeId: string; fullName: string; period: string; metric: string; unit: string; targetValue: number; incentiveType: string; incentiveValue: number; achieved: number | null; progress: number | null }
 interface Sub { id: string; employeeId: string; fullName: string; period: string; metric: string; achievedValue: number; targetValue: number | null; unit: string | null; notes: string | null; tlRemarks: string | null; hrRemarks: string | null; status: string; currentStep: string | null; canDecide: boolean }
@@ -147,6 +148,7 @@ export default function KpiPage() {
                   { key: 'n', header: 'Employee', cell: (t) => <span className="font-medium">{t.fullName}</span> },
                   { key: 'm', header: 'Metric', cell: (t) => `${t.metric} · ${monthLabel(t.period)}` },
                   { key: 'p', header: 'Progress', cell: (t) => <div className="w-40"><Progress value={t.progress ?? 0} /><p className="mt-1 text-xs text-muted-foreground">{t.achieved !== null ? `${t.progress}%` : 'Not submitted'}</p></div> },
+                  { key: 'x', header: <span className="sr-only">Delete</span>, cell: (t) => (t.achieved === null ? <DeleteButton iconOnly path={`/kpi/targets/${t.id}`} what={`the "${t.metric}" target`} invalidate={['/kpi']} /> : null) },
                 ]} />
               </Card>
               {!!allInc?.length && (

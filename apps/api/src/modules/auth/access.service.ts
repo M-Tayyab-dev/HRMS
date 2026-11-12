@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Permission, Role } from '@hrms/shared';
+import { ALL_PERMISSIONS, permissionAllowed, type Permission, type Role } from '@hrms/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { AuthUser } from '../../common/context';
 import { DbService } from '../../db/db.service';
@@ -60,11 +60,13 @@ export class AccessService {
       if (!u || u.status !== 'ACTIVE') return null;
       if (tokenVersion !== undefined && u.tokenVersion !== tokenVersion) return null;
 
+      const [tenant] = await tx.select({ settings: tenants.settings, modules: tenants.modules, status: tenants.status }).from(tenants).where(eq(tenants.id, tenantId));
+      if (!tenant || tenant.status !== 'ACTIVE') return null; // suspended companies are locked out at once
+
       if (session) {
         // SEC-03: end the session after the configured inactivity; real user activity extends it
         // (written at most once a minute to keep requests cheap).
-        const [t] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId));
-        const idle = sessionIdleMinutes(t?.settings);
+        const idle = sessionIdleMinutes(tenant.settings);
         const res = await tx.execute(sql`
           with s as (
             select id, last_activity_at from refresh_tokens
@@ -105,7 +107,12 @@ export class AccessService {
         email: u.email,
         employeeId: u.employeeId,
         roles,
-        permissions: new Set(permRows.map((p) => p.permission as Permission)),
+        // Super Admin always holds every permission (including ones added later); everyone is limited to the
+        // modules the company pays for.
+        permissions: new Set(
+          (roles.includes('SUPER_ADMIN') ? ALL_PERMISSIONS : permRows.map((p) => p.permission as Permission)).filter((p) => permissionAllowed(p, tenant.modules)),
+        ),
+        modules: tenant.modules,
         ledTeamIds,
         canPost: u.canPost,
       };

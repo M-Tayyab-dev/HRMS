@@ -1,4 +1,5 @@
 export * from './permissions';
+export * from './modules';
 export * from './workflows';
 export * from './enums';
 export * from './schemas/common';

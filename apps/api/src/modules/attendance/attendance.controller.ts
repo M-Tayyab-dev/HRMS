@@ -18,7 +18,7 @@ import { and, asc, desc, eq, gte, isNull, lte, sql, type SQL } from 'drizzle-orm
 import { z } from 'zod';
 import { als, currentUser } from '../../common/context';
 import { randomToken, sha256 } from '../../common/crypto';
-import { Audit, Public, RequireAny, SkipAudit, SkipCsrf } from '../../common/decorators';
+import { Audit, Public, RequireAny, SkipAudit, SkipCsrf, RequireModule } from '../../common/decorators';
 import { badRequest, forbidden } from '../../common/errors';
 import { localMinutes, monthRange, todayIn, zonedInstant } from '../../common/tz';
 import { one, scoped } from '../../common/util';
@@ -47,6 +47,7 @@ const reqList = z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'C
 const dailyQuery = z.object({ date: z.iso.date().optional(), departmentId: z.uuid().optional() });
 const monthQuery = z.object({ month: z.string().regex(/^\d{4}-\d{2}$/), departmentId: z.uuid().optional() });
 
+@RequireModule('ATTENDANCE')
 @Controller('attendance')
 export class AttendanceController {
   constructor(
@@ -59,6 +60,7 @@ export class AttendanceController {
 
   /* ---------------- Biometric devices (C1) ---------------- */
 
+  @RequireModule('BIOMETRIC')
   @Get('devices')
   @RequireAny(P.ATTENDANCE_MANAGE)
   async devices() {
@@ -82,6 +84,7 @@ export class AttendanceController {
   }
 
   /** BIO-02: register a device to this company. Returns the device key once; only its hash is stored. */
+  @RequireModule('BIOMETRIC')
   @Post('devices')
   @RequireAny(P.ATTENDANCE_MANAGE)
   @Audit('attendance.device_created', 'attendance_device')
@@ -106,6 +109,7 @@ export class AttendanceController {
     return { id: row.id, name: row.name, protocol: row.protocol, apiKey: key };
   }
 
+  @RequireModule('BIOMETRIC')
   @Delete('devices/:id')
   @RequireAny(P.ATTENDANCE_MANAGE)
   @Audit('attendance.device_revoked', 'attendance_device')
@@ -140,6 +144,7 @@ export class AttendanceController {
 
   /* ---------------- Held punches: unknown device user IDs (BIO-04) ---------------- */
 
+  @RequireModule('BIOMETRIC')
   @Get('held-punches')
   @RequireAny(P.ATTENDANCE_MANAGE)
   async heldPunchList() {
@@ -159,6 +164,7 @@ export class AttendanceController {
   }
 
   /** Link a device user ID to an employee; their held punches are then added to attendance. */
+  @RequireModule('BIOMETRIC')
   @Post('held-punches/assign')
   @RequireAny(P.ATTENDANCE_MANAGE)
   @Audit('attendance.device_user_mapped', 'employee')
@@ -178,6 +184,7 @@ export class AttendanceController {
     return { id: emp.id, deviceUserId: body.deviceUserId, released: held.length, inserted };
   }
 
+  @RequireModule('BIOMETRIC')
   @Post('held-punches/discard')
   @RequireAny(P.ATTENDANCE_MANAGE)
   @Audit('attendance.held_punches_discarded')

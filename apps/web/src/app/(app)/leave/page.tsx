@@ -14,6 +14,7 @@ import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { date, todayLocal } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { DeleteButton } from '@/components/delete-button';
 
 interface Balance { leaveTypeId: string; code: string; name: string; color: string; allocated: number; used: number; pending: number; available: number; carriedForward: number; derivedFromOvertime: boolean }
 interface LeaveType { id: string; code: string; name: string; annualAllowance: number; isPaid: boolean; derivedFromOvertime: boolean; carryForward: boolean; carryForwardMax: number | null; color: string; isActive: boolean }
@@ -199,6 +200,7 @@ function Policy({ types }: { types: LeaveType[] }) {
           { key: 'a', header: 'Allowance', cell: (t) => (t.derivedFromOvertime ? 'From approved overtime' : `${t.annualAllowance} days / year`) },
           { key: 'c', header: 'Carry forward', hideOnMobile: true, cell: (t) => (t.carryForward ? (t.carryForwardMax === null ? 'Yes, no limit' : `Up to ${t.carryForwardMax} days`) : 'No') },
           { key: 'p', header: 'Paid', cell: (t) => (t.isPaid ? 'Yes' : 'No') },
+          { key: 'del', header: <span className="sr-only">Delete</span>, cell: (t) => <DeleteButton iconOnly path={`/leave/types/${t.id}`} what={`the ${t.name} leave type`} invalidate={['/leave']} detail="Only possible if it was never used. Otherwise untick Active to retire it." /> },
         ]} />
         <LeaveTypeDialog type={edit.type} open={edit.open} onOpenChange={(o) => setEdit({ open: o, type: edit.type })} />
       </Card>

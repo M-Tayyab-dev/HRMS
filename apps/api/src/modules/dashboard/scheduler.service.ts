@@ -61,9 +61,10 @@ export class SchedulerService implements OnApplicationBootstrap, OnModuleDestroy
       const active = await tx.select({ id: employees.id }).from(employees).where(eq(employees.employmentStatus, 'ACTIVE'));
       for (const e of active) await this.attendance.recompute(e.id, yesterday, yesterday);
 
-      // 2) Birthdays (G3)
+      // 2) Birthdays (G3) – part of the Community module.
+      const [plan] = await tx.select({ modules: tenants.modules }).from(tenants).where(eq(tenants.id, tenantId));
       const mmdd = date.slice(5);
-      const bdays = await tx
+      const bdays = !plan?.modules.includes('COMMUNITY') ? [] : await tx
         .select({ id: employees.id, fullName: employees.fullName })
         .from(employees)
         .where(and(eq(employees.employmentStatus, 'ACTIVE'), isNotNull(employees.dateOfBirth), sql`to_char(${employees.dateOfBirth}, 'MM-DD') = ${mmdd}`));

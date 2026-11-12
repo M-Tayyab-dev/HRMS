@@ -1,17 +1,22 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { PERMISSIONS as P, kpiDecisionSchema, kpiSubmissionSchema, kpiTargetSchema } from '@hrms/shared';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { currentUser } from '../../common/context';
-import { Audit, RequireAny } from '../../common/decorators';
+import { Audit, RequireAny, RequireModule } from '../../common/decorators';
 import { badRequest, forbidden } from '../../common/errors';
-import { one, round2, scoped } from '../../common/util';
+import { one, round2, scoped, requireDelete, assertUnused, countWhere } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
 import { ApprovalsService } from '../../core/approvals.service';
 import { NotificationsService } from '../../core/notifications.service';
 import { ScopeService } from '../../core/scope.service';
 import { DbService } from '../../db/db.service';
-import { employees, incentives, kpiSubmissions, kpiTargets } from '../../db/schema';
+import {
+  employees,
+  incentives,
+  kpiSubmissions,
+  kpiTargets,
+} from '../../db/schema';
 
 const listQuery = z.object({
   employeeId: z.uuid().optional(),
@@ -27,6 +32,7 @@ export function incentiveFor(target: { targetValue: number; incentiveType: 'FIXE
 }
 
 /** E1–E2 – KPI targets, submissions (Team Lead → HR) and incentives. */
+@RequireModule('PERFORMANCE')
 @Controller('kpi')
 export class PerformanceController {
   constructor(
@@ -76,6 +82,18 @@ export class PerformanceController {
     const row = one(await this.db.tx.insert(kpiTargets).values({ ...body, tenantId: u.tenantId, createdByUserId: u.userId }).returning());
     await this.notify.notifyEmployees([body.employeeId], { type: 'kpi.target_set', title: `New ${body.metric} target for ${body.period}`, link: '/kpi' });
     return row;
+  }
+
+  @Delete('targets/:id')
+  @RequireAny(P.KPI_TARGETS_MANAGE)
+  @Audit('kpi.target_deleted', 'kpi_target')
+  async removeTarget(@Param('id', ParseUUIDPipe) id: string) {
+    requireDelete();
+    const tx = this.db.tx;
+    one(await tx.select({ id: kpiTargets.id }).from(kpiTargets).where(eq(kpiTargets.id, id)), 'KPI target');
+    assertUnused('This KPI target', [[await countWhere(tx, kpiSubmissions, eq(kpiSubmissions.targetId, id)), 'submission(s)']]);
+    await tx.delete(kpiTargets).where(eq(kpiTargets.id, id));
+    return { id, deleted: true };
   }
 
   @Get('submissions')

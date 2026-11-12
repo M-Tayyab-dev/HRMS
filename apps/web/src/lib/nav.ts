@@ -1,4 +1,4 @@
-import { PERMISSIONS as P, type Permission } from '@hrms/shared';
+import { PERMISSIONS as P, type Module, type Permission } from '@hrms/shared';
 import {
   BadgeCheck,
   Banknote,
@@ -44,6 +44,8 @@ export interface NavItem {
   any?: Permission[];
   teamLead?: boolean;
   employeeOnly?: boolean;
+  /** Only shown when the company's plan includes this module. */
+  module?: Module;
 }
 
 /**
@@ -77,9 +79,9 @@ export const NAV: NavGroup[] = [
     label: 'Attendance & leave',
     icon: Clock,
     items: [
-      { href: '/attendance', label: 'Attendance', icon: Clock },
-      { href: '/overtime', label: 'Overtime & compensation', icon: Timer },
-      { href: '/leave', label: 'Leave & holidays', icon: CalendarRange },
+      { href: '/attendance', label: 'Attendance', icon: Clock, module: 'ATTENDANCE' },
+      { href: '/overtime', label: 'Overtime & compensation', icon: Timer, module: 'ATTENDANCE' },
+      { href: '/leave', label: 'Leave & holidays', icon: CalendarRange, module: 'LEAVE' },
       { href: '/calendar', label: 'Calendar', icon: CalendarDays },
     ],
   },
@@ -87,32 +89,32 @@ export const NAV: NavGroup[] = [
     label: 'Payroll',
     icon: Banknote,
     items: [
-      { href: '/payroll', label: 'Payroll', icon: Banknote, any: [P.PAYROLL_READ_ALL] },
-      { href: '/payslips', label: 'My salary slips', icon: Receipt, employeeOnly: true },
-      { href: '/loans', label: 'Loans', icon: HandCoins },
-      { href: '/medical', label: 'Medical claims', icon: HeartPulse },
-      { href: '/food-allowance', label: 'Food allowance', icon: Utensils, any: [P.FOOD_ALLOWANCE_MANAGE] },
+      { href: '/payroll', label: 'Payroll', icon: Banknote, any: [P.PAYROLL_READ_ALL], module: 'PAYROLL' },
+      { href: '/payslips', label: 'My salary slips', icon: Receipt, employeeOnly: true, module: 'PAYROLL' },
+      { href: '/loans', label: 'Loans', icon: HandCoins, module: 'PAYROLL' },
+      { href: '/medical', label: 'Medical claims', icon: HeartPulse, module: 'PAYROLL' },
+      { href: '/food-allowance', label: 'Food allowance', icon: Utensils, any: [P.FOOD_ALLOWANCE_MANAGE], module: 'PAYROLL' },
     ],
   },
-  { label: 'KPI & performance', icon: Target, items: [{ href: '/kpi', label: 'KPI & performance', icon: Target }] },
+  { label: 'KPI & performance', icon: Target, items: [{ href: '/kpi', label: 'KPI & performance', icon: Target, module: 'PERFORMANCE' }] },
   {
     label: 'Compliance',
     icon: FileText,
     items: [
-      { href: '/policies', label: 'Policies & documents', icon: FileText },
-      { href: '/guidelines', label: 'Community guidelines', icon: ScrollText },
-      { href: '/complaints', label: 'Complaints', icon: MessageSquareWarning },
-      { href: '/queries', label: 'Queries & support', icon: LifeBuoy },
-      { href: '/surveys', label: 'Surveys', icon: Vote },
+      { href: '/policies', label: 'Policies & documents', icon: FileText, module: 'COMPLIANCE' },
+      { href: '/guidelines', label: 'Community guidelines', icon: ScrollText, module: 'COMMUNITY' },
+      { href: '/complaints', label: 'Complaints', icon: MessageSquareWarning, module: 'COMPLIANCE' },
+      { href: '/queries', label: 'Queries & support', icon: LifeBuoy, module: 'COMPLIANCE' },
+      { href: '/surveys', label: 'Surveys', icon: Vote, module: 'COMPLIANCE' },
     ],
   },
   {
     label: 'Community',
     icon: Sparkles,
     items: [
-      { href: '/community', label: 'Feed', icon: Sparkles },
-      { href: '/announcements', label: 'Announcements', icon: Megaphone },
-      { href: '/birthdays', label: 'Birthdays', icon: Gift },
+      { href: '/community', label: 'Feed', icon: Sparkles, module: 'COMMUNITY' },
+      { href: '/announcements', label: 'Announcements', icon: Megaphone, module: 'COMMUNITY' },
+      { href: '/birthdays', label: 'Birthdays', icon: Gift, module: 'COMMUNITY' },
     ],
   },
   {

@@ -18,6 +18,7 @@ import { fieldError, useZodForm } from '@/lib/form';
 import { useAction, useApi } from '@/lib/hooks';
 import { Combobox } from '@/components/ui/combobox';
 import { currencyOptions, timeZoneOptions } from '@/lib/locale-options';
+import { DeleteButton } from '@/components/delete-button';
 
 interface S { name: string; slug: string; timezone: string; currency: string; settings: { directoryShowJoinDate: boolean; sessionIdleMinutes?: number; medicalAnnualLimit: number; overtimeThresholdMinutes: number; payrollWorkingHoursBased: boolean } }
 interface WS { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; workingDays: number[]; isDefault: boolean }
@@ -134,7 +135,7 @@ function Schedules() {
         { key: 'd', header: 'Days', hideOnMobile: true, cell: (w) => w.workingDays.map((d) => DAYS[d]).join(', ') },
       ]} />
       <Dialog open={edit.open} onOpenChange={(o) => setEdit({ open: o, ws: edit.ws })} title={edit.ws ? 'Edit schedule' : 'New schedule'}
-        footer={<><Button variant="outline" onClick={() => setEdit({ open: false })}>Cancel</Button><Button loading={save.isPending || update.isPending} onClick={form.handleSubmit((v) => (edit.ws ? update.mutate(v) : save.mutate(v)))}>Save</Button></>}>
+        footer={<>{edit.ws && !edit.ws.isDefault && <span className="mr-auto"><DeleteButton path={`/work-schedules/${edit.ws.id}`} what={`the "${edit.ws.name}" schedule`} invalidate={['/work-schedules']} onDeleted={() => setEdit({ open: false })} /></span>}<Button variant="outline" onClick={() => setEdit({ open: false })}>Cancel</Button><Button loading={save.isPending || update.isPending} onClick={form.handleSubmit((v) => (edit.ws ? update.mutate(v) : save.mutate(v)))}>Save</Button></>}>
         <div className="space-y-4">
           <Field label="Name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} {...form.register('name')} />}</Field>
           <FormGrid>

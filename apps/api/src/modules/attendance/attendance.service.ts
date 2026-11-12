@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PERMISSIONS as P, type PunchType } from '@hrms/shared';
 import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { als } from '../../common/context';
@@ -217,6 +217,10 @@ export class AttendanceService {
    */
   async ingestDevicePunches(deviceId: string, punches: DevicePunch[]) {
     const tx = this.db.tx;
+    const t = await this.tenant();
+    if (!t.modules.includes('BIOMETRIC')) {
+      throw new ForbiddenException({ message: "Biometric devices are not included in this company's plan", code: 'MODULE_DISABLED' });
+    }
     const map = await this.resolveDeviceUsers(punches.map((p) => p.deviceUserId));
     const known = punches.filter((p) => map.has(p.deviceUserId));
     const unknown = punches.filter((p) => !map.has(p.deviceUserId));

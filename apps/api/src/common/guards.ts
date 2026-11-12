@@ -1,9 +1,9 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Permission } from '@hrms/shared';
+import { MODULE_INFO, type Module, type Permission } from '@hrms/shared';
 import type { Request } from 'express';
 import { als } from './context';
-import { IS_PUBLIC, PERMS_ANY, SKIP_CSRF } from './decorators';
+import { IS_PUBLIC, MODULE_KEY, PERMS_ANY, SKIP_CSRF } from './decorators';
 // SKIP_CSRF routes must also be @Public() and authenticate themselves (e.g. device API keys).
 import { safeEqual } from './crypto';
 import { AccessService } from '../modules/auth/access.service';
@@ -59,10 +59,34 @@ export class AuthGuard implements CanActivate {
       store.tenantId = user.tenantId;
     }
 
+    // Plan check first, so people outside the plan are told why rather than "no permission".
+    assertModule(this.reflector.getAllAndOverride<Module | 'CORE' | undefined>(MODULE_KEY, targets), user.modules);
+
     const needed = this.reflector.getAllAndOverride<Permission[]>(PERMS_ANY, targets);
     if (needed?.length && !needed.some((p) => user.permissions.has(p))) {
       throw new ForbiddenException({ message: 'You do not have permission to do this', code: 'FORBIDDEN' });
     }
     return true;
   }
+}
+
+/**
+ * Subscription check: endpoints of a module the company's plan doesn't include are refused,
+ * whatever the person's role (even Super Admin).
+ */
+@Injectable()
+export class ModuleGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const m = this.reflector.getAllAndOverride<Module | 'CORE' | undefined>(MODULE_KEY, [context.getHandler(), context.getClass()]);
+    const user = als.getStore()?.user;
+    if (user) assertModule(m, user.modules); // public endpoints check modules themselves
+    return true;
+  }
+}
+
+function assertModule(m: Module | 'CORE' | undefined, modules: string[]) {
+  if (!m || m === 'CORE' || modules.includes(m)) return;
+  throw new ForbiddenException({ message: `${MODULE_INFO[m].label} isn't included in your company's plan. Contact your provider to add it.`, code: 'MODULE_DISABLED' });
 }

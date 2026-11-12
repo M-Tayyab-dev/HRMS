@@ -1,6 +1,6 @@
 'use client';
 
-import type { Permission, Role } from '@hrms/shared';
+import type { Module, Permission, Role } from '@hrms/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { api } from './api';
@@ -34,6 +34,9 @@ export interface Me {
     timezone: string;
     currency: string;
     logoFileId: string | null;
+    /** Feature modules in the company's plan. */
+    modules: string[];
+    maxEmployees: number | null;
     settings: { directoryShowJoinDate: boolean; communityPostingMode: string; communityEngagementEnabled: boolean; medicalAnnualLimit: number };
   };
 }
@@ -44,6 +47,8 @@ interface AuthCtx {
   can: (...perms: Permission[]) => boolean;
   hasRole: (...roles: Role[]) => boolean;
   isTeamLead: boolean;
+  /** Is this module part of the company's plan? */
+  hasModule: (m: Module) => boolean;
   refresh: () => Promise<unknown>;
   logout: () => Promise<void>;
 }
@@ -82,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       can: (...p) => p.some((x) => perms.has(x)),
       hasRole: (...r) => r.some((x) => data?.user.roles.includes(x) ?? false),
       isTeamLead: (data?.user.ledTeamIds.length ?? 0) > 0,
+      hasModule: (m) => data?.tenant.modules.includes(m) ?? false,
       refresh: refetch,
       logout,
     }),

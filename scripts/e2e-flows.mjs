@@ -271,14 +271,40 @@ async function main() {
     expect(d.status === 200, `${name} dashboard loads`, d);
   }
 
+  // ---- Deleting records needs the "Delete records" permission (Super Admin by default)
+  const pol = await HR.post('/policies', { category: 'COMPANY', title: 'Temporary policy', content: 'Draft text to be removed.' });
+  expect(pol.status === 201, 'HR creates a policy', pol);
+  expect((await HR.req('DELETE', `/policies/${pol.data.id}`)).status === 403, 'HR cannot delete without the "Delete records" permission');
+  expect((await admin.req('DELETE', `/policies/${pol.data.id}`)).status === 200, 'Super Admin deletes the policy');
+  const usedDept = await admin.req('DELETE', `/departments/${sales.id}`);
+  expect(usedDept.status === 409 && /employee/.test(usedDept.data.message), 'department in use cannot be deleted, with the reason', usedDept);
+
+  // ---- Plans: a company only gets the modules its plan includes
+  const plans = (await platform.get('/platform/plans')).data;
+  const starter = plans.find((p) => p.name === 'Starter');
+  expect(starter && !starter.modules.includes('PAYROLL'), 'Starter plan has no payroll', plans);
+  const companyId = (await platform.get('/platform/companies')).data.find((c) => c.slug === ws).id;
+  expect((await platform.patch(`/platform/companies/${companyId}`, { planId: starter.id })).data.modules.includes('PAYROLL') === false, 'platform owner moves the company to Starter');
+  const blocked = await admin.get('/payroll/runs');
+  expect(blocked.status === 403 && blocked.data.code === 'MODULE_DISABLED', 'payroll blocked even for Super Admin when not in the plan', { status: blocked.status, data: blocked.data });
+  const sess = (await admin.get('/auth/session')).data;
+  expect(!sess.tenant.modules.includes('PAYROLL') && !sess.user.permissions.includes('payroll.process'), 'session shows the plan modules and drops payroll permissions', sess.tenant.modules);
+  expect((await admin.get('/leave/types')).status === 200 && (await admin.get('/calendar?from=2026-01-01&to=2026-01-31')).status !== 403, 'included modules and core features still work');
+  const detail = (await platform.get(`/platform/companies/${companyId}`)).data;
+  expect(detail.superAdmins.some((a) => a.email === `sam@${ws}.test`), 'company page lists its Super Admins', detail);
+  expect((await platform.post(`/platform/companies/${companyId}/welcome`)).data.sent.length >= 1, 'welcome email can be re-sent');
+  expect((await platform.patch(`/platform/companies/${companyId}`, { planId: null, modules: ['ATTENDANCE', 'LEAVE', 'PAYROLL', 'PERFORMANCE', 'COMPLIANCE', 'COMMUNITY', 'BIOMETRIC'], maxEmployees: null })).status === 200, 'custom module set restored');
+  expect((await admin.get('/payroll/runs')).status === 200, 'payroll available again');
+
   // ---- Tenant isolation (RLS)
   const other = await createCompany(platform, { companyName: 'Other Co', workspace: `${ws}-b`, adminName: 'Bob', email: `bob@${ws}-b.test`, password: pw });
-  const suspended = await platform.patch(`/platform/companies/${(await platform.get('/platform/companies')).data.find((c) => c.slug === `${ws}-b`).id}`, { status: 'SUSPENDED' });
-  expect(suspended.data.status === 'SUSPENDED', 'platform owner suspends a company');
   expect((await other.get(`/employees/${emp.id}`)).status === 404, 'other tenant cannot read employee (RLS)');
   expect((await other.get(`/payroll/payslips/${slips[0].id}`)).status === 403, 'other tenant cannot read payslip');
   const otherList = (await other.get('/employees')).data;
   expect(otherList.total === 1, 'other tenant sees only its own employees');
+  const suspended = await platform.patch(`/platform/companies/${(await platform.get('/platform/companies')).data.find((c) => c.slug === `${ws}-b`).id}`, { status: 'SUSPENDED' });
+  expect(suspended.data.status === 'SUSPENDED', 'platform owner suspends a company');
+  expect((await other.get('/employees')).status === 401, 'suspended company is locked out immediately');
 
   console.log(`\nAll flows passed for workspace "${ws}".`);
 }
