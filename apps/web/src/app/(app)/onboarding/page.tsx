@@ -1,12 +1,12 @@
 'use client';
 
-import { DOC_CATEGORY_LABELS, REQUIRED_ONBOARDING_DOCS, type DocCategory } from '@hrms/shared';
-import { CheckCircle2, Circle, Upload } from 'lucide-react';
+import { REQUIRED_ONBOARDING_DOCS } from '@hrms/shared';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Doc } from '@/components/employee-panels';
+import { DocUploadCard } from '@/components/onboarding-docs';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader, PageHeader } from '@/components/ui/display';
 import { Field, FormGrid, Input, CnicInput, PhoneInput } from '@/components/ui/form';
@@ -22,27 +22,11 @@ export default function OnboardingPage() {
   const id = me?.employee?.id;
   const docsKey = id ? `/employees/${id}/documents` : null;
   const { data: docs } = useApi<Doc[]>(docsKey);
-  const [busy, setBusy] = useState<string | null>(null);
   const [cnic, setCnic] = useState('');
   const [emergency, setEmergency] = useState('');
   const [finishing, setFinishing] = useState(false);
   const have = new Set(docs?.map((d) => d.category));
-
-  const upload = async (category: DocCategory, file: File) => {
-    const fd = new FormData();
-    fd.set('file', file);
-    fd.set('category', category);
-    setBusy(category);
-    try {
-      await api.post('/me/documents', fd);
-      qc.invalidateQueries({ queryKey: [docsKey] });
-      toast.success(`${DOC_CATEGORY_LABELS[category]} uploaded`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const done = REQUIRED_ONBOARDING_DOCS.filter((c) => have.has(c)).length;
 
   const finish = async () => {
     setFinishing(true);
@@ -63,24 +47,18 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-3xl">
       <PageHeader title={`Welcome, ${me?.employee?.fullName.split(' ')[0] ?? ''}!`} description="Before you start, please upload your documents. They're submitted once and can only be changed by HR afterwards." />
       <Card className="mb-6">
-        <CardHeader title="1. Required documents" />
-        <ul className="divide-y">
+        <CardHeader title="1. Required documents" description={`${done} of ${REQUIRED_ONBOARDING_DOCS.length} uploaded. Check each file in the preview before uploading.`} />
+        <CardBody className="space-y-4">
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuemin={0} aria-valuemax={REQUIRED_ONBOARDING_DOCS.length} aria-valuenow={done} aria-label="Documents uploaded">
+            <div className="h-full rounded-full bg-success transition-all duration-500" style={{ width: `${(done / REQUIRED_ONBOARDING_DOCS.length) * 100}%` }} />
+          </div>
           {REQUIRED_ONBOARDING_DOCS.map((c) => (
-            <li key={c} className="flex items-center gap-3 px-5 py-3">
-              {have.has(c) ? <CheckCircle2 className="h-5 w-5 text-success" aria-label="Uploaded" /> : <Circle className="h-5 w-5 text-muted-foreground" aria-label="Missing" />}
-              <span className="flex-1 text-sm font-medium">{DOC_CATEGORY_LABELS[c]}</span>
-              {!have.has(c) && (
-                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs font-medium hover:bg-muted">
-                  <Upload className="h-3.5 w-3.5" aria-hidden /> {busy === c ? 'Uploading…' : 'Upload'}
-                  <input type="file" className="sr-only" accept={c === 'PHOTO' ? 'image/*' : '.pdf,image/*'} disabled={!!busy} onChange={(e) => e.target.files?.[0] && upload(c, e.target.files[0])} />
-                </label>
-              )}
-            </li>
+            <DocUploadCard key={c} category={c} uploaded={docs?.find((d) => d.category === c)} onUploaded={() => qc.invalidateQueries({ queryKey: [docsKey] })} />
           ))}
-        </ul>
+        </CardBody>
       </Card>
       <Card className="mb-6">
         <CardHeader title="2. Essential details" description="Skip any field you've already provided." />

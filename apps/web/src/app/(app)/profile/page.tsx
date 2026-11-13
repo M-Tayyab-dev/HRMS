@@ -178,7 +178,8 @@ function ProfileInner() {
   const tab = params.get('tab') ?? (forced ? 'security' : 'profile');
 
   useEffect(() => {
-    if (forced) toast.message('Please change your password to continue');
+    // Fixed id: re-renders or revisits update the same toast instead of stacking copies.
+    if (forced) toast.message('Please change your password to continue', { id: 'must-change-password' });
   }, [forced]);
 
   const uploadAvatar = async (f: File) => {
