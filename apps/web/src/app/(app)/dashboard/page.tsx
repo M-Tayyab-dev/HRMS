@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertTriangle, CalendarClock, Clock, FileText, HandCoins, Inbox, LifeBuoy, Megaphone, Receipt, Timer, UserCheck, Users, Utensils } from 'lucide-react';
-import { ATTENDANCE_COLORS as C } from '@hrms/shared';
+import { ATTENDANCE_COLORS as C, auditActionLabel } from '@hrms/shared';
 import Link from 'next/link';
 import { Bars, Donut } from '@/components/ui/charts';
 import { Badge, BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, Progress, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
@@ -358,7 +358,7 @@ export default function DashboardPage() {
                 {d.system.recentAudit.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
                     <span className="truncate">
-                      <span className="font-medium">{a.actorLabel ?? 'system'}</span> <span className="text-muted-foreground">{a.action}</span>
+                      <span className="font-medium">{a.actorLabel ?? 'System'}</span> <span className="text-muted-foreground">{a.actorLabel ? auditActionLabel(a.action).replace(/^./, (c) => c.toLowerCase()) : auditActionLabel(a.action)}</span>
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">{dateTime(a.createdAt)}</span>
                   </li>

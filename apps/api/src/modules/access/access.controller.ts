@@ -205,7 +205,9 @@ export class AccessController {
     if (q.to) conds.push(lte(auditLogs.createdAt, new Date(`${q.to}T23:59:59Z`)));
     if (q.search) conds.push(or(ilike(auditLogs.actorLabel, like(q.search)), ilike(auditLogs.path, like(q.search)))!);
     const where = conds.length ? and(...conds) : undefined;
-    const items = await tx.select().from(auditLogs).where(where).orderBy(desc(auditLogs.id)).limit(q.pageSize).offset(offset(q));
+    const rows = await tx.select({ a: auditLogs, email: users.email }).from(auditLogs).leftJoin(users, eq(users.id, auditLogs.actorUserId)).where(where).orderBy(desc(auditLogs.id)).limit(q.pageSize).offset(offset(q));
+    // Older entries (e.g. sign-outs) stored only the user id: show their email instead of "system".
+    const items = rows.map((r) => ({ ...r.a, actorLabel: r.a.actorLabel ?? r.email ?? null }));
     const [{ n }] = (await tx.select({ n: sql<number>`count(*)::int` }).from(auditLogs).where(where)) as [{ n: number }];
     return page(items, n, q);
   }

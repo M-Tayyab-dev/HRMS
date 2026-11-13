@@ -273,7 +273,8 @@ export class DashboardController {
         })
         .from(users);
       const [deptCount] = await tx.select({ n: sql<number>`count(*)::int` }).from(departments).where(eq(departments.isActive, true));
-      const recentAudit = await tx.select().from(auditLogs).orderBy(desc(auditLogs.id)).limit(8);
+      const recentAudit = (await tx.select({ a: auditLogs, email: users.email }).from(auditLogs).leftJoin(users, eq(users.id, auditLogs.actorUserId)).orderBy(desc(auditLogs.id)).limit(8))
+        .map((r) => ({ ...r.a, actorLabel: r.a.actorLabel ?? r.email ?? null }));
       out.system = { users: userStats, departments: deptCount?.n ?? 0, recentAudit };
     }
 

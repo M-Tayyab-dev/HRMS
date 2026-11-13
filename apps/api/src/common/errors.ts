@@ -50,7 +50,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const status = exception.getStatus();
       // Rate limits: a plain sentence instead of "ThrottlerException: Too Many Requests".
       if (status === HttpStatus.TOO_MANY_REQUESTS) {
-        res.status(status).json({ statusCode: status, code: 'TOO_MANY_REQUESTS', message: 'Too many attempts. Please wait a minute and try again.' });
+        // The rate limiter has already set Retry-After (seconds); pass it on so the page can count down.
+        const retryAfter = Math.max(1, Math.ceil(Number(res.getHeader('Retry-After') ?? 60)) || 60);
+        res.status(status).json({ statusCode: status, code: 'TOO_MANY_REQUESTS', message: `Too many attempts. Please try again in ${retryAfter} seconds.`, details: { retryAfter } });
         return;
       }
       const body = exception.getResponse();

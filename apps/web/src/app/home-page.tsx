@@ -451,12 +451,9 @@ export function HomePage() {
         revealBatch(gsap.utils.toArray<HTMLElement>('[data-anim="card"]:not([data-step])'), 40);
         revealBatch(gsap.utils.toArray<HTMLElement>('[data-anim="cta"]'), 40);
 
-        // How it works: the line draws across as you scroll, lighting each step as it reaches it.
-        const steps = gsap.utils.toArray<HTMLElement>('[data-step]');
+        // How it works: the line draws across the steps as you scroll.
         const line = document.querySelector<HTMLElement>('[data-anim="line"]');
         gsap.set(line, { scaleX: 0, transformOrigin: 'left center' });
-        const activate = (p: number) => steps.forEach((el, i) => el.toggleAttribute('data-active', p >= i / Math.max(1, steps.length - 1) - 0.001));
-        activate(0);
         // Progress from the section's position: 0 when its top is 60% down the screen, 1 when its bottom
         // reaches 75%. A plain scroll listener keeps it exact in both directions.
         const how = document.querySelector<HTMLElement>('#how');
@@ -469,7 +466,6 @@ export function HomePage() {
           if (Math.abs(p - shown) < 0.002) return;
           shown = p;
           gsap.to(line, { scaleX: p, duration: 0.35, ease: 'power1.out', overwrite: true });
-          activate(p);
         };
         onScroll();
         window.addEventListener('scroll', onScroll, { passive: true });
@@ -547,9 +543,9 @@ export function HomePage() {
             <div className="absolute top-[3.75rem] right-[16%] left-[16%] hidden h-1 rounded-full bg-border md:block" aria-hidden />
             <div data-anim="line" className="absolute top-[3.75rem] right-[16%] left-[16%] hidden h-1 rounded-full bg-gradient-to-r from-primary via-indigo-500 to-violet-500 shadow-[0_0_12px] shadow-primary/50 md:block" aria-hidden />
             {STEPS.map((s, i) => (
-              <div key={s.title} data-anim="card" data-step data-active="" className="step-card spotlight group/step relative rounded-2xl border bg-card px-6 pt-8 pb-7 text-center shadow-sm transition duration-500 hover:-translate-y-1 hover:shadow-lg">
-                <div className="step-icon relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border-4 border-background bg-muted text-muted-foreground shadow-sm transition-all duration-500"><s.icon className="h-6 w-6" aria-hidden /></div>
-                <p className="step-label mt-5 text-xs font-semibold tracking-wider text-muted-foreground uppercase transition-colors duration-500">Step {i + 1}</p>
+              <div key={s.title} data-anim="card" data-step className="spotlight relative rounded-2xl border bg-card px-6 pt-8 pb-7 text-center shadow-sm transition duration-500 hover:-translate-y-1 hover:shadow-lg">
+                <div className="relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border-4 border-background bg-gradient-to-br from-primary to-indigo-500 text-white shadow-lg shadow-primary/30"><s.icon className="h-6 w-6" aria-hidden /></div>
+                <p className="mt-5 text-xs font-semibold tracking-wider text-primary uppercase">Step {i + 1}</p>
                 <h3 className="mt-1 text-lg font-semibold">{s.title}</h3>
                 <p className="mx-auto mt-2 max-w-xs text-sm text-muted-foreground">{s.body}</p>
               </div>

@@ -3,7 +3,7 @@
 import { loginSchema } from '@hrms/shared';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/form';
 import { api, ApiError } from '@/lib/api';
@@ -17,6 +17,13 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [choices, setChoices] = useState<{ slug: string; name: string }[] | null>(null);
   const form = useZodForm(loginSchema, { email: '', password: '' });
+  // Rate limit: seconds until signing in is allowed again (counts down live).
+  const [wait, setWait] = useState(0);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
 
   const signIn = async (values: { email: string; password: string; workspace?: string }) => {
     setError(null);
@@ -28,6 +35,10 @@ function LoginForm() {
     } catch (e) {
       if (e instanceof ApiError && e.code === 'CHOOSE_WORKSPACE') {
         setChoices((e.details?.workspaces as { slug: string; name: string }[]) ?? []);
+        return;
+      }
+      if (e instanceof ApiError && e.code === 'TOO_MANY_REQUESTS') {
+        setWait(Number(e.details?.retryAfter) || 60);
         return;
       }
       if (!applyServerErrors(form, e)) setError(e instanceof ApiError ? e.message : 'Could not sign in');
@@ -62,7 +73,12 @@ function LoginForm() {
       <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
       <p className="mt-1 text-sm text-muted-foreground">Welcome back. Use your work email and password.</p>
       <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
-        {error && (
+        {wait > 0 ? (
+          <div role="alert" className="flex items-center gap-3 rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning">
+            <span className="font-mono text-lg font-semibold tabular-nums">{Math.floor(wait / 60)}:{String(wait % 60).padStart(2, '0')}</span>
+            <span>Too many sign-in attempts from this network. You can try again when the timer ends.</span>
+          </div>
+        ) : error && (
           <div role="alert" className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">
             {error}
           </div>
@@ -78,12 +94,12 @@ function LoginForm() {
             Forgot password?
           </Link>
         </div>
-        <Button type="submit" className="w-full" size="lg" loading={form.formState.isSubmitting}>
-          Sign in
+        <Button type="submit" className="w-full" size="lg" loading={form.formState.isSubmitting} disabled={wait > 0}>
+          {wait > 0 ? `Try again in ${wait}s` : 'Sign in'}
         </Button>
       </form>
       <p className="mt-6 text-center text-sm text-muted-foreground">
-        New company? Ask your {SITE.name} provider to set up your workspace.
+        New company? <Link href="/signup" className="font-medium text-primary hover:underline">Create your workspace</Link> or <Link href="/demo" className="font-medium text-primary hover:underline">try the demo</Link>.
       </p>
     </>
   );

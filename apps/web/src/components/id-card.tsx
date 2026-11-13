@@ -111,7 +111,7 @@ export function IdCard({ person, template: saved, company, className }: { person
     : <Initials text={company.name} />;
 
   const photo = (
-    <div className={cn('shrink-0 overflow-hidden rounded-xl border-4 border-white bg-slate-100 shadow-md', vertical ? 'h-28 w-28' : 'h-28 w-24')}>
+    <div className={cn('relative z-10 shrink-0 overflow-hidden rounded-xl border-4 border-white bg-slate-100 shadow-md', vertical ? 'h-28 w-28' : 'h-28 w-24')}>
       {person.avatarFileId
         ? <AuthImage src={`/api/v1/avatars/${person.avatarFileId}`} alt="" className="h-full w-full object-cover" fallback={<span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-slate-400">{initials(person.fullName)}</span>} />
         : <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-slate-400">{initials(person.fullName)}</span>}

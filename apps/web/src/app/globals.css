@@ -268,20 +268,3 @@
     border-left: 2px solid color-mix(in oklab, var(--primary) 40%, var(--border));
   }
 }
-
-/* Homepage "How it works": a step lights up when the progress line reaches it. */
-@layer components {
-  .step-card[data-active] {
-    border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
-    box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--primary) 35%, transparent);
-  }
-  .step-card[data-active] .step-icon {
-    background-image: linear-gradient(135deg, var(--primary), #6366f1);
-    color: #fff;
-    transform: scale(1.08);
-    box-shadow: 0 10px 25px -8px color-mix(in oklab, var(--primary) 60%, transparent);
-  }
-  .step-card[data-active] .step-label {
-    color: var(--primary);
-  }
-}

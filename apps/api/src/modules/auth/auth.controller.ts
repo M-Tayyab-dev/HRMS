@@ -20,6 +20,11 @@ import { AuthService } from './auth.service';
 import { ACCESS_COOKIE, ACTIVITY_HEADER, REFRESH_COOKIE, clearSessionCookies, issueCsrfCookie, setSessionCookies, verifyAccessToken } from './tokens';
 
 const STRICT = { default: { limit: 10, ttl: 60_000 } };
+/**
+ * Sign-in per network address. A whole office usually shares one internet address, so this is generous;
+ * guessing passwords is stopped by the per-account lockout (5 wrong attempts) instead.
+ */
+const LOGIN = { default: { limit: 30, ttl: 60_000 } };
 
 @Controller('auth')
 export class AuthController {
@@ -39,7 +44,7 @@ export class AuthController {
   // No public sign-up: companies and their Super Admins are created by platform owners (/platform).
 
   @Public()
-  @Throttle(STRICT)
+  @Throttle(LOGIN)
   @HttpCode(200)
   @Post('login')
   async login(@Body(zp(loginSchema)) body: LoginInput, @Res({ passthrough: true }) res: Response) {

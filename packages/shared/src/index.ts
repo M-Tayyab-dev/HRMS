@@ -10,4 +10,5 @@ export * from './schemas/payroll';
 export * from './schemas/engagement';
 export * from './schemas/billing';
 export * from './schemas/idcard';
+export * from './audit-labels';
 export * from './tenure';
