@@ -4,8 +4,25 @@
     {
       "name": "web",
       "runtimeExecutable": "C:\\Program Files\\nodejs\\npm.cmd",
-      "runtimeArgs": ["run", "dev", "-w", "@hrms/web"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "@hrms/web"
+      ],
       "port": 3000
+    },
+    {
+      "name": "web-prod",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": [
+        "node_modules/next/dist/bin/next",
+        "start",
+        "apps/web",
+        "-p",
+        "3100"
+      ],
+      "port": 3100
     }
   ]
 }

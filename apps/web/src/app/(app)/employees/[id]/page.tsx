@@ -1,16 +1,18 @@
 'use client';
 
-import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, promotionSchema } from '@hrms/shared';
-import { ArrowLeft, BadgeCheck, Camera, Pencil, UserX } from 'lucide-react';
+import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, phoneProblem, promotionSchema, joinedLabel } from '@hrms/shared';
+import { ArrowLeft, BadgeCheck, Camera, Info, Pencil, UserCheck, UserX } from 'lucide-react';
 import Link from 'next/link';
 import { use, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { DeleteButton } from '@/components/delete-button';
 import { DepartmentSelect, EmployeeSelect, useLevels } from '@/components/domain';
 import { CareerTimeline, DocumentsPanel } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardBody, CardHeader, ErrorState, KeyValue, Skeleton, StatusBadge } from '@/components/ui/display';
-import { Field, FormGrid, Input, Select, Textarea } from '@/components/ui/form';
+import { Checkbox, Field, FormGrid, Input, Select, Textarea, CnicInput, PhoneInput, CompanyEmailInput } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -18,9 +20,21 @@ import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
 import { date, hours, money } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import type { EmployeeDetail } from '../../profile/page';
+import { IdCard, useIdCardContext } from '@/components/id-card';
+
+function EmployeeIdCard({ emp }: { emp: EmployeeDetail }) {
+  const { template, company } = useIdCardContext();
+  return (
+    <Card>
+      <CardHeader title="ID card" description="Uses the company's ID card template (Settings → ID card)." />
+      <CardBody><IdCard person={emp} template={template} company={company} /></CardBody>
+    </Card>
+  );
+}
 
 function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
+  const { me } = useAuth();
   const [v, setV] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
   const { data: levels } = useLevels((v.departmentId as string) ?? emp.departmentId);
@@ -31,6 +45,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         basicSalary: emp.basicSalary, joiningDate: emp.joiningDate, dateOfBirth: emp.dateOfBirth ?? '', reportingManagerId: emp.reportingManagerId ?? '',
         hierarchyTier: emp.hierarchyTier, employmentStatus: emp.employmentStatus, cnic: emp.cnic ?? '', fatherName: emp.fatherName ?? '',
         fatherCnic: emp.fatherCnic ?? '', bloodGroup: emp.bloodGroup ?? '', contactNo: emp.contactNo ?? '', emergencyContact: emp.emergencyContact ?? '',
+        medicalEligible: !!emp.medicalEligible,
       });
   }, [open, emp]);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((s) => ({ ...s, [k]: e.target.value }));
@@ -55,14 +70,14 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
   };
   const s = (k: string) => String(v[k] ?? '');
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="Edit employee" description="HR can edit every field, including ones employees can't change." size="xl"
-      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} loading={busy}>Save</Button></>}>
+    <Dialog open={open} onOpenChange={onOpenChange} title="Edit employee" description="Company Admin and HR can edit every field, including ones employees can't change. Setting the status back to Active restores their login." size="xl"
+      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} loading={busy} disabled={!!(phoneProblem(s('contactNo')) || phoneProblem(s('emergencyContact')))}>Save</Button></>}>
       <FormGrid cols={3}>
         <Field label="Full name">{(a) => <Input {...a} value={s('fullName')} onChange={set('fullName')} />}</Field>
-        <Field label="Company email">{(a) => <Input {...a} type="email" value={s('email')} onChange={set('email')} />}</Field>
+        <Field label="Company email">{(a) => <CompanyEmailInput {...a} domain={me?.tenant.emailDomain} value={s('email')} onChange={(v) => setV((x) => ({ ...x, email: v }))} />}</Field>
         <Field label="Designation">{(a) => <Input {...a} value={s('designation')} onChange={set('designation')} />}</Field>
         <Field label="Department">{(a) => <DepartmentSelect {...a} value={s('departmentId')} onChange={(e) => setV((x) => ({ ...x, departmentId: e.target.value, levelId: '' }))} />}</Field>
-        <Field label="Level">{(a) => <Select {...a} value={s('levelId')} onChange={set('levelId')}><option value="">Select…</option>{levels?.map((l) => <option key={l.id} value={l.id}>{l.code} – {l.title}</option>)}</Select>}</Field>
+        <Field label="Level" hint="Choosing a level fills in its default salary">{(a) => <Select {...a} value={s('levelId')} onChange={(e) => { const l = levels?.find((x) => x.id === e.target.value); setV((x) => ({ ...x, levelId: e.target.value, ...(l ? { basicSalary: l.defaultSalary } : {}) })); }}><option value="">Select…</option>{levels?.map((l) => <option key={l.id} value={l.id}>{l.code} – {l.title}</option>)}</Select>}</Field>
         <Field label="Basic salary">{(a) => <Input {...a} type="number" value={s('basicSalary')} onChange={set('basicSalary')} />}</Field>
         <Field label="Joining date">{(a) => <Input {...a} type="date" value={s('joiningDate')} onChange={set('joiningDate')} />}</Field>
         <Field label="Date of birth">{(a) => <Input {...a} type="date" value={s('dateOfBirth')} onChange={set('dateOfBirth')} />}</Field>
@@ -70,12 +85,16 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         <Field label="Reporting manager">{(a) => <EmployeeSelect {...a} placeholder="None" value={s('reportingManagerId')} onChange={set('reportingManagerId')} filter={(e) => e.id !== emp.id} />}</Field>
         <Field label="Hierarchy">{(a) => <Select {...a} value={s('hierarchyTier')} onChange={set('hierarchyTier')}>{HIERARCHY_TIERS.map((t) => <option key={t} value={t}>{HIERARCHY_LABELS[t]}</option>)}</Select>}</Field>
         <Field label="Blood group">{(a) => <Select {...a} value={s('bloodGroup')} onChange={set('bloodGroup')}><option value="">—</option>{BLOOD_GROUPS.map((b) => <option key={b}>{b}</option>)}</Select>}</Field>
-        <Field label="CNIC">{(a) => <Input {...a} value={s('cnic')} onChange={set('cnic')} />}</Field>
+        <Field label="CNIC">{(a) => <CnicInput {...a} value={s('cnic')} onChange={set('cnic')} />}</Field>
         <Field label="Father's name">{(a) => <Input {...a} value={s('fatherName')} onChange={set('fatherName')} />}</Field>
-        <Field label="Father's CNIC">{(a) => <Input {...a} value={s('fatherCnic')} onChange={set('fatherCnic')} />}</Field>
-        <Field label="Contact number">{(a) => <Input {...a} value={s('contactNo')} onChange={set('contactNo')} />}</Field>
-        <Field label="Emergency contact">{(a) => <Input {...a} value={s('emergencyContact')} onChange={set('emergencyContact')} />}</Field>
+        <Field label="Father's CNIC">{(a) => <CnicInput {...a} value={s('fatherCnic')} onChange={set('fatherCnic')} />}</Field>
+        <Field label="Contact number" error={phoneProblem(s('contactNo')) ?? undefined}>{(a) => <PhoneInput {...a} value={s('contactNo')} onChange={set('contactNo')} />}</Field>
+        <Field label="Emergency contact" error={phoneProblem(s('emergencyContact')) ?? undefined}>{(a) => <PhoneInput {...a} value={s('emergencyContact')} onChange={set('emergencyContact')} />}</Field>
       </FormGrid>
+      <div className="mt-5 border-t pt-4">
+        <Checkbox label="Eligible for medical claims" checked={!!v.medicalEligible} onChange={(e) => setV((x) => ({ ...x, medicalEligible: e.target.checked }))} />
+        <p className="mt-1 ml-6 text-xs text-muted-foreground">They can claim medical expenses up to the company's yearly limit. Without this, Medical claims is hidden for them.</p>
+      </div>
     </Dialog>
   );
 }
@@ -119,6 +138,37 @@ function PromoteDialog({ emp, open, onOpenChange, currency }: { emp: EmployeeDet
   );
 }
 
+/** Former employee comes back. Nothing was deleted, so their history is all still there. */
+function ReactivateDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const qc = useQueryClient();
+  const [restoreLogin, setRestoreLogin] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post<{ login: string }>(`/employees/${emp.id}/reactivate`, { restoreLogin });
+      toast.success(r.login === 'restored' ? `${emp.fullName} is active again and can sign in` : r.login === 'invite_needed' ? `${emp.fullName} is active again. They still need to set a password from their invitation.` : `${emp.fullName} is active again`);
+      qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith('/employees') });
+      onOpenChange(false);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title={`Reactivate ${emp.fullName}?`} description="They become an active employee again with all their past records (attendance, leave, payslips, documents)." size="sm"
+      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={go} loading={busy}><UserCheck className="h-4 w-4" /> Reactivate</Button></>}>
+      {emp.accountStatus ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1 accent-[var(--primary)]" checked={restoreLogin} onChange={(e) => setRestoreLogin(e.target.checked)} />
+          <span><span className="font-medium">Give login access again</span><span className="block text-xs text-muted-foreground">They can sign in with their existing email and password.</span></span>
+        </label>
+      ) : <p className="text-sm text-muted-foreground">This employee has no login account.</p>}
+    </Dialog>
+  );
+}
+
 function TerminateDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
   const [exitDate, setExitDate] = useState(new Date().toISOString().slice(0, 10));
@@ -138,7 +188,7 @@ function TerminateDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; ope
     }
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={`Terminate ${emp.fullName}?`} description="Their login is disabled immediately. Records are kept." size="sm"
+    <Dialog open={open} onOpenChange={onOpenChange} title={`Terminate ${emp.fullName}?`} description="Their login is disabled immediately. All their records are kept, and you can reactivate them later." size="sm"
       footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="danger" onClick={go} loading={busy} disabled={reason.trim().length < 5}>Terminate</Button></>}>
       <div className="space-y-4">
         <Field label="Exit date">{(a) => <Input {...a} type="date" value={exitDate} onChange={(e) => setExitDate(e.target.value)} />}</Field>
@@ -161,6 +211,8 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
   const [edit, setEdit] = useState(false);
   const [promote, setPromote] = useState(false);
   const [terminate, setTerminate] = useState(false);
+  const [reactivate, setReactivate] = useState(false);
+  const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const currency = me?.tenant.currency ?? 'PKR';
 
@@ -201,7 +253,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
               <StatusBadge status={emp.employmentStatus} />
               <Badge tone="primary">{emp.levelCode} – {emp.levelTitle}</Badge>
               <Badge>{emp.employeeCode}</Badge>
-              <Badge tone="info">{emp.tenure}</Badge>
+              <span title={emp.tenure}><Badge tone="info">{joinedLabel(emp.joiningDate)}</Badge></span>
               {emp.accountStatus && <Badge tone={emp.accountStatus === 'ACTIVE' ? 'success' : 'warning'}>login {emp.accountStatus.toLowerCase()}</Badge>}
             </div>
           </div>
@@ -210,11 +262,25 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
               <Button variant="outline" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" /> Edit</Button>
               {can(P.PROMOTIONS_MANAGE) && <Button variant="outline" onClick={() => setPromote(true)}><BadgeCheck className="h-4 w-4" /> Promote</Button>}
               {emp.employmentStatus === 'ACTIVE' && <Button variant="outline" className="text-danger" onClick={() => setTerminate(true)}><UserX className="h-4 w-4" /> Terminate</Button>}
+              {emp.employmentStatus !== 'ACTIVE' && <Button onClick={() => setReactivate(true)}><UserCheck className="h-4 w-4" /> Reactivate</Button>}
+              {emp.employmentStatus !== 'ACTIVE' && (
+                <DeleteButton path={`/employees/${emp.id}`} what={emp.fullName} label="Delete permanently" invalidate={['/employees', '/dashboard']} onDeleted={() => router.replace('/employees')}
+                  detail="This permanently deletes the employee and everything that belongs to them: attendance, leave, payslips, loans, documents and their login. It cannot be undone. To keep the history, leave them terminated instead." />
+              )}
             </div>
           )}
         </CardBody>
       </Card>
 
+      {emp.employmentStatus !== 'ACTIVE' && (
+        <div role="status" className="mb-6 flex items-start gap-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>
+            <span className="font-medium">{emp.fullName} is {emp.employmentStatus.toLowerCase().replace('_', ' ')}{emp.exitDate ? ` since ${date(emp.exitDate)}` : ''}.</span>{' '}
+            Their login is disabled, but all their records are kept until someone deletes them.{hr ? ' Use Reactivate to bring them back.' : ''}
+          </p>
+        </div>
+      )}
       <Tabs
         tabs={[
           {
@@ -239,6 +305,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           },
           { value: 'documents', label: 'Documents', hidden: !(can(P.EMPLOYEE_DOCS_MANAGE) || can(P.EMPLOYMENT_DOCS_MANAGE)), content: <DocumentsPanel employeeId={id} self={false} /> },
           { value: 'career', label: 'Promotions', content: <CareerTimeline employeeId={id} currency={currency} alwaysShow /> },
+          { value: 'id-card', label: 'ID card', hidden: !hr, content: <EmployeeIdCard emp={emp} /> },
           {
             value: 'attendance',
             label: 'Attendance (30 days)',
@@ -262,6 +329,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
       {hr && <EditDialog emp={emp} open={edit} onOpenChange={setEdit} />}
       {hr && <PromoteDialog emp={emp} open={promote} onOpenChange={setPromote} currency={currency} />}
       {hr && <TerminateDialog emp={emp} open={terminate} onOpenChange={setTerminate} />}
+      {hr && <ReactivateDialog emp={emp} open={reactivate} onOpenChange={setReactivate} />}
     </>
   );
 }

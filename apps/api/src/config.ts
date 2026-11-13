@@ -8,6 +8,8 @@ const schema = z.object({
   DATABASE_ADMIN_URL: z.string().min(1).optional(),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   DATA_HMAC_SECRET: z.string().min(32, 'DATA_HMAC_SECRET must be at least 32 characters'),
+  /** SEC-05: 32-byte base64 key for field encryption. Optional – derived from DATA_HMAC_SECRET when unset. Never change it once data exists. */
+  DATA_ENCRYPTION_KEY: z.string().optional().transform((v) => (v ? v : undefined)),
   COOKIE_SECURE: z
     .enum(['true', 'false'])
     .default('true')
