@@ -12,6 +12,7 @@ import { DataTable } from '@/components/ui/table';
 import { useAuth } from '@/lib/auth';
 import { cn, date, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { BillingStatusBadge, InvoiceStatusBadge } from '@/components/billing-status';
 
 interface PlanInfo { id: string; name: string; description?: string | null; currency: string; priceMonthly: number; priceAnnual: number; modules: Module[]; maxEmployees: number | null }
 interface Invoice { id: string; planName: string; cycle: 'MONTHLY' | 'ANNUAL'; amount: number; currency: string; periodStart: string; periodEnd: string; status: 'PENDING' | 'PAID' | 'VOID'; paymentReference: string | null; submittedAt: string | null; paidAt: string | null }
@@ -77,8 +78,12 @@ export default function BillingPage() {
   const { me } = useAuth();
   const { data, isLoading } = useApi<Overview>('/billing');
   const [paying, setPaying] = useState<Invoice | null>(null);
+  const changeCycle = useAction<'MONTHLY' | 'ANNUAL', { billingCycle: string; replacedInvoice: boolean }>('post', '/billing/cycle', {
+    invalidate: ['/billing'],
+    body: (cycle) => ({ cycle }),
+    success: (r) => `Switched to ${r.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly'} billing.${r.replacedInvoice ? ' Your open invoice was updated to the new price.' : ' It applies from your next invoice.'}`,
+  });
   if (isLoading || !data) return <Skeleton className="h-96" />;
-  const status = STATUS[data.billingStatus];
   const open = data.invoices.filter((i) => i.status === 'PENDING');
   return (
     <>
@@ -96,7 +101,7 @@ export default function BillingPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader title="Current plan" action={<Badge tone={status.tone}>{status.label}</Badge>} />
+          <CardHeader title="Current plan" action={<BillingStatusBadge status={data.billingStatus} />} />
           <CardBody>
             {data.plan ? (
               <div className="space-y-4">
@@ -106,12 +111,18 @@ export default function BillingPage() {
                     <p className="text-sm text-muted-foreground">Billed {data.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly'}{data.paidUntil ? ` · paid until ${date(data.paidUntil)}` : ''}</p>
                   </div>
                   <div className="flex gap-3">
-                    {(['MONTHLY', 'ANNUAL'] as const).map((c) => (
-                      <div key={c} className={cn('rounded-lg border px-3 py-2 text-right', data.billingCycle === c && 'border-primary bg-primary-soft')}>
-                        <p className="text-xs text-muted-foreground">{c === 'ANNUAL' ? 'Yearly' : 'Monthly'}</p>
-                        <p className="font-semibold tabular-nums">{money(c === 'ANNUAL' ? data.plan!.priceAnnual : data.plan!.priceMonthly, data.plan!.currency)}</p>
-                      </div>
-                    ))}
+                    {(['MONTHLY', 'ANNUAL'] as const).map((c) => {
+                      const on = data.billingCycle === c;
+                      return (
+                        <button key={c} type="button" aria-pressed={on} disabled={changeCycle.isPending}
+                          onClick={() => !on && changeCycle.mutate(c)}
+                          title={on ? 'Your current billing' : `Switch to ${c === 'ANNUAL' ? 'yearly' : 'monthly'} billing`}
+                          className={cn('rounded-lg border px-3 py-2 text-right transition', on ? 'border-primary bg-primary-soft ring-1 ring-primary' : 'hover:border-primary/60 hover:bg-muted', changeCycle.isPending && 'opacity-60')}>
+                          <p className="text-xs text-muted-foreground">{c === 'ANNUAL' ? 'Yearly' : 'Monthly'}{on ? ' · current' : ''}</p>
+                          <p className="font-semibold tabular-nums">{money(c === 'ANNUAL' ? data.plan!.priceAnnual : data.plan!.priceMonthly, data.plan!.currency)}</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -147,7 +158,7 @@ export default function BillingPage() {
       </div>
 
       <Card className="mt-6">
-        <CardHeader title="Plans" description="Prices for every plan. To change plan or switch between monthly and yearly billing, contact us; it applies from your next invoice." />
+        <CardHeader title="Plans" description="Prices for every plan. Switch between monthly and yearly above. To change plan, contact us; it applies from your next invoice." />
         <CardBody className="grid gap-4 md:grid-cols-3">
           {data.plans.map((p) => {
             const current = p.id === data.plan?.id;
@@ -172,7 +183,7 @@ export default function BillingPage() {
           { key: 'p', header: 'Period', cell: (i) => <div className="flex items-center gap-2"><Receipt className="h-4 w-4 text-muted-foreground" />{date(i.periodStart)} – {date(i.periodEnd)}</div> },
           { key: 'n', header: 'Plan', cell: (i) => `${i.planName} · ${i.cycle === 'ANNUAL' ? 'yearly' : 'monthly'}` },
           { key: 'a', header: 'Amount', cell: (i) => <span className="tabular-nums">{money(i.amount, i.currency)}</span> },
-          { key: 's', header: 'Status', cell: (i) => <Badge tone={i.status === 'PAID' ? 'success' : i.status === 'VOID' ? 'neutral' : i.submittedAt ? 'info' : 'warning'}>{i.status === 'PAID' ? `Paid ${i.paidAt ? date(i.paidAt) : ''}` : i.status === 'VOID' ? 'Cancelled' : i.submittedAt ? 'Awaiting confirmation' : 'Unpaid'}</Badge> },
+          { key: 's', header: 'Status', cell: (i) => <InvoiceStatusBadge invoice={i} viewer="company" /> },
         ]} />
       </Card>
 

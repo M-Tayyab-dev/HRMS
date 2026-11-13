@@ -384,12 +384,14 @@ async function main() {
   expect((await platform.put('/platform/settings', { defaultCurrency: altCurrency })).status === 200, 'Super Admin changes the platform currency');
   const pub = (await new Client().get('/public/plans')).data;
   expect(pub.length > 0 && pub.every((p) => p.currency === altCurrency), 'every plan (and the homepage) follows the platform currency', pub);
+  const named = await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, siteName: 'Acme People' });
+  expect(named.status === 200 && (await new Client().get('/public/branding')).data.siteName === 'Acme People', 'Super Admin sets the platform name');
   const saved = await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, copyright: '© {year} Test Footer' });
   expect(saved.status === 200 && saved.data.copyright === '© {year} Test Footer', 'Super Admin saves platform settings', saved);
   const brand = (await new Client().get('/public/branding')).data;
   expect(brand.copyright === `© ${new Date().getFullYear()} Test Footer`, 'sign-in footer shows the saved text with the year', brand);
   expect((await admin.get('/platform/settings')).status === 401, 'company users cannot read platform settings');
-  await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, copyright: before.copyright ?? undefined });
+  await platform.put('/platform/settings', { defaultCurrency: before.defaultCurrency, siteName: before.siteName ?? undefined, copyright: before.copyright ?? undefined });
 
   // ---- Platform logo / favicon (only real images; SVG refused because it can carry scripts)
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';

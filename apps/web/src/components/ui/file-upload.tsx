@@ -3,10 +3,9 @@
 import { Eye, FileText, ImageIcon, UploadCloud, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/format';
+import { cn, fileSize } from '@/lib/format';
 import { Button } from './button';
 
-const fmtSize = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
 
 /** Does `file` match an accept string such as ".pdf,image/*"? */
 function accepts(file: File, accept?: string) {
@@ -169,7 +168,7 @@ export function FileUpload({
                   <p className="truncate text-sm font-medium">{f.name}</p>
                   <p className="flex items-center gap-1 text-xs text-muted-foreground">
                     {isImage ? <ImageIcon className="h-3 w-3" aria-hidden /> : <FileText className="h-3 w-3" aria-hidden />}
-                    {fmtSize(f.size)}
+                    {fileSize(f.size)}
                   </p>
                 </div>
                 <Button type="button" variant="ghost" size="sm" onClick={() => openPreview(url)}>

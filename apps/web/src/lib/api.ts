@@ -28,9 +28,15 @@ function readCookie(name: string): string | undefined {
 let csrfPromise: Promise<void> | null = null;
 async function ensureCsrf() {
   if (readCookie('hrms_csrf')) return;
-  csrfPromise ??= fetch(`${BASE}/auth/csrf`, { credentials: 'same-origin' }).then(() => {
-    csrfPromise = null;
-  });
+  // Cleared on success and on failure, so a moment without the server doesn't break every later submit.
+  csrfPromise ??= fetch(`${BASE}/auth/csrf`, { credentials: 'same-origin', signal: AbortSignal.timeout(15_000) })
+    .then(() => undefined)
+    .catch(() => {
+      throw new ApiError(0, 'NETWORK', "Can't reach the server. Check your connection and try again.");
+    })
+    .finally(() => {
+      csrfPromise = null;
+    });
   await csrfPromise;
 }
 
@@ -72,12 +78,20 @@ async function request<T>(method: string, path: string, body?: Body, retried = f
     headers['x-csrf-token'] = readCookie('hrms_csrf') ?? '';
   }
   if (body !== undefined && !isForm) headers['content-type'] = 'application/json';
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    credentials: 'same-origin',
-    headers,
-    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      credentials: 'same-origin',
+      headers,
+      body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+      // Never leave a button spinning forever: give up after 30 s (uploads get longer).
+      signal: AbortSignal.timeout(isForm ? 120_000 : 30_000),
+    });
+  } catch (e) {
+    const timedOut = e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    throw new ApiError(0, timedOut ? 'TIMEOUT' : 'NETWORK', timedOut ? 'The server is taking too long to answer. Please try again.' : "Can't reach the server. Check your connection and try again.");
+  }
 
   // The platform console has its own session and login page.
   if (res.status === 401 && !retried && !path.startsWith('/auth/') && !path.startsWith('/platform/')) {
@@ -95,7 +109,9 @@ async function request<T>(method: string, path: string, body?: Body, retried = f
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.code ?? 'ERROR', err.message ?? res.statusText, err.issues, err.details);
+    // Server down or crashed (the proxy answers without our JSON): say so plainly instead of "Internal Server Error".
+    const fallback = res.status >= 500 ? 'The server is unavailable right now. Please try again in a moment.' : res.statusText;
+    throw new ApiError(res.status, err.code ?? 'ERROR', err.message ?? fallback, err.issues, err.details);
   }
   const type = res.headers.get('content-type') ?? '';
   if (type.includes('application/json')) return (await res.json()) as T;
@@ -117,6 +133,22 @@ export function qs(params: Record<string, string | number | boolean | undefined 
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') p.set(k, String(v));
   const s = p.toString();
   return s ? `?${s}` : '';
+}
+
+/** Builds a CSV (values quoted as needed) and downloads it, e.g. reports and lead lists. */
+export function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]) {
+  const cell = (v: string | number | null | undefined) => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const url = URL.createObjectURL(new Blob([rows.map((r) => r.map(cell).join(',')).join('\n')], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 /** Download an authenticated file (payslip PDF, documents). */

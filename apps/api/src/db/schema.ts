@@ -197,6 +197,8 @@ export const platformSettings = pgTable('platform_settings', {
   id: text('id').primaryKey().default('default'),
   /** Currency new plans start with. */
   defaultCurrency: text('default_currency').notNull().default('PKR'),
+  /** Product name shown everywhere (logo text, page titles, footer); empty = the deployment default. */
+  siteName: text('site_name'),
   /** Footer text on the sign-in pages; `{year}` is replaced with the current year. */
   copyright: text('copyright'),
   /** Platform logo and favicon uploaded by the Super Admin (small images, kept in the row). */

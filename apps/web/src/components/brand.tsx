@@ -1,9 +1,8 @@
 'use client';
 
-import { cn } from '@/lib/format';
+import { cn, initials } from '@/lib/format';
 import { useBranding } from '@/lib/branding';
 import { AuthImage } from './ui/auth-image';
-import { SITE } from '@/lib/site';
 
 /**
  * Product mark: two people side by side, joined at the middle so together they form an "H"
@@ -32,30 +31,29 @@ export function BrandMark({ className, title }: { className?: string; title?: st
 
 /** Mark + product name, for headers. `inverted` for use on dark/colored backgrounds. */
 export function BrandLogo({ className, inverted, size = 'md' }: { className?: string; inverted?: boolean; size?: 'sm' | 'md' | 'lg' }) {
-  const { logoUrl } = useBranding();
+  const { logoUrl, siteName } = useBranding();
   if (logoUrl) {
     // The Super Admin's own logo (usually includes the name). On coloured backgrounds it sits on a light chip.
     return (
       <span className={cn('inline-flex items-center', inverted && 'rounded-lg bg-white/95 px-2 py-1', className)}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoUrl} alt={SITE.name} className={cn('w-auto max-w-44 object-contain', size === 'sm' && 'h-7', size === 'md' && 'h-8', size === 'lg' && 'h-10')} />
+        <img src={logoUrl} alt={siteName} className={cn('w-auto max-w-44 object-contain', size === 'sm' && 'h-7', size === 'md' && 'h-8', size === 'lg' && 'h-10')} />
       </span>
     );
   }
   return (
     <span className={cn('inline-flex items-center gap-2', className)}>
       <BrandMark className={cn(size === 'sm' && 'h-7 w-7', size === 'md' && 'h-8 w-8', size === 'lg' && 'h-10 w-10', inverted && 'ring-2 ring-white/30 rounded-lg')} />
-      <span className={cn('font-semibold tracking-tight', size === 'lg' ? 'text-xl' : 'text-base', inverted ? 'text-white' : 'text-foreground')}>{SITE.name}</span>
+      <span className={cn('font-semibold tracking-tight', size === 'lg' ? 'text-xl' : 'text-base', inverted ? 'text-white' : 'text-foreground')}>{siteName}</span>
     </span>
   );
 }
 
 /** The client company's own logo, or its initials when none has been uploaded (or it can't be loaded). */
 export function CompanyLogo({ name, logoFileId, className }: { name: string; logoFileId?: string | null; className?: string }) {
-  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
   const fallback = (
     <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-sm font-semibold text-primary', className)} aria-hidden>
-      {initials}
+      {initials(name)}
     </span>
   );
   return logoFileId ? (

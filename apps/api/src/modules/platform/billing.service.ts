@@ -1,7 +1,7 @@
 import { Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { config } from '../../config';
 import { BILLING_GRACE_DAYS, planPrice, type BillingCycle } from '@hrms/shared';
-import { and, asc, desc, eq, inArray, isNotNull, lt, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne } from 'drizzle-orm';
 import { badRequest, notFound } from '../../common/errors';
 import { addDays, todayIn } from '../../common/tz';
 import { DbService } from '../../db/db.service';
@@ -107,6 +107,24 @@ export class BillingService implements OnApplicationBootstrap, OnModuleDestroy {
   async voidInvoice(invoiceId: string) {
     await this.db.root.update(billingInvoices).set({ status: 'VOID', updatedAt: new Date() }).where(and(eq(billingInvoices.id, invoiceId), ne(billingInvoices.status, 'PAID')));
     return { id: invoiceId, status: 'VOID' as const };
+  }
+
+  /**
+   * Company switches between monthly and yearly billing. Applies from the next invoice; an open invoice
+   * they haven't paid yet is replaced by one at the new price for the same start date. An invoice they've
+   * already sent a payment reference for is left alone (the money may already be on its way).
+   */
+  async changeCycle(tenantId: string, cycle: BillingCycle) {
+    const t = await this.tenant(tenantId);
+    if (t.billingCycle === cycle) return { billingCycle: cycle, replacedInvoice: false };
+    await this.updateTenant(tenantId, { billingCycle: cycle });
+    const open = await this.db.root.select().from(billingInvoices)
+      .where(and(eq(billingInvoices.tenantId, tenantId), eq(billingInvoices.status, 'PENDING'), isNull(billingInvoices.submittedAt)));
+    for (const inv of open) {
+      await this.voidInvoice(inv.id);
+      await this.createInvoice(tenantId, inv.periodStart);
+    }
+    return { billingCycle: cycle, replacedInvoice: open.length > 0 };
   }
 
   /** Company: "we've paid with <method>, reference <x>". Waits for the Super Admin to confirm. */

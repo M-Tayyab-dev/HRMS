@@ -86,13 +86,14 @@ export class BrandingController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   async demo(@Body(zp(demoRequestSchema)) body: DemoRequestInput, @Res({ passthrough: true }) res: Response) {
+    // Save the lead first: even if the demo company isn't ready, the Super Admin can still follow up.
+    await this.db.root.insert(marketingLeads).values({ email: body.email, name: body.name, company: body.company, phone: body.phone, source: 'DEMO' });
     const [demo] = await this.db.root.select({ id: tenants.id }).from(tenants).where(and(eq(tenants.isDemo, true), eq(tenants.status, 'ACTIVE'))).limit(1);
-    if (!demo) throw new ServiceUnavailableException({ message: 'The demo is not available right now. Please try again later.', code: 'DEMO_UNAVAILABLE' });
+    if (!demo) throw new ServiceUnavailableException({ message: "Thanks! The live demo isn't available right now; we've saved your details and will be in touch.", code: 'DEMO_UNAVAILABLE' });
     const [admin] = await this.db.inTenant(demo.id, (tx) =>
       tx.select({ id: users.id }).from(users).innerJoin(userRoles, and(eq(userRoles.userId, users.id), eq(userRoles.role, 'SUPER_ADMIN'))).where(eq(users.status, 'ACTIVE')).limit(1),
     );
-    if (!admin) throw new ServiceUnavailableException({ message: 'The demo is not available right now. Please try again later.', code: 'DEMO_UNAVAILABLE' });
-    await this.db.root.insert(marketingLeads).values({ email: body.email, name: body.name, company: body.company, phone: body.phone, source: 'DEMO' });
+    if (!admin) throw new ServiceUnavailableException({ message: "Thanks! The live demo isn't available right now; we've saved your details and will be in touch.", code: 'DEMO_UNAVAILABLE' });
     const t = await this.auth.sessionFor(demo.id, admin.id);
     setSessionCookies(res, t.access, t.refresh);
     return { ok: true };

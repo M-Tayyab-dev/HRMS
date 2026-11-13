@@ -11,7 +11,7 @@ import { Checkbox, Field, FormGrid, Input, Select, Textarea } from '@/components
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
 import { Donut, HoursChart, Line } from '@/components/ui/charts';
-import { api, qs } from '@/lib/api';
+import { api, qs, downloadCsv } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { date, dateTime, hours, monthLabel, time, todayLocal } from '@/lib/format';
@@ -275,15 +275,10 @@ function Reports() {
   const counts = useMemo(() => { const c: Record<string, number> = {}; for (const r of daily?.rows ?? []) c[r.status] = (c[r.status] ?? 0) + 1; return c; }, [daily]);
   const exportCsv = () => {
     if (!monthly) return;
-    const head = 'Employee ID,Name,Department,Present,Late,Absent,On leave,Half day,Worked hours,Scheduled hours,Late minutes,Overtime hours';
-    const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
-    const lines = monthly.map((r) => [r.employeeCode, esc(r.fullName), esc(r.departmentName), r.present, r.late, r.absent, r.onLeave, r.halfDay, (r.workedMinutes / 60).toFixed(1), (r.scheduledMinutes / 60).toFixed(1), r.lateMinutes, (r.overtimeMinutes / 60).toFixed(1)].join(','));
-    const url = URL.createObjectURL(new Blob([[head, ...lines].join('\n')], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `attendance-${month}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(`attendance-${month}.csv`, [
+      ['Employee ID', 'Name', 'Department', 'Present', 'Late', 'Absent', 'On leave', 'Half day', 'Worked hours', 'Scheduled hours', 'Late minutes', 'Overtime hours'],
+      ...monthly.map((r) => [r.employeeCode, r.fullName, r.departmentName, r.present, r.late, r.absent, r.onLeave, r.halfDay, (r.workedMinutes / 60).toFixed(1), (r.scheduledMinutes / 60).toFixed(1), r.lateMinutes, (r.overtimeMinutes / 60).toFixed(1)]),
+    ]);
   };
   return (
     <div className="space-y-6">

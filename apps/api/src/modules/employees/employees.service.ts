@@ -243,10 +243,7 @@ export class EmployeesService {
     // Status set back to Active in the edit form: same as Reactivate (login restored).
     if (input.employmentStatus === 'ACTIVE' && cur.employmentStatus !== 'ACTIVE') {
       await tx.update(employees).set({ exitDate: null }).where(eq(employees.id, id));
-      if (cur.userId) {
-        const [u] = await tx.select({ hash: users.passwordHash }).from(users).where(eq(users.id, cur.userId));
-        await tx.update(users).set({ status: u?.hash ? 'ACTIVE' : 'INVITED' }).where(eq(users.id, cur.userId));
-      }
+      if (cur.userId) await this.restoreLogin(cur.userId);
     }
     return updated;
   }
@@ -269,12 +266,8 @@ export class EmployeesService {
     const emp = one(await tx.update(employees).set({ employmentStatus: 'ACTIVE', exitDate: null }).where(eq(employees.id, id)).returning());
     let login: 'restored' | 'invite_needed' | 'kept_disabled' | 'none' = 'none';
     if (cur.userId) {
-      if (restoreLogin) {
-        const [u] = await tx.select({ hash: users.passwordHash }).from(users).where(eq(users.id, cur.userId));
-        // With a password they can sign in at once; without one they stay invited until they set it.
-        await tx.update(users).set({ status: u?.hash ? 'ACTIVE' : 'INVITED' }).where(eq(users.id, cur.userId));
-        login = u?.hash ? 'restored' : 'invite_needed';
-      } else login = 'kept_disabled';
+      if (restoreLogin) login = (await this.restoreLogin(cur.userId)) ? 'restored' : 'invite_needed';
+      else login = 'kept_disabled';
     }
     return { ...emp, login };
   }
@@ -297,6 +290,17 @@ export class EmployeesService {
     }
     await recordPurger.purge(tx, 'employees', [id]);
     return { id, fullName: cur.fullName, deleted: true };
+  }
+
+  /**
+   * Gives a returning employee their login back: active if they have a password, otherwise still invited
+   * (they set one from their invitation). Returns whether they can sign in right away.
+   */
+  private async restoreLogin(userId: string): Promise<boolean> {
+    const tx = this.db.tx;
+    const [u] = await tx.select({ hash: users.passwordHash }).from(users).where(eq(users.id, userId));
+    await tx.update(users).set({ status: u?.hash ? 'ACTIVE' : 'INVITED' }).where(eq(users.id, userId));
+    return !!u?.hash;
   }
 
   async disableUser(userId: string) {

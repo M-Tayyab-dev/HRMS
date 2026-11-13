@@ -30,6 +30,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'attendance.overtime_decided': 'Decided overtime',
   'attendance.recomputed': 'Recalculated attendance',
   'billing.payment_submitted': 'Submitted a subscription payment',
+  'billing.cycle_changed': 'Changed monthly / yearly billing',
   'calendar.event_created': 'Added a calendar event',
   'calendar.event_deleted': 'Deleted a calendar event',
   'community.comment_created': 'Commented on a post',

@@ -17,7 +17,7 @@ import { Dialog, Tabs } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
-import { date, hours, money } from '@/lib/format';
+import { date, hours, money, todayLocal } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import type { EmployeeDetail } from '../../profile/page';
 import { IdCard, useIdCardContext } from '@/components/id-card';
@@ -101,7 +101,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
 
 function PromoteDialog({ emp, open, onOpenChange, currency }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void; currency: string }) {
   const qc = useQueryClient();
-  const form = useZodForm(promotionSchema, { departmentId: emp.departmentId, effectiveDate: new Date().toISOString().slice(0, 10) } as never);
+  const form = useZodForm(promotionSchema, { departmentId: emp.departmentId, effectiveDate: todayLocal() } as never);
   const dept = (form.watch('departmentId') as string) || emp.departmentId;
   const levelId = form.watch('levelId') as string;
   const { data: levels } = useLevels(dept);
@@ -171,7 +171,7 @@ function ReactivateDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; op
 
 function TerminateDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
-  const [exitDate, setExitDate] = useState(new Date().toISOString().slice(0, 10));
+  const [exitDate, setExitDate] = useState(todayLocal());
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const go = async () => {
@@ -205,7 +205,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
   const { can, me } = useAuth();
   const qc = useQueryClient();
   const { data: emp, isLoading, error } = useApi<EmployeeDetail>(`/employees/${id}`);
-  const to = new Date().toISOString().slice(0, 10);
+  const to = todayLocal();
   const from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
   const { data: days } = useApi<Day[]>(emp ? `/attendance/days?employeeId=${id}&from=${from}&to=${to}` : null);
   const [edit, setEdit] = useState(false);
