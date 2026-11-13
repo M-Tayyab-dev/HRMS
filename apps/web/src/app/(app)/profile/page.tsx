@@ -1,6 +1,6 @@
 'use client';
 
-import { BLOOD_GROUPS, changePasswordSchema, resignationSchema, selfProfileSchema } from '@hrms/shared';
+import { BLOOD_GROUPS, changePasswordSchema, resignationSchema, selfProfileSchema, joinedLabel } from '@hrms/shared';
 import { Camera, Lock } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef } from 'react';
@@ -241,7 +241,7 @@ function ProfileInner() {
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Badge tone="primary">{emp.levelCode} – {emp.levelTitle}</Badge>
               <Badge>{emp.employeeCode}</Badge>
-              <span title={emp.tenure}><Badge tone="info">Joined {date(emp.joiningDate, { day: 'numeric', month: 'long', year: 'numeric' })}</Badge></span>
+              <span title={emp.tenure}><Badge tone="info">{joinedLabel(emp.joiningDate)}</Badge></span>
             </div>
           </div>
         </CardBody>

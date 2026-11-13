@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   PERMISSIONS as P,
   canAssignRole,
-  sinceLabel,
+  joinedLabel,
   tenureLabel,
   type EmployeeInput,
   type EmployeeUpdateInput,
@@ -466,7 +466,8 @@ export class EmployeesService {
       ...r,
       level: `${r.levelCode} – ${r.levelTitle}`,
       tenure: tenureLabel(joiningDate, today),
-      since: t.settings.directoryShowJoinDate ? sinceLabel(joiningDate) : null,
+      // Joining date in the directory only when the company allows it (B5); the same wording as on profiles.
+      since: t.settings.directoryShowJoinDate ? joinedLabel(joiningDate) : null,
     }));
   }
 

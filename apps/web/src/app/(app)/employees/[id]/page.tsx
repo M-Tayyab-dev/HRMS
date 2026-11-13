@@ -1,6 +1,6 @@
 'use client';
 
-import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, phoneProblem, promotionSchema } from '@hrms/shared';
+import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, phoneProblem, promotionSchema, joinedLabel } from '@hrms/shared';
 import { ArrowLeft, BadgeCheck, Camera, Info, Pencil, UserCheck, UserX } from 'lucide-react';
 import Link from 'next/link';
 import { use, useEffect, useRef, useState } from 'react';
@@ -253,7 +253,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
               <StatusBadge status={emp.employmentStatus} />
               <Badge tone="primary">{emp.levelCode} – {emp.levelTitle}</Badge>
               <Badge>{emp.employeeCode}</Badge>
-              <span title={emp.tenure}><Badge tone="info">Joined {date(emp.joiningDate, { day: 'numeric', month: 'long', year: 'numeric' })}</Badge></span>
+              <span title={emp.tenure}><Badge tone="info">{joinedLabel(emp.joiningDate)}</Badge></span>
               {emp.accountStatus && <Badge tone={emp.accountStatus === 'ACTIVE' ? 'success' : 'warning'}>login {emp.accountStatus.toLowerCase()}</Badge>}
             </div>
           </div>

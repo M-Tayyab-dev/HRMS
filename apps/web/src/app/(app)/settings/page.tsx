@@ -106,7 +106,7 @@ function Company() {
         <Field label="Sign out after inactivity (minutes)" hint="People are signed out when they haven't used the app for this long. 5–480 minutes.">{(a) => <Input {...a} type="number" min={5} max={480} className="max-w-40" value={v.settings.sessionIdleMinutes ?? 30} onChange={(e) => set({ sessionIdleMinutes: Number(e.target.value) })} />}</Field>
         <div className="flex flex-col gap-3">
           {full && <Checkbox label="Calculate salaries from actual working hours" checked={v.settings.payrollWorkingHoursBased} onChange={(e) => set({ payrollWorkingHoursBased: e.target.checked })} />}
-          <Checkbox label='Show joining month in the directory (e.g. "Since Jan 2026")' checked={v.settings.directoryShowJoinDate} onChange={(e) => set({ directoryShowJoinDate: e.target.checked })} />
+          <Checkbox label='Show joining date in the directory (e.g. "Joined 13 November 2026")' checked={v.settings.directoryShowJoinDate} onChange={(e) => set({ directoryShowJoinDate: e.target.checked })} />
         </div>
         <Button loading={save.isPending} onClick={() => save.mutate(undefined)}>Save settings</Button>
       </CardBody>
