@@ -1,6 +1,6 @@
 'use client';
 
-import { MODULE_INFO, ROLE_LABELS } from '@hrms/shared';
+import { MODULE_INFO, PERMISSIONS as P, ROLE_LABELS } from '@hrms/shared';
 import { Bell, Lock, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -91,9 +91,15 @@ function useVisibleNav(): NavGroup[] {
     if (i.employeeOnly && !me?.employee) return false;
     if (i.teamLead && !isTeamLead) return false;
     if (i.any?.length && !can(...i.any)) return false;
+    if (i.medical && !can(P.MEDICAL_MANAGE) && !(me?.employee?.medicalEligible && (me.tenant.settings.medicalAnnualLimit ?? 0) > 0)) return false;
     return true;
   };
-  return NAV.map((g) => ({ ...g, items: g.items.filter(visible) })).filter((g) => g.items.length > 0);
+  return NAV.map((g) => {
+    const items = g.items.filter(visible);
+    // Main page hidden (e.g. staff can't open employee profiles): show the group under its limited name.
+    const limited = g.limited && items[0] !== g.items[0] ? g.limited : null;
+    return { ...g, items, ...(limited ? { label: limited.label, icon: limited.icon } : {}) };
+  }).filter((g) => g.items.length > 0);
 }
 
 function SideNav({ onNavigate }: { onNavigate?: () => void }) {
@@ -190,8 +196,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Gates: forced password change, onboarding documents (B2).
   useEffect(() => {
     if (!me) return;
-    if (me.user.mustChangePassword && pathname !== '/profile') router.replace('/profile?tab=security&force=1');
-    else if (me.onboardingRequired && pathname !== '/onboarding') router.replace('/onboarding');
+    // The password change comes first and stays in force until done: while it's pending, never send
+    // them on to onboarding (that used to bounce between the two pages forever).
+    if (me.user.mustChangePassword) {
+      if (pathname !== '/profile') router.replace('/profile?tab=security&force=1');
+      return;
+    }
+    if (me.onboardingRequired && pathname !== '/onboarding') router.replace('/onboarding');
   }, [me, pathname, router]);
 
   if (loading || !me) {

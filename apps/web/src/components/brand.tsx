@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/format';
 import { useBranding } from '@/lib/branding';
+import { AuthImage } from './ui/auth-image';
 import { SITE } from '@/lib/site';
 
 /**
@@ -49,15 +50,17 @@ export function BrandLogo({ className, inverted, size = 'md' }: { className?: st
   );
 }
 
-/** The client company's own logo, or its initials when none has been uploaded. */
+/** The client company's own logo, or its initials when none has been uploaded (or it can't be loaded). */
 export function CompanyLogo({ name, logoFileId, className }: { name: string; logoFileId?: string | null; className?: string }) {
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
-  return logoFileId ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={`/api/v1/company/logo/${logoFileId}`} alt={`${name} logo`} className={cn('h-9 w-9 shrink-0 rounded-lg border bg-white object-contain p-0.5', className)} />
-  ) : (
+  const fallback = (
     <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-sm font-semibold text-primary', className)} aria-hidden>
       {initials}
     </span>
+  );
+  return logoFileId ? (
+    <AuthImage src={`/api/v1/company/logo/${logoFileId}`} alt={`${name} logo`} className={cn('h-9 w-9 shrink-0 rounded-lg border bg-white object-contain p-0.5', className)} fallback={fallback} />
+  ) : (
+    fallback
   );
 }

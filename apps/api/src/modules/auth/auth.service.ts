@@ -435,6 +435,7 @@ export class AuthService {
               departmentId: employees.departmentId,
               departmentName: departments.name,
               onboardingCompletedAt: employees.onboardingCompletedAt,
+              medicalEligible: employees.medicalEligible,
             })
             .from(employees)
             .innerJoin(departments, eq(departments.id, employees.departmentId))

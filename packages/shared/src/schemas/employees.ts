@@ -15,6 +15,10 @@ export const selfProfileSchema = z.object({
 });
 export type SelfProfileInput = z.infer<typeof selfProfileSchema>;
 
+/** What an employee may send for their own profile: their details, plus date of birth once (only while HR hasn't set it). */
+export const selfProfileUpdateSchema = selfProfileSchema.partial().extend({ dateOfBirth: isoDate.optional() });
+export type SelfProfileUpdateInput = z.infer<typeof selfProfileUpdateSchema>;
+
 /** HR-managed employee record (B1 non-editable fields + B7 salary). */
 export const employeeSchema = selfProfileSchema.extend({
   email: z.email().toLowerCase(),
@@ -26,6 +30,8 @@ export const employeeSchema = selfProfileSchema.extend({
   dateOfBirth: isoDate.optional(),
   basicSalary: money.optional(), // defaults from level (B7)
   hierarchyTier: z.enum(HIERARCHY_TIERS).default('MEMBER'),
+  /** D3: whether this person may claim medical expenses. */
+  medicalEligible: z.boolean().optional(),
   workScheduleId: uuid.nullable().optional(),
   roles: z.array(z.enum(ROLES)).default(['EMPLOYEE']),
   sendInvite: z.boolean().default(true),

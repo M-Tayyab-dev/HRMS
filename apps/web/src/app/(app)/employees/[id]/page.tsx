@@ -1,6 +1,6 @@
 'use client';
 
-import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, promotionSchema } from '@hrms/shared';
+import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, phoneProblem, promotionSchema } from '@hrms/shared';
 import { ArrowLeft, BadgeCheck, Camera, Info, Pencil, UserCheck, UserX } from 'lucide-react';
 import Link from 'next/link';
 import { use, useEffect, useRef, useState } from 'react';
@@ -12,7 +12,7 @@ import { DepartmentSelect, EmployeeSelect, useLevels } from '@/components/domain
 import { CareerTimeline, DocumentsPanel } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardBody, CardHeader, ErrorState, KeyValue, Skeleton, StatusBadge } from '@/components/ui/display';
-import { Field, FormGrid, Input, Select, Textarea, CnicInput, PhoneInput, CompanyEmailInput } from '@/components/ui/form';
+import { Checkbox, Field, FormGrid, Input, Select, Textarea, CnicInput, PhoneInput, CompanyEmailInput } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -34,6 +34,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         basicSalary: emp.basicSalary, joiningDate: emp.joiningDate, dateOfBirth: emp.dateOfBirth ?? '', reportingManagerId: emp.reportingManagerId ?? '',
         hierarchyTier: emp.hierarchyTier, employmentStatus: emp.employmentStatus, cnic: emp.cnic ?? '', fatherName: emp.fatherName ?? '',
         fatherCnic: emp.fatherCnic ?? '', bloodGroup: emp.bloodGroup ?? '', contactNo: emp.contactNo ?? '', emergencyContact: emp.emergencyContact ?? '',
+        medicalEligible: !!emp.medicalEligible,
       });
   }, [open, emp]);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((s) => ({ ...s, [k]: e.target.value }));
@@ -59,7 +60,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
   const s = (k: string) => String(v[k] ?? '');
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Edit employee" description="Company Admin and HR can edit every field, including ones employees can't change. Setting the status back to Active restores their login." size="xl"
-      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} loading={busy}>Save</Button></>}>
+      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} loading={busy} disabled={!!(phoneProblem(s('contactNo')) || phoneProblem(s('emergencyContact')))}>Save</Button></>}>
       <FormGrid cols={3}>
         <Field label="Full name">{(a) => <Input {...a} value={s('fullName')} onChange={set('fullName')} />}</Field>
         <Field label="Company email">{(a) => <CompanyEmailInput {...a} domain={me?.tenant.emailDomain} value={s('email')} onChange={(v) => setV((x) => ({ ...x, email: v }))} />}</Field>
@@ -76,9 +77,13 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         <Field label="CNIC">{(a) => <CnicInput {...a} value={s('cnic')} onChange={set('cnic')} />}</Field>
         <Field label="Father's name">{(a) => <Input {...a} value={s('fatherName')} onChange={set('fatherName')} />}</Field>
         <Field label="Father's CNIC">{(a) => <CnicInput {...a} value={s('fatherCnic')} onChange={set('fatherCnic')} />}</Field>
-        <Field label="Contact number">{(a) => <PhoneInput {...a} value={s('contactNo')} onChange={set('contactNo')} />}</Field>
-        <Field label="Emergency contact">{(a) => <PhoneInput {...a} value={s('emergencyContact')} onChange={set('emergencyContact')} />}</Field>
+        <Field label="Contact number" error={phoneProblem(s('contactNo')) ?? undefined}>{(a) => <PhoneInput {...a} value={s('contactNo')} onChange={set('contactNo')} />}</Field>
+        <Field label="Emergency contact" error={phoneProblem(s('emergencyContact')) ?? undefined}>{(a) => <PhoneInput {...a} value={s('emergencyContact')} onChange={set('emergencyContact')} />}</Field>
       </FormGrid>
+      <div className="mt-5 border-t pt-4">
+        <Checkbox label="Eligible for medical claims" checked={!!v.medicalEligible} onChange={(e) => setV((x) => ({ ...x, medicalEligible: e.target.checked }))} />
+        <p className="mt-1 ml-6 text-xs text-muted-foreground">They can claim medical expenses up to the company's yearly limit. Without this, Medical claims is hidden for them.</p>
+      </div>
     </Dialog>
   );
 }

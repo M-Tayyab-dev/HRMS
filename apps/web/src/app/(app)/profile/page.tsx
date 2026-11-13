@@ -29,6 +29,7 @@ export interface EmployeeDetail {
   emergencyContact: string | null;
   contactNo: string | null;
   dateOfBirth: string | null;
+  medicalEligible?: boolean;
   avatarFileId: string | null;
   departmentId: string;
   departmentName: string;

@@ -343,6 +343,8 @@ export const employees = pgTable(
     basicSalary: encryptedMoney('basic_salary').notNull(),
     workScheduleId: uuid('work_schedule_id').references(() => workSchedules.id),
     onboardingCompletedAt: ts('onboarding_completed_at'),
+    /** D3: the company offers this person medical claims (HR decides per employee). */
+    medicalEligible: boolean('medical_eligible').notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -899,6 +901,8 @@ export const kpiSubmissions = pgTable('kpi_submissions', {
   metric: text('metric').notNull(),
   achievedValue: numeric('achieved_value', { precision: 16, scale: 2, mode: 'number' }).notNull(),
   notes: text('notes'),
+  /** Proof of the work done (reports, screenshots…), up to 5 files. */
+  fileIds: jsonb('file_ids').$type<string[]>().notNull().default([]),
   tlRemarks: text('tl_remarks'),
   hrRemarks: text('hr_remarks'),
   ...approvalColumns(),

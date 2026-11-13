@@ -46,6 +46,8 @@ export interface NavItem {
   employeeOnly?: boolean;
   /** Only shown when the company's plan includes this module. */
   module?: Module;
+  /** Medical claims: only for people the company offers them to (or who manage claims). */
+  medical?: boolean;
 }
 
 /**
@@ -54,6 +56,8 @@ export interface NavItem {
  */
 export interface NavGroup {
   label: string;
+  /** Label (and icon) when the group's main page is hidden for this person, e.g. "Employee directory" for staff. */
+  limited?: { label: string; icon: LucideIcon };
   icon: LucideIcon;
   items: NavItem[];
 }
@@ -64,6 +68,7 @@ export const NAV: NavGroup[] = [
   {
     label: 'Employees',
     icon: Users,
+    limited: { label: 'Employee directory', icon: Contact },
     items: [
       { href: '/employees', label: 'Profiles', icon: Users, any: [P.EMPLOYEES_READ_ALL, P.EMPLOYEES_READ_TEAM] },
       { href: '/directory', label: 'Directory', icon: Contact },
@@ -92,7 +97,7 @@ export const NAV: NavGroup[] = [
       { href: '/payroll', label: 'Payroll', icon: Banknote, any: [P.PAYROLL_READ_ALL], module: 'PAYROLL' },
       { href: '/payslips', label: 'My salary slips', icon: Receipt, employeeOnly: true, module: 'PAYROLL' },
       { href: '/loans', label: 'Loans', icon: HandCoins, module: 'PAYROLL' },
-      { href: '/medical', label: 'Medical claims', icon: HeartPulse, module: 'PAYROLL' },
+      { href: '/medical', label: 'Medical claims', icon: HeartPulse, module: 'PAYROLL', medical: true },
       { href: '/food-allowance', label: 'Food allowance', icon: Utensils, any: [P.FOOD_ALLOWANCE_MANAGE], module: 'PAYROLL' },
     ],
   },

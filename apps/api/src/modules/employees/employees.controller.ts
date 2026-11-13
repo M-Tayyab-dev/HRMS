@@ -7,11 +7,12 @@ import {
   promotionSchema,
   selfProfileSchema,
   terminateSchema,
+  selfProfileUpdateSchema,
+  type SelfProfileUpdateInput,
   reactivateSchema,
   type EmployeeInput,
   type EmployeeUpdateInput,
   type PromotionInput,
-  type SelfProfileInput,
 } from '@hrms/shared';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -96,7 +97,7 @@ export class EmployeesController {
 
   @Patch('me/profile')
   @Audit('employee.self_updated', 'employee')
-  updateSelf(@Body(zp(selfProfileSchema.partial().extend({ fullName: selfProfileSchema.shape.fullName.optional() }))) body: SelfProfileInput) {
+  updateSelf(@Body(zp(selfProfileUpdateSchema)) body: SelfProfileUpdateInput) {
     return this.svc.updateSelf(body);
   }
 

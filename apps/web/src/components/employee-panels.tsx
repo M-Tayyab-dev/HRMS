@@ -1,7 +1,7 @@
 'use client';
 
 import { DOC_CATEGORY_LABELS, EMPLOYMENT_DOC_CATEGORIES, ONBOARDING_DOC_CATEGORIES, PERMISSIONS as P, type DocCategory } from '@hrms/shared';
-import { Download, FileText, Trash2, Upload } from 'lucide-react';
+import { Download, Eye, FileText, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { api, downloadFile } from '@/lib/api';
@@ -14,6 +14,7 @@ import { Badge, Card, CardBody, CardHeader, EmptyState, LoadingRows } from './ui
 import { Field, Input, Select } from './ui/form';
 import { Dialog, useConfirm } from './ui/overlay';
 import { FileUpload } from './ui/file-upload';
+import { FilePreviewDialog, FileThumb } from './file-preview';
 
 export interface Doc {
   id: string;
@@ -25,7 +26,17 @@ export interface Doc {
   createdAt: string;
 }
 
-/** B2/B3 documents list with upload (self or HR) and download. */
+function PreviewButton({ path, name }: { path: string; name: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="icon" variant="ghost" aria-label={`Preview ${name}`} onClick={() => setOpen(true)}><Eye className="h-4 w-4" /></Button>
+      <FilePreviewDialog path={path} name={name} open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
+/** B2/B3 documents list with upload (self or HR), preview and download. */
 export function DocumentsPanel({ employeeId, self }: { employeeId: string; self: boolean }) {
   const { can } = useAuth();
   const qc = useQueryClient();
@@ -78,7 +89,7 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
     <Card>
       <CardHeader
         title="Documents"
-        description={self ? 'Personal documents can be uploaded once. Contact HR to change a submitted document.' : 'Visible only to the employee and authorised HR staff.'}
+        description={self ? 'Click a document to preview it. Personal documents can be uploaded once ("Other document" as often as needed); contact HR to change a submitted one.' : 'Visible only to the employee and authorised HR staff.'}
         action={
           options.length > 0 && (
             <Button size="sm" onClick={() => setOpen(true)}>
@@ -100,13 +111,14 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
                 <ul className="divide-y rounded-md border">
                   {docs.map((d) => (
                     <li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
-                      <FileText className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                      <FileThumb path={`/documents/${d.id}/file`} name={d.fileName} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{d.title || DOC_CATEGORY_LABELS[d.category]}</p>
                         <p className="text-xs text-muted-foreground">
                           {DOC_CATEGORY_LABELS[d.category]} · {date(d.createdAt)} · {(d.size / 1024).toFixed(0)} KB {d.source === 'HR' && <Badge tone="info" className="ml-1">From HR</Badge>}
                         </p>
                       </div>
+                      <PreviewButton path={`/documents/${d.id}/file`} name={d.fileName} />
                       <Button size="icon" variant="ghost" aria-label={`Download ${d.fileName}`} onClick={() => downloadFile(`/documents/${d.id}/file`, d.fileName).catch((e) => toast.error(e.message))}>
                         <Download className="h-4 w-4" />
                       </Button>

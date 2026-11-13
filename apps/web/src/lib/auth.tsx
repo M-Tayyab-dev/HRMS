@@ -25,6 +25,7 @@ export interface Me {
     departmentId: string;
     departmentName: string;
     onboardingCompletedAt: string | null;
+    medicalEligible: boolean;
   } | null;
   onboardingRequired: boolean;
   tenant: {

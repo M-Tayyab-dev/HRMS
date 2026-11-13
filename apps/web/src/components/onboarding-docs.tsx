@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import type { Doc } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/overlay';
+import { FileThumb } from '@/components/file-preview';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/format';
 
@@ -70,6 +71,21 @@ function PhotoSample() {
   );
 }
 
+function CertificateSample() {
+  return (
+    <svg viewBox="0 0 172 122" className="h-full w-full" role="img" aria-label="Sample: a certificate photographed or scanned flat, whole page visible">
+      <rect x="1" y="1" width="170" height="120" rx="4" fill="#fffbeb" stroke="#f59e0b" strokeWidth="1.5" />
+      <rect x="7" y="7" width="158" height="108" rx="2" fill="none" stroke="#fcd34d" strokeDasharray="4 2" />
+      <text x="86" y="26" textAnchor="middle" fontSize="9" fontWeight="700" fill="#92400e" fontFamily="serif">CERTIFICATE</text>
+      {[38, 48, 58].map((y, i) => <rect key={y} x={[46, 30, 52][i]} y={y} width={[80, 112, 68][i]} height="3" rx="1.5" fill="#94a3b8" />)}
+      <rect x="56" y="68" width="60" height="6" rx="2" fill="#334155" />
+      <circle cx="40" cy="96" r="10" fill="#fde68a" stroke="#f59e0b" />
+      <path d="M110 98c6-6 10 2 16-3s8 1 14-2" stroke="#334155" strokeWidth="1.2" fill="none" />
+      <rect x="108" y="102" width="40" height="1.5" fill="#94a3b8" />
+    </svg>
+  );
+}
+
 const GUIDE: Record<string, { sample: () => React.JSX.Element; tips: string[]; avoid: string[]; accept: string; aspect: string }> = {
   CNIC_FRONT: {
     sample: CnicFrontSample,
@@ -84,6 +100,20 @@ const GUIDE: Record<string, { sample: () => React.JSX.Element; tips: string[]; a
     avoid: ['Fingers covering the card', 'Dark or blurry photo'],
     accept: '.pdf,image/png,image/jpeg,image/webp',
     aspect: 'aspect-[172/108]',
+  },
+  EDUCATION: {
+    sample: CertificateSample,
+    tips: ['Your highest degree or last certificate', 'Whole page visible and readable', 'A scan or PDF works best'],
+    avoid: ['Photos at an angle', 'Pages cut off or folded'],
+    accept: '.pdf,image/png,image/jpeg,image/webp',
+    aspect: 'aspect-[172/122]',
+  },
+  OTHER_ONBOARDING: {
+    sample: CertificateSample,
+    tips: ['Anything else HR asked for (experience letter, domicile…)', 'Whole page visible and readable'],
+    avoid: ['Blurry or dark photos'],
+    accept: '.pdf,image/png,image/jpeg,image/webp',
+    aspect: 'aspect-[172/122]',
   },
   PHOTO: {
     sample: PhotoSample,
@@ -154,7 +184,10 @@ function Preview({ url, isPdf, alt, className, onOpen }: { url: string | null; i
  * One required onboarding document: a sample of what is expected, tips, a preview of the chosen file
  * before it is uploaded, and a preview of the uploaded file afterwards.
  */
-export function DocUploadCard({ category, uploaded, onUploaded }: { category: DocCategory; uploaded?: Doc; onUploaded: () => void }) {
+export function DocUploadCard({ category, uploaded: single, uploads = [], multiple = false, onUploaded }: { category: DocCategory; uploaded?: Doc; uploads?: Doc[]; multiple?: boolean; onUploaded: () => void }) {
+  // `multiple`: several files of this kind (e.g. "Other document"); the card never locks.
+  const uploaded = multiple ? undefined : single;
+  const [title, setTitle] = useState('');
   const guide = GUIDE[category]!;
   const Sample = guide.sample;
   const label = DOC_CATEGORY_LABELS[category];
@@ -205,11 +238,13 @@ export function DocUploadCard({ category, uploaded, onUploaded }: { category: Do
     const fd = new FormData();
     fd.set('file', file);
     fd.set('category', category);
+    if (multiple && title.trim()) fd.set('title', title.trim());
     setBusy(true);
     try {
       await api.post('/me/documents', fd);
       toast.success(`${label} uploaded`);
       setFile(null);
+      setTitle('');
       onUploaded();
     } catch (e) {
       toast.error((e as Error).message);
@@ -225,9 +260,10 @@ export function DocUploadCard({ category, uploaded, onUploaded }: { category: Do
   return (
     <div className="rounded-xl border bg-card p-4 sm:p-5">
       <div className="mb-4 flex items-center gap-2">
-        {uploaded ? <CheckCircle2 className="h-5 w-5 text-success" aria-hidden /> : <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-muted-foreground/40" aria-hidden />}
+        {uploaded || (multiple && uploads.length) ? <CheckCircle2 className="h-5 w-5 text-success" aria-hidden /> : <span className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-muted-foreground/40" aria-hidden />}
         <h3 className="font-semibold">{label}</h3>
         {uploaded && <span className="ml-auto rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Uploaded</span>}
+        {multiple && uploads.length > 0 && <span className="ml-auto rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">{uploads.length} uploaded</span>}
       </div>
       <div className="grid gap-5 sm:grid-cols-[minmax(0,13rem)_1fr]">
         {/* Left: sample, or the actual file */}
@@ -258,8 +294,23 @@ export function DocUploadCard({ category, uploaded, onUploaded }: { category: Do
             </div>
           )}
 
+          {multiple && uploads.length > 0 && (
+            <ul className="space-y-2">
+              {uploads.map((d) => (
+                <li key={d.id} className="flex items-center gap-3 rounded-lg border px-2 py-1.5 text-sm">
+                  <FileThumb path={`/documents/${d.id}/file`} name={d.fileName} className="h-9 w-9" />
+                  <span className="min-w-0 flex-1 truncate">{d.title || d.fileName}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
           {file && !uploaded && (
             <div className="space-y-2">
+              {multiple && (
+                <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="What is this document? e.g. Experience letter"
+                  aria-label="Document name" className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none" />
+              )}
               <p className="truncate text-sm"><span className="font-medium">{file.name}</span> <span className="text-muted-foreground">· {fmtSize(file.size)}</span></p>
               {warnings.map((w) => (
                 <p key={w} className="flex gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden /> {w}</p>
@@ -278,7 +329,7 @@ export function DocUploadCard({ category, uploaded, onUploaded }: { category: Do
                 </>
               ) : (
                 <>
-                  <label htmlFor={inputId} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90"><ImageUp className="h-4 w-4" aria-hidden /> Choose file</label>
+                  <label htmlFor={inputId} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90"><ImageUp className="h-4 w-4" aria-hidden /> {multiple && uploads.length ? 'Add another' : 'Choose file'}</label>
                   <label htmlFor={cameraId} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm font-medium hover:bg-muted sm:hidden"><Camera className="h-4 w-4" aria-hidden /> Take photo</label>
                 </>
               )}

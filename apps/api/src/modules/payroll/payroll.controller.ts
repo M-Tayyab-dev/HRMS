@@ -450,6 +450,9 @@ export class PayrollController {
   @Audit('medical.claim_submitted', 'medical_claim')
   async claim(@UploadedFiles() files: UploadedFileLike[] | undefined, @Body(zp(medicalClaimSchema)) body: z.infer<typeof medicalClaimSchema>) {
     const employeeId = this.scope.requireEmployee();
+    const [me] = await this.db.tx.select({ eligible: employees.medicalEligible }).from(employees).where(eq(employees.id, employeeId));
+    const t = await tenantInfo(this.db.tx);
+    if (!me?.eligible || !(t.settings.medicalAnnualLimit > 0)) throw forbidden('Medical claims are not part of your benefits. Ask HR if you think this is wrong.');
     if (!files?.length) throw badRequest('Attach at least one supporting document (receipt, prescription…)', 'DOCUMENTS_REQUIRED');
     const saved = [];
     for (const f of files) saved.push((await this.storage.save(f, 'document')).id);

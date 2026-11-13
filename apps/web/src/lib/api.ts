@@ -35,7 +35,7 @@ async function ensureCsrf() {
 }
 
 let refreshPromise: Promise<boolean> | null = null;
-async function refreshSession(): Promise<boolean> {
+export async function refreshSession(): Promise<boolean> {
   refreshPromise ??= (async () => {
     await ensureCsrf();
     const res = await fetch(`${BASE}/auth/refresh`, {

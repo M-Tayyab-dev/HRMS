@@ -40,7 +40,7 @@ export function Field({
   className,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   error?: string;
   hint?: string;
   required?: boolean;

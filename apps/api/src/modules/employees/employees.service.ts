@@ -7,7 +7,7 @@ import {
   type EmployeeInput,
   type EmployeeUpdateInput,
   type PromotionInput,
-  type SelfProfileInput,
+  type SelfProfileUpdateInput,
 } from '@hrms/shared';
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -80,6 +80,7 @@ export class EmployeesService {
         basicSalary: employees.basicSalary,
         workScheduleId: employees.workScheduleId,
         onboardingCompletedAt: employees.onboardingCompletedAt,
+        medicalEligible: employees.medicalEligible,
         createdAt: employees.createdAt,
       })
       .from(employees)
@@ -172,6 +173,7 @@ export class EmployeesService {
           joiningDate: input.joiningDate,
           basicSalary: salary,
           workScheduleId: input.workScheduleId ?? null,
+          medicalEligible: input.medicalEligible ?? false,
         })
         .returning(),
     );
@@ -303,8 +305,14 @@ export class EmployeesService {
     await tx.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
   }
 
-  async updateSelf(input: SelfProfileInput) {
+  async updateSelf(input: SelfProfileUpdateInput) {
     const employeeId = this.scope.requireEmployee();
+    if (input.dateOfBirth) {
+      // Employees may fill in their date of birth once; after that only HR changes it.
+      const [cur] = await this.db.tx.select({ dob: employees.dateOfBirth }).from(employees).where(eq(employees.id, employeeId));
+      if (cur?.dob && cur.dob !== input.dateOfBirth) throw forbidden('Your date of birth is already on record. Ask HR to change it.');
+      if (input.dateOfBirth > todayIn((await tenantInfo(this.db.tx)).timezone)) throw badRequest('Date of birth cannot be in the future');
+    }
     return one(await this.db.tx.update(employees).set(input).where(eq(employees.id, employeeId)).returning());
   }
 

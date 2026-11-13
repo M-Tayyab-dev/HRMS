@@ -329,6 +329,15 @@ async function main() {
   expect(fixed.status === 201 && fixed.data.day?.status === 'PRESENT', 'HR corrects a day directly, no approval needed', fixed);
   expect((await E.post('/attendance/days/correct', { employeeId: emp.id, date: fixDay, checkIn: '08:00', note: 'Trying myself' })).status === 403, 'employees cannot correct attendance directly');
 
+  // ---- Medical claims only for employees the company offers them to
+  const notEligible = await E.post('/payroll/medical', { amount: 1000, claimDate: today, description: 'Doctor visit' });
+  expect(notEligible.status === 403, 'employees without medical benefit cannot claim', notEligible);
+  expect((await admin.patch(`/employees/${emp.id}`, { medicalEligible: true })).status === 200, 'HR makes an employee eligible for medical claims');
+  const eligibleNoDocs = await E.post('/payroll/medical', { amount: 1000, claimDate: today, description: 'Doctor visit' });
+  expect(eligibleNoDocs.status === 400 && eligibleNoDocs.data.code === 'DOCUMENTS_REQUIRED', 'eligible employee passes the check (still needs receipts)', eligibleNoDocs);
+  const badPhone = await E.req('PATCH', '/me/profile', { contactNo: '1111111' });
+  expect(badPhone.status === 400, 'phone numbers must look like real numbers', badPhone);
+
   // ---- Former employees: kept until deleted, can be reactivated, deleted only on purpose
   const leaver = await mk('Lena Leaver', `lena@${ws}.test`, sales.id, lvl('L1').id, ['EMPLOYEE']);
   await HR.post('/attendance/days/correct', { employeeId: leaver.id, date: prevWeekday(today, 2), checkIn: '09:00', checkOut: '17:00', note: 'History to keep' });

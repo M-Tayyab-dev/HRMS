@@ -1,4 +1,7 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, UploadedFiles, UseInterceptors } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { config } from '../../config';
+import { StorageService, type UploadedFileLike } from '../../core/storage.service';
 import { PERMISSIONS as P, kpiDecisionSchema, kpiSubmissionSchema, kpiTargetSchema } from '@hrms/shared';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
@@ -40,6 +43,7 @@ export class PerformanceController {
     private readonly approvals: ApprovalsService,
     private readonly scope: ScopeService,
     private readonly notify: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
 
   private async visible(q: { employeeId?: string; mine?: boolean }) {
@@ -116,9 +120,11 @@ export class PerformanceController {
     return Promise.all(rows.map(async (r) => ({ ...r.s, fullName: r.fullName, targetValue: r.targetValue, unit: r.unit, canDecide: r.s.employeeId !== u.employeeId && (await this.approvals.canDecide('KPI', r.s)) })));
   }
 
+  /** Results with optional proof of the work done (up to 5 files: reports, screenshots, PDFs). */
   @Post('submissions')
+  @UseInterceptors(FilesInterceptor('files', 5, { limits: { fileSize: config().MAX_UPLOAD_MB * 1024 * 1024 } }))
   @Audit('kpi.submitted', 'kpi_submission')
-  async submit(@Body(zp(kpiSubmissionSchema)) body: z.infer<typeof kpiSubmissionSchema>) {
+  async submit(@UploadedFiles() files: UploadedFileLike[] | undefined, @Body(zp(kpiSubmissionSchema)) body: z.infer<typeof kpiSubmissionSchema>) {
     const employeeId = this.scope.requireEmployee();
     const tx = this.db.tx;
     if (body.targetId) {
@@ -128,11 +134,26 @@ export class PerformanceController {
       const [open] = await tx.select({ id: kpiSubmissions.id }).from(kpiSubmissions).where(and(eq(kpiSubmissions.targetId, body.targetId), inArray(kpiSubmissions.status, ['PENDING', 'APPROVED'])));
       if (open) throw badRequest('You already submitted results for this target');
     }
-    const row = one(await tx.insert(kpiSubmissions).values({ tenantId: currentUser().tenantId, employeeId, ...body }).returning());
+    const fileIds: string[] = [];
+    for (const f of files ?? []) fileIds.push((await this.storage.save(f, 'document')).id);
+    const row = one(await tx.insert(kpiSubmissions).values({ tenantId: currentUser().tenantId, employeeId, ...body, fileIds }).returning());
     const wf = await this.approvals.submit('KPI', row.id, employeeId, { title: `KPI submission (${body.metric}, ${body.period})`, link: '/kpi' });
     await tx.update(kpiSubmissions).set({ status: wf.status, currentStep: wf.currentStep }).where(eq(kpiSubmissions.id, row.id));
     if (wf.status === 'APPROVED') await this.grantIncentive(row.id);
     return { ...row, status: wf.status, currentStep: wf.currentStep };
+  }
+
+  /** Proof files: the submitter, and anyone who can review their KPIs (Team Lead / HR). */
+  @Get('submissions/:id/files/:index')
+  async submissionFile(@Param('id', ParseUUIDPipe) id: string, @Param('index', ParseIntPipe) index: number) {
+    const s = one(await this.db.tx.select().from(kpiSubmissions).where(eq(kpiSubmissions.id, id)), 'Submission');
+    if (s.employeeId !== currentUser().employeeId) {
+      const ids = await this.scope.visibleEmployeeIds(P.KPI_APPROVE_HR, P.KPI_APPROVE_TL);
+      if (ids && !ids.includes(s.employeeId)) throw forbidden();
+    }
+    const fileId = s.fileIds[index];
+    if (!fileId) throw badRequest('No such file');
+    return this.storage.stream(fileId, 'inline');
   }
 
   @Post('submissions/:id/decision')

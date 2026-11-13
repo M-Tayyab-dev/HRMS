@@ -8,7 +8,7 @@ import {
   documentUploadSchema,
   type DocCategory,
 } from '@hrms/shared';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { config } from '../../config';
 import { currentUser } from '../../common/context';
@@ -84,6 +84,10 @@ export class DocumentsController {
       .where(and(eq(employeeDocuments.employeeId, u.employeeId), eq(employeeDocuments.category, body.category)));
     if (exists && body.category !== 'OTHER_ONBOARDING') {
       throw conflict('This document was already submitted. Contact HR to change it.', 'DOCUMENT_LOCKED');
+    }
+    if (body.category === 'OTHER_ONBOARDING') {
+      const [{ n }] = (await this.db.tx.select({ n: sql<number>`count(*)::int` }).from(employeeDocuments).where(and(eq(employeeDocuments.employeeId, u.employeeId), eq(employeeDocuments.category, 'OTHER_ONBOARDING')))) as [{ n: number }];
+      if (n >= 20) throw conflict('You can upload up to 20 other documents. Ask HR to remove old ones first.', 'TOO_MANY');
     }
     const f = await this.storage.save(file, body.category === 'PHOTO' ? 'image' : 'document');
     return one(

@@ -115,6 +115,7 @@ function AddEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             </div>
           </fieldset>
         )}
+        <Checkbox label="Eligible for medical claims" {...form.register('medicalEligible')} />
         <Checkbox label="Email an invitation to set their password" {...form.register('sendInvite')} />
         {sendInvite === false && (
           <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
