@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import pinoHttp from 'pino-http';
 import { AppModule } from './app.module';
 import { als } from './common/context';
-import { config } from './config';
+import { config, onVercel } from './config';
 
 async function bootstrap() {
   const cfg = config(); // validate env before anything else
@@ -39,7 +39,8 @@ async function bootstrap() {
       },
       // F3: never log requests to the anonymous complaint endpoint (IP/time could identify the submitter).
       autoLogging: { ignore: (req) => req.url === '/api/v1/complaints' && req.method === 'POST' },
-      transport: cfg.NODE_ENV === 'development' ? { target: 'pino-pretty', options: { singleLine: true } } : undefined,
+      // pino-pretty is a dev dependency: never load it on Vercel, even if NODE_ENV was copied as "development".
+      transport: cfg.NODE_ENV === 'development' && !onVercel ? { target: 'pino-pretty', options: { singleLine: true } } : undefined,
       level: cfg.NODE_ENV === 'test' ? 'silent' : 'info',
     }),
   );

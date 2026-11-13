@@ -109,10 +109,26 @@ All deployment settings are environment variables – no code edits. Set these o
 | `SMTP_URL`, `MAIL_FROM` | Outgoing email |
 | `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_APP_TAGLINE`, `NEXT_PUBLIC_SUPPORT_EMAIL` | Name and tagline; the support email powers "Get started" / "Contact us" on the homepage |
 | `API_INTERNAL_URL` | Only when web and API run as separate servers (not on Vercel) |
+| `STORAGE_DRIVER` | `disk` (files under `STORAGE_DIR`) or `db` (inside Postgres). Defaults to `db` on Vercel |
+| `DB_POOL_MAX` | Connections per API instance (default 20, or 3 on Vercel) |
 
 Then run `npm run db:migrate` and `npm run platform:admin -- --email … --name …` once against the production database.
 Run `npm run db:migrate` again after every update: it applies new migrations and re-applies the security hardening
 (RLS policies, grants, same-company foreign keys). Logo, favicon, currency and footer are then set in the Super Admin console.
+
+### Vercel
+
+`vercel.json` deploys `apps/web` and `apps/api` as two services on one domain (`/api/*` and `/iclock/*` go to the API).
+The repository `.env` is **not** deployed: add the variables above under Project → Settings → Environment Variables.
+
+- **Database:** use a hosted Postgres (Neon, Supabase, …). `DATABASE_ADMIN_URL` is the owner login, ideally the *direct*
+  (non-pooled) URL. Give `DATABASE_URL` a **different** user name and password: the migration creates that role
+  (no superuser, no `BYPASSRLS`) so company isolation is enforced. Include `?sslmode=require` if your provider needs it.
+- **Migrations** run automatically during production builds when `DATABASE_ADMIN_URL` is set (preview builds skip them
+  unless `MIGRATE_ON_PREVIEW=true`).
+- **Uploads** are stored in Postgres (Vercel's disk is read-only) and are limited to 4 MB (Vercel's request limit is 4.5 MB).
+- `APP_URL` defaults to the project's production domain; set it if you use a custom domain.
+- Background jobs (emails, daily attendance) only run while an API instance is awake.
 
 ## Tests
 

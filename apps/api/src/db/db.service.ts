@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -11,6 +11,7 @@ export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 @Injectable()
 export class DbService implements OnModuleDestroy {
+  private readonly logger = new Logger('Database');
   readonly pool: Pool;
   /** Raw handle – only for platform tables (tenants, jobs). Tenant data must go through `tx`. */
   readonly root: Database;
@@ -18,10 +19,13 @@ export class DbService implements OnModuleDestroy {
   constructor() {
     this.pool = new Pool({
       connectionString: config().DATABASE_URL,
-      max: 20,
+      max: config().DB_POOL_MAX,
       idleTimeoutMillis: 30_000,
       statement_timeout: 30_000,
     });
+    // Hosted Postgres (Neon, Supabase, …) closes idle connections. Without a listener, that 'error'
+    // event is unhandled and crashes the whole process; the pool replaces the client on its own.
+    this.pool.on('error', (err) => this.logger.warn(`Idle database connection dropped: ${err.message}`));
     this.root = drizzle(this.pool, { schema, casing: 'snake_case' });
   }
 

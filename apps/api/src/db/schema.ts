@@ -318,6 +318,8 @@ export const files = pgTable('files', {
   mimeType: text('mime_type').notNull(),
   size: integer('size').notNull(),
   sha256: text('sha256').notNull(),
+  /** File bytes when STORAGE_DRIVER=db (storage_key then starts with "db:"); null for files on disk. */
+  content: bytea('content'),
   uploadedByUserId: uuid('uploaded_by_user_id'),
   createdAt: createdAt(),
 });

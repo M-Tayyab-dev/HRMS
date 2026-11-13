@@ -8,7 +8,8 @@ import './globals.css';
 /** Platform name set by the Super Admin (cached for a minute; falls back quickly if the API is slow). */
 async function platformName(): Promise<string> {
   try {
-    const api = process.env.API_INTERNAL_URL ?? 'http://localhost:4000';
+    // On Vercel the API is served from the same deployment (vercel.json rewrites /api/* to it).
+    const api = process.env.API_INTERNAL_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:4000');
     const r = await fetch(`${api}/api/v1/public/branding`, { next: { revalidate: 60 }, signal: AbortSignal.timeout(1500) });
     if (r.ok) return ((await r.json()) as { siteName?: string | null }).siteName || SITE.name;
   } catch {

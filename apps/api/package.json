@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=../../.env --enable-source-maps dist/db/migrate.js",
+    "db:migrate:deploy": "node --env-file-if-exists=../../.env --enable-source-maps dist/db/migrate.js --deploy",
     "db:seed": "node --env-file-if-exists=../../.env --enable-source-maps dist/db/seed.js",
     "test": "jest",
     "test:e2e": "jest --config test/jest-e2e.config.js --runInBand",

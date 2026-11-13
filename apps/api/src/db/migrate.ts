@@ -14,7 +14,44 @@ import { Client } from 'pg';
 import * as schema from './schema';
 import { encryptField, isEncrypted } from '../common/crypto';
 
-const APP_ROLE = 'hrms_app';
+/** Role used by the local dev database (scripts/dev-db.mjs) when DATABASE_URL names no user. */
+const DEFAULT_APP_ROLE = 'hrms_app';
+
+const quoteIdent = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const quoteLiteral = (value: string) => `'${value.replace(/'/g, "''")}'`;
+
+/**
+ * The application connects as the user in DATABASE_URL. Grants and RLS must target that role, not a
+ * hard-coded name: on hosted Postgres (Neon, Supabase, …) there is no "hrms_app" unless we create it.
+ * Returns null when the app uses the same login as migrations (one-user databases): grants are then moot,
+ * and FORCE ROW LEVEL SECURITY still filters the owner.
+ */
+export function appRoleFrom(appUrl: string | undefined, adminUrl: string): { name: string; password?: string } | null {
+  if (!appUrl) return { name: DEFAULT_APP_ROLE };
+  let app: URL;
+  let admin: URL;
+  try {
+    app = new URL(appUrl);
+    admin = new URL(adminUrl);
+  } catch {
+    return { name: DEFAULT_APP_ROLE };
+  }
+  const name = decodeURIComponent(app.username);
+  if (!name) return { name: DEFAULT_APP_ROLE };
+  if (name === decodeURIComponent(admin.username)) return null;
+  return { name, password: app.password ? decodeURIComponent(app.password) : undefined };
+}
+
+/** Create the non-owner application role if it does not exist yet (never a superuser, never BYPASSRLS). */
+async function ensureAppRole(client: Client, role: { name: string; password?: string }) {
+  const { rowCount } = await client.query('select 1 from pg_roles where rolname = $1', [role.name]);
+  if (rowCount) return;
+  if (!role.password) throw new Error(`Database role "${role.name}" (from DATABASE_URL) does not exist and DATABASE_URL has no password to create it with.`);
+  await client.query(
+    `CREATE ROLE ${quoteIdent(role.name)} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD ${quoteLiteral(role.password)}`,
+  );
+  console.log(`Created database role "${role.name}" for the application.`);
+}
 
 function tenantTables(): string[] {
   return (Object.values(schema) as unknown[])
@@ -55,18 +92,21 @@ export function sameTenantFkSql(): string {
   return [...uniques, ...lines].join('\n');
 }
 
-export function hardeningSql(): string {
+export function hardeningSql(appRole: string | null = DEFAULT_APP_ROLE): string {
   const tables = tenantTables();
-  const lines: string[] = [
-    `GRANT USAGE ON SCHEMA public TO ${APP_ROLE};`,
-    `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${APP_ROLE};`,
-    `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${APP_ROLE};`,
-    // Tenants are never deleted through the app.
-    `REVOKE DELETE ON tenants FROM ${APP_ROLE};`,
-    // F5: audit trail is append-only for the application.
-    `REVOKE UPDATE, DELETE ON audit_logs FROM ${APP_ROLE};`,
-    `REVOKE ALL ON __drizzle_migrations FROM ${APP_ROLE};`,
-  ];
+  const role = appRole ? quoteIdent(appRole) : null;
+  const lines: string[] = role
+    ? [
+        `GRANT USAGE ON SCHEMA public TO ${role};`,
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${role};`,
+        `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${role};`,
+        // Tenants are never deleted through the app.
+        `REVOKE DELETE ON tenants FROM ${role};`,
+        // F5: audit trail is append-only for the application.
+        `REVOKE UPDATE, DELETE ON audit_logs FROM ${role};`,
+        `REVOKE ALL ON __drizzle_migrations FROM ${role};`,
+      ]
+    : [];
   for (const t of tables) {
     lines.push(
       `ALTER TABLE "${t}" ENABLE ROW LEVEL SECURITY;`,
@@ -130,7 +170,25 @@ async function encryptLegacyValues(client: Client) {
   return updated;
 }
 
+/**
+ * `--deploy` is used by the Vercel build: it migrates production deployments only (previews usually share
+ * the production database and must not apply unreleased migrations), and skips with a warning instead of
+ * failing the build when DATABASE_ADMIN_URL is not configured.
+ */
+function deploySkipReason(): string | null {
+  if (!process.argv.includes('--deploy')) return null;
+  if (!process.env.DATABASE_ADMIN_URL) return 'DATABASE_ADMIN_URL is not set';
+  const env = process.env.VERCEL_ENV;
+  if (env && env !== 'production' && process.env.MIGRATE_ON_PREVIEW !== 'true') return `this is a ${env} deployment (set MIGRATE_ON_PREVIEW=true to allow)`;
+  return null;
+}
+
 async function main() {
+  const skip = deploySkipReason();
+  if (skip) {
+    console.warn(`Skipping database migrations: ${skip}.`);
+    return;
+  }
   const url = process.env.DATABASE_ADMIN_URL;
   if (!url) throw new Error('DATABASE_ADMIN_URL is required for migrations');
   const client = new Client({ connectionString: url });
@@ -138,7 +196,14 @@ async function main() {
   try {
     const db = drizzle(client);
     await migrate(db, { migrationsFolder: resolve(__dirname, '../../drizzle'), migrationsSchema: 'public' });
-    await client.query(hardeningSql());
+    const appRole = appRoleFrom(process.env.DATABASE_URL, url);
+    if (appRole) await ensureAppRole(client, appRole);
+    else
+      console.warn(
+        'DATABASE_URL uses the same login as DATABASE_ADMIN_URL, so app-role grants are skipped. Company isolation (RLS) is only ' +
+          'guaranteed if that login lacks BYPASSRLS; use a separate user in DATABASE_URL and it will be created here.',
+      );
+    await client.query(hardeningSql(appRole?.name ?? null));
     await client.query(sameTenantFkSql());
     const encrypted = await encryptLegacyValues(client);
     console.log(`Migrations applied; RLS enforced on ${tenantTables().length} tenant tables; ${encrypted} rows encrypted.`);
