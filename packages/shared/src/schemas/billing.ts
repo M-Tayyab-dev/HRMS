@@ -32,6 +32,8 @@ export const submitPaymentSchema = z.object({
   reference: trimmed(3, 120),
 });
 
+export const billingCycleSchema = z.object({ cycle: z.enum(BILLING_CYCLES) });
+
 export const markPaidSchema = z.object({ note: z.string().trim().max(300).optional() });
 
 /** Self-service sign-up from the website: company + Company Admin + chosen plan and cycle. */

@@ -78,6 +78,11 @@ export default function BillingPage() {
   const { me } = useAuth();
   const { data, isLoading } = useApi<Overview>('/billing');
   const [paying, setPaying] = useState<Invoice | null>(null);
+  const changeCycle = useAction<'MONTHLY' | 'ANNUAL', { billingCycle: string; replacedInvoice: boolean }>('post', '/billing/cycle', {
+    invalidate: ['/billing'],
+    body: (cycle) => ({ cycle }),
+    success: (r) => `Switched to ${r.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly'} billing.${r.replacedInvoice ? ' Your open invoice was updated to the new price.' : ' It applies from your next invoice.'}`,
+  });
   if (isLoading || !data) return <Skeleton className="h-96" />;
   const open = data.invoices.filter((i) => i.status === 'PENDING');
   return (
@@ -106,12 +111,18 @@ export default function BillingPage() {
                     <p className="text-sm text-muted-foreground">Billed {data.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly'}{data.paidUntil ? ` · paid until ${date(data.paidUntil)}` : ''}</p>
                   </div>
                   <div className="flex gap-3">
-                    {(['MONTHLY', 'ANNUAL'] as const).map((c) => (
-                      <div key={c} className={cn('rounded-lg border px-3 py-2 text-right', data.billingCycle === c && 'border-primary bg-primary-soft')}>
-                        <p className="text-xs text-muted-foreground">{c === 'ANNUAL' ? 'Yearly' : 'Monthly'}</p>
-                        <p className="font-semibold tabular-nums">{money(c === 'ANNUAL' ? data.plan!.priceAnnual : data.plan!.priceMonthly, data.plan!.currency)}</p>
-                      </div>
-                    ))}
+                    {(['MONTHLY', 'ANNUAL'] as const).map((c) => {
+                      const on = data.billingCycle === c;
+                      return (
+                        <button key={c} type="button" aria-pressed={on} disabled={changeCycle.isPending}
+                          onClick={() => !on && changeCycle.mutate(c)}
+                          title={on ? 'Your current billing' : `Switch to ${c === 'ANNUAL' ? 'yearly' : 'monthly'} billing`}
+                          className={cn('rounded-lg border px-3 py-2 text-right transition', on ? 'border-primary bg-primary-soft ring-1 ring-primary' : 'hover:border-primary/60 hover:bg-muted', changeCycle.isPending && 'opacity-60')}>
+                          <p className="text-xs text-muted-foreground">{c === 'ANNUAL' ? 'Yearly' : 'Monthly'}{on ? ' · current' : ''}</p>
+                          <p className="font-semibold tabular-nums">{money(c === 'ANNUAL' ? data.plan!.priceAnnual : data.plan!.priceMonthly, data.plan!.currency)}</p>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -147,7 +158,7 @@ export default function BillingPage() {
       </div>
 
       <Card className="mt-6">
-        <CardHeader title="Plans" description="Prices for every plan. To change plan or switch between monthly and yearly billing, contact us; it applies from your next invoice." />
+        <CardHeader title="Plans" description="Prices for every plan. Switch between monthly and yearly above. To change plan, contact us; it applies from your next invoice." />
         <CardBody className="grid gap-4 md:grid-cols-3">
           {data.plans.map((p) => {
             const current = p.id === data.plan?.id;
