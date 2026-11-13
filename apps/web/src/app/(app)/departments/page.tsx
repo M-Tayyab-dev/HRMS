@@ -44,7 +44,7 @@ function DepartmentDialog({ dept, open, onOpenChange }: { dept?: Department; ope
           <Field label="Name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} {...form.register('name')} />}</Field>
           <Field label="Code" required error={fieldError(form, 'code')} hint="e.g. SALES">{(a) => <Input {...a} {...form.register('code')} />}</Field>
         </FormGrid>
-        <Field label="Head of department">{(a) => <EmployeeSelect {...a} placeholder="None" {...form.register('headEmployeeId', { setValueAs: (v) => (v === '' ? null : v) })} />}</Field>
+        <Field label="Head of department">{(a) => <EmployeeSelect {...a} placeholder="None" value={(form.watch('headEmployeeId') as string | null | undefined) ?? ''} onChange={(e) => form.setValue('headEmployeeId', (e.target.value || null) as never, { shouldDirty: true, shouldValidate: true })} />}</Field>
         <Field label="Shift hours" hint="Late minutes and overtime are counted from this shift. No grace period.">{(a) => (
           <Select {...a} {...form.register('workScheduleId', { setValueAs: (v) => (v === '' ? null : v) })}>
             <option value="">Company default</option>

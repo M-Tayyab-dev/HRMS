@@ -60,7 +60,7 @@ export class AccessService {
       if (!u || u.status !== 'ACTIVE') return null;
       if (tokenVersion !== undefined && u.tokenVersion !== tokenVersion) return null;
 
-      const [tenant] = await tx.select({ settings: tenants.settings, modules: tenants.modules, status: tenants.status }).from(tenants).where(eq(tenants.id, tenantId));
+      const [tenant] = await tx.select({ settings: tenants.settings, modules: tenants.modules, status: tenants.status, billingStatus: tenants.billingStatus, isDemo: tenants.isDemo }).from(tenants).where(eq(tenants.id, tenantId));
       if (!tenant || tenant.status !== 'ACTIVE') return null; // suspended companies are locked out at once
 
       if (session) {
@@ -113,6 +113,8 @@ export class AccessService {
           (roles.includes('SUPER_ADMIN') ? ALL_PERMISSIONS : permRows.map((p) => p.permission as Permission)).filter((p) => permissionAllowed(p, tenant.modules)),
         ),
         modules: tenant.modules,
+        billingStatus: tenant.billingStatus,
+        isDemo: tenant.isDemo,
         ledTeamIds,
         canPost: u.canPost,
       };

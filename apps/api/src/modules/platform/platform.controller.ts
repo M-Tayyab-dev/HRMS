@@ -1,8 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { companyUpdateSchema, createCompanySchema, planSchema, platformAdminSchema, platformLoginSchema, platformSettingsSchema, brandImageSchema, type PlatformSettingsInput, testEmailSchema, type CompanyUpdateInput, type CreateCompanyInput, type PlanInput } from '@hrms/shared';
+import { companyUpdateSchema, createCompanySchema, planSchema, platformAdminSchema, platformLoginSchema, platformSettingsSchema, brandImageSchema, markPaidSchema, paymentMethodSchema, type PaymentMethodInput, type PlatformSettingsInput, testEmailSchema, type CompanyUpdateInput, type CreateCompanyInput, type PlanInput } from '@hrms/shared';
 import type { Request, Response } from 'express';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { hashPassword, verifyPassword } from '../../common/crypto';
 import { Public, SkipAudit } from '../../common/decorators';
@@ -11,9 +11,10 @@ import { loginAttempts } from '../../common/attempt-limiter';
 import { zp } from '../../common/zod.pipe';
 import { DbService } from '../../db/db.service';
 import { MailService } from '../../core/mail.service';
-import { employees, platformAdmins, platformPlans, tenants, userRoles, users } from '../../db/schema';
+import { employees, marketingLeads, platformAdmins, platformPaymentMethods, platformPlans, tenants, userRoles, users } from '../../db/schema';
 import { AccessService } from '../auth/access.service';
 import { PlatformSettingsService } from './platform-settings.service';
+import { BillingService } from './billing.service';
 import { AuthService } from '../auth/auth.service';
 import { lockMinutesFor, waitText } from '../auth/lockout';
 import { PLATFORM_COOKIE, clearPlatformCookie, setPlatformCookie, signPlatformToken, verifyPlatformToken } from '../auth/tokens';
@@ -35,6 +36,7 @@ export class PlatformController {
     private readonly access: AccessService,
     private readonly mail: MailService,
     private readonly settings: PlatformSettingsService,
+    private readonly billing: BillingService,
   ) {}
 
   private async requireAdmin(req: Request): Promise<Admin> {
@@ -97,6 +99,7 @@ export class PlatformController {
           id: t.id, name: t.name, slug: t.slug, status: t.status, timezone: t.timezone, currency: t.currency,
           activeEmployees: c?.n ?? 0, maxEmployees: t.maxEmployees, modules: t.modules,
           planId: t.planId, planName: plans.find((p) => p.id === t.planId)?.name ?? null, createdAt: t.createdAt,
+          billingCycle: t.billingCycle, billingStatus: t.billingStatus, paidUntil: t.paidUntil, signupSource: t.signupSource, isDemo: t.isDemo,
         };
       }),
     );
@@ -118,6 +121,7 @@ export class PlatformController {
         id: t.id, name: t.name, slug: t.slug, status: t.status, timezone: t.timezone, currency: t.currency,
         planId: t.planId, modules: t.modules, maxEmployees: t.maxEmployees, emailDomain: t.emailDomain, createdAt: t.createdAt,
         activeEmployees: c?.active ?? 0, totalEmployees: c?.total ?? 0, superAdmins: admins,
+        billingCycle: t.billingCycle, billingStatus: t.billingStatus, paidUntil: t.paidUntil, signupSource: t.signupSource, isDemo: t.isDemo,
       };
     });
   }
@@ -148,6 +152,8 @@ export class PlatformController {
     }
     if (body.modules !== undefined) set.modules = body.modules;
     if (body.maxEmployees !== undefined) set.maxEmployees = body.maxEmployees;
+    if (body.billingCycle !== undefined) set.billingCycle = body.billingCycle; // applies from the next invoice
+    if (body.isDemo !== undefined) set.isDemo = body.isDemo;
     if (body.emailDomain !== undefined) {
       const [taken] = await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.emailDomain, body.emailDomain));
       if (taken && taken.id !== id) throw conflict(`The email domain ${body.emailDomain} is already used by another company`, 'DOMAIN_TAKEN');
@@ -213,6 +219,79 @@ export class PlatformController {
     if (n > 0) throw conflict(`This plan is used by ${n} compan${n === 1 ? 'y' : 'ies'}. Move them to another plan or deactivate it instead.`, 'IN_USE');
     await this.db.root.delete(platformPlans).where(eq(platformPlans.id, id));
     return { id, deleted: true };
+  }
+
+  /* ---------------- Billing ---------------- */
+
+  @Get('companies/:id/billing')
+  async companyBilling(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    await this.requireAdmin(req);
+    const invoices = await this.billing.invoices(id);
+    const methods = await this.db.root.select({ id: platformPaymentMethods.id, name: platformPaymentMethods.name }).from(platformPaymentMethods);
+    return invoices.map((i) => ({ ...i, paymentMethodName: methods.find((m) => m.id === i.paymentMethodId)?.name ?? null }));
+  }
+
+  /** Opens the next period's invoice (or the first one) at the plan's current price. */
+  @Post('companies/:id/invoices')
+  async createInvoice(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    await this.requireAdmin(req);
+    return this.billing.createInvoice(id);
+  }
+
+  @Post('invoices/:id/paid')
+  @HttpCode(200)
+  async markPaid(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body(zp(markPaidSchema)) body: z.infer<typeof markPaidSchema>) {
+    const admin = await this.requireAdmin(req);
+    return this.billing.markPaid(id, body.note ?? `Marked paid by ${admin.email}`);
+  }
+
+  @Post('companies/:id/unpaid')
+  @HttpCode(200)
+  async markUnpaid(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: { invoiceId?: string }) {
+    await this.requireAdmin(req);
+    return this.billing.markUnpaid(id, typeof body?.invoiceId === 'string' ? body.invoiceId : undefined);
+  }
+
+  @Post('invoices/:id/void')
+  @HttpCode(200)
+  async voidInvoice(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    await this.requireAdmin(req);
+    return this.billing.voidInvoice(id);
+  }
+
+  @Get('payment-methods')
+  async paymentMethods(@Req() req: Request) {
+    await this.requireAdmin(req);
+    return this.db.root.select().from(platformPaymentMethods).orderBy(asc(platformPaymentMethods.sortOrder), asc(platformPaymentMethods.name));
+  }
+
+  @Post('payment-methods')
+  async createPaymentMethod(@Req() req: Request, @Body(zp(paymentMethodSchema)) body: PaymentMethodInput) {
+    await this.requireAdmin(req);
+    const [row] = await this.db.root.insert(platformPaymentMethods).values(body).returning();
+    return row;
+  }
+
+  @Put('payment-methods/:id')
+  async updatePaymentMethod(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body(zp(paymentMethodSchema)) body: PaymentMethodInput) {
+    await this.requireAdmin(req);
+    const [row] = await this.db.root.update(platformPaymentMethods).set({ ...body, updatedAt: new Date() }).where(eq(platformPaymentMethods.id, id)).returning();
+    if (!row) throw notFound('Payment method');
+    return row;
+  }
+
+  @Delete('payment-methods/:id')
+  async deletePaymentMethod(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    await this.requireAdmin(req);
+    await this.db.root.delete(platformPaymentMethods).where(eq(platformPaymentMethods.id, id));
+    return { id, deleted: true };
+  }
+
+  /** People who tried the demo or signed up on the website (marketing). */
+  @Get('leads')
+  async leads(@Req() req: Request) {
+    await this.requireAdmin(req);
+    return this.db.root.select().from(marketingLeads).orderBy(desc(marketingLeads.createdAt)).limit(1000);
   }
 
   /* ---------------- General settings ---------------- */

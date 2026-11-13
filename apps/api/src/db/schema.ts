@@ -57,6 +57,11 @@ export interface TenantSettings {
   medicalAnnualLimit: number;
   overtimeThresholdMinutes: number;
   payrollWorkingHoursBased: boolean;
+  /** G3 birthday post template (placeholders: {name}, {firstName}, {department}, {designation}, {company}). */
+  birthdayPostTitle?: string;
+  birthdayPostBody?: string;
+  /** Employee ID card template (see IdCardTemplate in @hrms/shared). */
+  idCard?: Record<string, unknown>;
 }
 
 export const DEFAULT_TENANT_SETTINGS: TenantSettings = {
@@ -86,6 +91,14 @@ export const tenants = pgTable('tenants', {
   modules: jsonb('modules').$type<string[]>().notNull().default(sql`'["ATTENDANCE","LEAVE","PAYROLL","PERFORMANCE","COMPLIANCE","COMMUNITY","BIOMETRIC"]'::jsonb`),
   maxEmployees: integer('max_employees'),
   employeeSeq: integer('employee_seq').notNull().default(0),
+  /** Billing: how often the company pays, and whether it is paid up. UNPAID locks the workspace to Billing. */
+  billingCycle: text('billing_cycle', { enum: ['MONTHLY', 'ANNUAL'] }).notNull().default('MONTHLY'),
+  billingStatus: text('billing_status', { enum: ['PAID', 'DUE', 'UNPAID'] }).notNull().default('PAID'),
+  paidUntil: date('paid_until', { mode: 'string' }),
+  /** How the company joined: created by a Super Admin, or self-service sign-up from the website. */
+  signupSource: text('signup_source', { enum: ['PLATFORM', 'SELF'] }).notNull().default('PLATFORM'),
+  /** The public read-only demo workspace: every change is refused. */
+  isDemo: boolean('is_demo').notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -113,12 +126,70 @@ export const platformPlans = pgTable('platform_plans', {
   name: text('name').notNull().unique(),
   description: text('description'),
   priceMonthly: money('price_monthly').notNull().default(0),
+  /** Price for a year paid up front (usually a discount on 12 × monthly). Empty = annual not offered. */
+  priceAnnual: money('price_annual'),
   currency: text('currency').notNull().default('PKR'),
   modules: jsonb('modules').$type<string[]>().notNull().default([]),
   maxEmployees: integer('max_employees'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+});
+
+/** Ways companies can pay (bank transfer, JazzCash…), with instructions. Managed by the Super Admin. */
+export const platformPaymentMethods = pgTable('platform_payment_methods', {
+  id: id(),
+  name: text('name').notNull(),
+  kind: text('kind', { enum: ['BANK_TRANSFER', 'MOBILE_WALLET', 'CARD', 'CASH', 'OTHER'] }).notNull().default('BANK_TRANSFER'),
+  /** Account title / number / IBAN etc., shown to companies when they pay. */
+  instructions: text('instructions').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * Subscription invoices, one per billing period. Platform data (kept outside RLS so the Super Admin sees
+ * all of them); company endpoints always filter by the signed-in company.
+ */
+export const billingInvoices = pgTable(
+  'billing_invoices',
+  {
+    id: id(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    planId: uuid('plan_id'),
+    planName: text('plan_name').notNull(),
+    cycle: text('cycle', { enum: ['MONTHLY', 'ANNUAL'] }).notNull(),
+    amount: money('amount').notNull(),
+    currency: text('currency').notNull(),
+    periodStart: date('period_start', { mode: 'string' }).notNull(),
+    periodEnd: date('period_end', { mode: 'string' }).notNull(),
+    status: text('status', { enum: ['PENDING', 'PAID', 'VOID'] }).notNull().default('PENDING'),
+    /** What the company says it paid with, and its transaction / reference number. */
+    paymentMethodId: uuid('payment_method_id'),
+    paymentReference: text('payment_reference'),
+    submittedAt: ts('submitted_at'),
+    paidAt: ts('paid_at'),
+    note: text('note'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('billing_invoices_tenant_idx').on(t.tenantId, t.periodStart)],
+);
+
+/** Marketing: people who tried the demo or signed up from the website. */
+export const marketingLeads = pgTable('marketing_leads', {
+  id: id(),
+  email: text('email').notNull(),
+  name: text('name'),
+  company: text('company'),
+  phone: text('phone'),
+  source: text('source', { enum: ['DEMO', 'SIGNUP'] }).notNull(),
+  planId: uuid('plan_id'),
+  createdAt: createdAt(),
 });
 
 /** Platform-wide settings set by the Super Admin (one row, id = 'default'). Not tenant data. */
@@ -1073,6 +1144,28 @@ export const posts = pgTable(
   (t) => [index('posts_feed_idx').on(t.tenantId, t.createdAt)],
 );
 
+/**
+ * F2/G1: a post or comment removed by a moderator for breaking the guidelines. Two warnings, then the
+ * third (within 12 months) is a disciplinary case HR follows up.
+ */
+export const communityViolations = pgTable(
+  'community_violations',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    userId: uuid('user_id').notNull(),
+    postId: uuid('post_id').references(() => posts.id),
+    commentId: uuid('comment_id'),
+    reason: text('reason').notNull(),
+    /** 1 and 2 = warnings, 3+ = disciplinary action. */
+    level: integer('level').notNull(),
+    removedByUserId: uuid('removed_by_user_id').notNull(),
+    contentExcerpt: text('content_excerpt'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('community_violations_user_idx').on(t.tenantId, t.userId, t.createdAt)],
+);
+
 export const postLikes = pgTable(
   'post_likes',
   {
@@ -1163,4 +1256,4 @@ export const jobs = pgTable(
 );
 
 /** Tables without tenant_id RLS (platform + infra). Everything else gets RLS. */
-export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins', 'platform_plans', 'platform_settings', 'user_directory'];
+export const NON_TENANT_TABLES = ['tenants', 'jobs', 'device_serials', 'platform_admins', 'platform_plans', 'platform_settings', 'platform_payment_methods', 'billing_invoices', 'marketing_leads', 'user_directory'];

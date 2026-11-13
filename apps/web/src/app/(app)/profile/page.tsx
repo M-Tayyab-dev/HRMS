@@ -16,6 +16,7 @@ import { useAuth } from '@/lib/auth';
 import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
 import { date, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { IdCard, useIdCardContext } from '@/components/id-card';
 
 export interface EmployeeDetail {
   id: string;
@@ -49,6 +50,7 @@ export interface EmployeeDetail {
   roles: string[];
   accountStatus: string | null;
   tenure: string;
+  createdAt?: string;
   userId: string | null;
 }
 
@@ -169,6 +171,17 @@ function ResignationPanel({ employeeId }: { employeeId: string }) {
   );
 }
 
+/** The employee's own ID card, from the company's template; download or print. */
+function MyIdCard({ emp }: { emp: EmployeeDetail }) {
+  const { template, company } = useIdCardContext();
+  return (
+    <Card>
+      <CardHeader title="Your ID card" description="Issued when you joined. Download it as an image or print it; ask HR if anything on it is wrong." />
+      <CardBody><IdCard person={emp} template={template} company={company} /></CardBody>
+    </Card>
+  );
+}
+
 function ProfileInner() {
   const params = useSearchParams();
   const { me, refresh } = useAuth();
@@ -228,7 +241,7 @@ function ProfileInner() {
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Badge tone="primary">{emp.levelCode} – {emp.levelTitle}</Badge>
               <Badge>{emp.employeeCode}</Badge>
-              <Badge tone="info">{emp.tenure}</Badge>
+              <span title={emp.tenure}><Badge tone="info">Joined {date(emp.joiningDate, { day: 'numeric', month: 'long', year: 'numeric' })}</Badge></span>
             </div>
           </div>
         </CardBody>
@@ -268,6 +281,7 @@ function ProfileInner() {
             ),
           },
           { value: 'documents', label: 'Documents', content: <DocumentsPanel employeeId={emp.id} self /> },
+          { value: 'id-card', label: 'ID card', content: <MyIdCard emp={emp} /> },
           { value: 'career', label: 'Career', content: <CareerTimeline employeeId={emp.id} currency={me.tenant.currency} alwaysShow /> },
           { value: 'resignation', label: 'Resignation', content: <ResignationPanel employeeId={emp.id} /> },
           { value: 'security', label: 'Security', content: <SecurityPanel forced={forced} /> },

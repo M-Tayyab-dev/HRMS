@@ -2,7 +2,7 @@
 
 | Area | Control |
 |---|---|
-| Tenant isolation | Postgres Row-Level Security (FORCE) on all 52 tenant tables; app connects as `hrms_app` (no BYPASSRLS); tenant comes only from the verified session. Every foreign key between tenant tables also has a same-company key on `(tenant_id, id)`, so no row can link to another company's employee, department, etc. (foreign-key checks bypass RLS, so this closes that gap in the database itself). Emails are unique across all companies (`user_directory` keyed by email). Verified by `scripts/e2e-flows.mjs` (cross-company read, edit and attendance-correction attempts). |
+| Tenant isolation | Postgres Row-Level Security (FORCE) on all 53 tenant tables; app connects as `hrms_app` (no BYPASSRLS); tenant comes only from the verified session. Every foreign key between tenant tables also has a same-company key on `(tenant_id, id)`, so no row can link to another company's employee, department, etc. (foreign-key checks bypass RLS, so this closes that gap in the database itself). Emails are unique across all companies (`user_directory` keyed by email). Verified by `scripts/e2e-flows.mjs` (cross-company read, edit and attendance-correction attempts). |
 | Company creation | No public sign-up. Only Super Admins (platform owners: separate accounts, own session cookie, lockout) create companies and their Company Admins; the first Super Admin is created from the command line (`npm run platform:admin`). Company staff can only use emails on their company's own email domain. |
 | Passwords | Argon2id (m=19 MiB, t=2, p=1); 12+ chars with mixed case and digits; constant-time handling for unknown accounts. |
 | Brute force | Per-IP rate limits (company and Super Admin login 10/min, forgot-password 5/15 min, reset 10/min); account lock after 5 failures for 15 min, doubling on every further failure (30, 60, 120 … min, max 24 h) – SEC-04. |
@@ -19,7 +19,10 @@
 | Input | Shared Zod schemas validate every body/query on the server (unknown keys stripped); parameterised SQL only. |
 | Errors | Uniform error envelope; stack traces and SQL never reach clients. |
 | Secrets | Validated at boot (min 32 chars), generated randomly by `scripts/setup-env.mjs`, never committed. |
-| Public endpoints | Only `/public/branding`, `/public/plans`, `/public/logo` and `/public/favicon` work without signing in. They return platform-wide data (footer text, active plans, images) and never company data. |
+| Public endpoints | Without signing in: `/public/branding`, `/public/plans`, `/public/logo`, `/public/favicon` (platform-wide data, never company data), `/public/signup` (5 per hour per IP; creates an unpaid company) and `/public/demo` (10 per minute per IP; records the lead, then signs into the demo company). |
+| Demo | The demo company is read-only in the API itself: every non-GET request from it is refused (`DEMO_READ_ONLY`), whatever the screen allows. |
+| Billing lock | An unpaid company's sessions can only reach `/billing` and their notifications (`402 PAYMENT_REQUIRED`); suspension still blocks everything. Payment status changes apply on the next request. |
+| Moderation | Removing someone else's post or comment needs the moderation permission and a reason; each removal is recorded (2 warnings, then a disciplinary case HR is alerted to). |
 | Devices | Per-device API keys (shown once, hashed at rest, revocable). ZKTeco ADMS devices are identified by a registered serial number (the protocol has no secret); Hikvision devices carry their key in the listener URL, which is masked in request logs. |
 
 **Limits to know about**

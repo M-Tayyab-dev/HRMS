@@ -1,7 +1,7 @@
 'use client';
 
 import { MODULE_INFO, MODULES, createCompanySchema, platformAdminSchema, suggestEmailDomain, type Module } from '@hrms/shared';
-import { Building2, Copy, LogOut, RefreshCw, Settings } from 'lucide-react';
+import { Building2, Copy, LogOut, RefreshCw, Settings, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -17,8 +17,8 @@ import { useAction, useApi } from '@/lib/hooks';
 import { currencyOptions, timeZoneOptions } from '@/lib/locale-options';
 
 export interface PlatformMe { id: string; name: string; email: string }
-export interface Plan { id: string; name: string; description: string | null; priceMonthly: number; currency: string; modules: Module[]; maxEmployees: number | null; isActive: boolean; companies: number }
-export interface CompanyRow { id: string; name: string; slug: string; status: 'ACTIVE' | 'SUSPENDED'; timezone: string; currency: string; activeEmployees: number; maxEmployees: number | null; modules: Module[]; planId: string | null; planName: string | null; createdAt: string }
+export interface Plan { id: string; name: string; description: string | null; priceMonthly: number; priceAnnual: number | null; currency: string; modules: Module[]; maxEmployees: number | null; isActive: boolean; companies: number }
+export interface CompanyRow { id: string; name: string; slug: string; status: 'ACTIVE' | 'SUSPENDED'; timezone: string; currency: string; activeEmployees: number; maxEmployees: number | null; modules: Module[]; planId: string | null; planName: string | null; createdAt: string; billingCycle: 'MONTHLY' | 'ANNUAL'; billingStatus: 'PAID' | 'DUE' | 'UNPAID'; paidUntil: string | null; signupSource: 'PLATFORM' | 'SELF'; isDemo: boolean }
 
 /** Signed-in platform owner; sends anyone else to the platform login. */
 export function usePlatformMe() {
@@ -36,6 +36,7 @@ export function PlatformNav({ me }: { me: PlatformMe }) {
   const router = useRouter();
   const links = [
     { href: '/platform', label: 'Companies', icon: Building2, on: pathname === '/platform' || pathname.startsWith('/platform/companies') },
+    { href: '/platform/leads', label: 'Leads', icon: Users, on: pathname.startsWith('/platform/leads') },
     { href: '/platform/settings', label: 'Platform settings', icon: Settings, on: pathname.startsWith('/platform/settings') },
   ];
   return (

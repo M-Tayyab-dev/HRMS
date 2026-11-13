@@ -1,4 +1,5 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { MODULE_INFO, type Module, type Permission } from '@hrms/shared';
 import type { Request } from 'express';
@@ -57,6 +58,15 @@ export class AuthGuard implements CanActivate {
     if (store) {
       store.user = user;
       store.tenantId = user.tenantId;
+    }
+
+    // The public demo can look at everything but change nothing.
+    if (user.isDemo && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      throw new ForbiddenException({ message: 'This is a read-only demo. Sign up to try it with your own company.', code: 'DEMO_READ_ONLY' });
+    }
+    // Unpaid subscription: only Billing (to pay) and the person's own notifications work until it's paid.
+    if (user.billingStatus === 'UNPAID' && !/\/api\/v1\/(billing|notifications)(\/|$|\?)/.test(req.originalUrl ?? req.url)) {
+      throw new HttpException({ message: 'Your workspace is waiting for payment. Your Company Admin can pay on the Billing page.', code: 'PAYMENT_REQUIRED' }, HttpStatus.PAYMENT_REQUIRED);
     }
 
     // Plan check first, so people outside the plan are told why rather than "no permission".

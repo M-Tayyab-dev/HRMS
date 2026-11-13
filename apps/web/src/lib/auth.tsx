@@ -41,6 +41,12 @@ export interface Me {
     modules: string[];
     maxEmployees: number | null;
     settings: { directoryShowJoinDate: boolean; communityPostingMode: string; communityEngagementEnabled: boolean; medicalAnnualLimit: number };
+    /** Subscription: UNPAID locks the workspace to Billing, DUE shows a reminder. */
+    billingStatus: 'PAID' | 'DUE' | 'UNPAID';
+    billingCycle: 'MONTHLY' | 'ANNUAL';
+    paidUntil: string | null;
+    /** The public read-only demo company. */
+    isDemo: boolean;
   };
 }
 

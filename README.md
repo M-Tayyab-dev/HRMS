@@ -33,27 +33,54 @@ npm run dev:web        # terminal 3 – web on http://localhost:3000
 
 <http://localhost:3000> is the public homepage (features, plans from the database, sign in).
 
-There is **no public sign-up**. Create your Super Admin account once (uses `PLATFORM_ADMIN_*` from `.env`, or pass flags):
+Create your Super Admin account once (uses `PLATFORM_ADMIN_*` from `.env`, or pass flags):
 
 ```bash
 npm run build -w @hrms/api && npm run platform:admin -- --email you@example.com --name "Your Name"
 ```
 
-Sign in at <http://localhost:3000/platform/login>. **New company** creates a client workspace with its own email domain
-(e.g. `prepecomalign.com`) and a Company Admin, either with generated sign-in details shown to you once, or with an
-email link so they set their own password. Or load a demo company:
+Sign in at <http://localhost:3000/platform/login>. Companies join in two ways:
+
+- **Super Admin creates it**: **New company** makes a workspace with its own email domain (e.g. `prepecomalign.com`)
+  and a Company Admin, with sign-in details shown to you once, or an email link so they set their own password.
+- **Website sign-up** (`/signup`): the visitor picks a plan and monthly or yearly billing, creates their Company Admin
+  account and lands on **Billing** to pay. The workspace opens once you confirm the payment.
+
+### Live demo
+
+Visitors can explore a sample company read-only at `/demo` after leaving their name, email and company (saved as
+**Leads**). Set it up once:
 
 ```bash
-node scripts/seed-demo.mjs   # login details are written to demo-credentials.local.md
+node scripts/seed-demo.mjs   # creates a sample company; login details go to demo-credentials.local.md
 ```
+
+Then open that company in the Super Admin console and tick **Public demo company (read-only)** in its Billing card.
+Every change in the demo is refused by the API, so visitors can't break it.
 
 ## Super Admin console
 
 - **Companies**: create, suspend, change plan or modules, employee limit and email domain; resend the welcome email.
-- **Platform settings → Plans & pricing**: what you sell. The homepage shows active plans live.
-- **Platform settings → General**: the platform currency (every plan and the homepage use it; changing it updates all
-  plans at once), the sign-in page footer (`{year}` is filled in), and the platform logo and favicon.
+  Each company page has a **Billing** card: monthly or yearly cycle, invoices, **Mark paid** / **Mark unpaid**, and the
+  demo switch. The list shows each company's payment status.
+- **Leads**: demo visitors and website sign-ups, with CSV export.
+- **Platform settings → Plans & pricing**: monthly and yearly price per plan. The homepage, sign-up page and every
+  company's Billing page show them live.
+- **Platform settings → General**: the platform currency (all plans use it), the sign-in page footer (`{year}` is filled
+  in), and the platform logo and favicon.
+- **Platform settings → Payment methods**: bank accounts, mobile wallets etc. with the details companies see when paying.
 - **Super Admins** and **Email** (SMTP status and test email).
+
+### Billing
+
+There's no card gateway yet; payments are confirmed by hand.
+
+1. Each billing period has an invoice at the plan's monthly or yearly price.
+2. The Company Admin pays with one of your payment methods and enters the transaction reference on **Billing & plan**.
+3. You check it and click **Mark paid**: the company is paid until the end of that period.
+4. When a period ends, the next invoice is created automatically and the company shows **Payment due** for 7 days,
+   then **Unpaid**. An unpaid workspace is paused: the Company Admin can only open Billing, everyone else sees a notice.
+   **Mark unpaid** pauses a company immediately (e.g. a bounced payment).
 
 ## Company highlights
 
@@ -61,6 +88,12 @@ node scripts/seed-demo.mjs   # login details are written to demo-credentials.loc
 - Terminated employees stay listed with all their records and can be **reactivated** (login restored), or **deleted
   permanently** by someone with the "Delete records" permission.
 - HR and Company Admins correct attendance directly; employees request corrections that go through approval.
+- **Org chart → Reporting lines** draws the company as a tree from the top down, with zoom.
+- **Community**: the Company Admin writes the automatic birthday post (Settings → Community, with `{name}`,
+  `{department}`… placeholders). Moderators who remove someone else's post or comment must give a reason, which the
+  author receives. The first two removals in 12 months are warnings; the third alerts HR for disciplinary action
+  (**Community → Moderation** lists them all).
+- Medical claims only for employees HR marks eligible; KPI submissions can carry proof-of-work files.
 - Light and dark mode everywhere.
 
 ## Going live (SaaS)
@@ -86,8 +119,8 @@ Run `npm run db:migrate` again after every update: it applies new migrations and
 ```bash
 npm test -w @hrms/api                     # unit tests: attendance rules, payroll maths
 node scripts/smoke.mjs                    # auth & CSRF (API must be running)
-node scripts/e2e-flows.mjs                # full multi-role workflows, tenant isolation, platform settings
-node scripts/cleanup-test-companies.mjs   # removes leftover e2e/smoke test companies
+node scripts/e2e-flows.mjs                # workflows, tenant isolation, billing, sign-up, demo, moderation
+node scripts/cleanup-test-companies.mjs   # removes leftover e2e/smoke test companies (and their test leads)
 ```
 
 The e2e and smoke scripts delete the companies they create. Logins are rate-limited (10/min per IP), so wait a
@@ -119,4 +152,4 @@ Device user IDs are matched to an employee's biometric ID (or employee code). Un
 | F1–F7 Policies, guidelines, complaints, confidentiality, audit, queries, surveys | `modules/compliance`, `common/interceptors.ts` |
 | G1–G4 Community, announcements, birthdays, notifications | `modules/community`, `modules/dashboard/scheduler.service.ts` |
 | H1 Approval workflows | `packages/shared/src/workflows.ts`, `core/approvals.service.ts` |
-| Platform (SaaS operator) | `modules/platform` (companies, plans, settings, branding, public homepage data) · `/platform/*`, `/` |
+| Platform (SaaS operator) | `modules/platform` (companies, plans, billing, payment methods, leads, settings, branding, sign-up, demo) · `/platform/*`, `/`, `/signup`, `/demo`, `/billing` |

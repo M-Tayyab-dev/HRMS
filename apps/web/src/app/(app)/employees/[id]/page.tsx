@@ -20,6 +20,17 @@ import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
 import { date, hours, money } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import type { EmployeeDetail } from '../../profile/page';
+import { IdCard, useIdCardContext } from '@/components/id-card';
+
+function EmployeeIdCard({ emp }: { emp: EmployeeDetail }) {
+  const { template, company } = useIdCardContext();
+  return (
+    <Card>
+      <CardHeader title="ID card" description="Uses the company's ID card template (Settings → ID card)." />
+      <CardBody><IdCard person={emp} template={template} company={company} /></CardBody>
+    </Card>
+  );
+}
 
 function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
@@ -242,7 +253,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
               <StatusBadge status={emp.employmentStatus} />
               <Badge tone="primary">{emp.levelCode} – {emp.levelTitle}</Badge>
               <Badge>{emp.employeeCode}</Badge>
-              <Badge tone="info">{emp.tenure}</Badge>
+              <span title={emp.tenure}><Badge tone="info">Joined {date(emp.joiningDate, { day: 'numeric', month: 'long', year: 'numeric' })}</Badge></span>
               {emp.accountStatus && <Badge tone={emp.accountStatus === 'ACTIVE' ? 'success' : 'warning'}>login {emp.accountStatus.toLowerCase()}</Badge>}
             </div>
           </div>
@@ -294,6 +305,7 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
           },
           { value: 'documents', label: 'Documents', hidden: !(can(P.EMPLOYEE_DOCS_MANAGE) || can(P.EMPLOYMENT_DOCS_MANAGE)), content: <DocumentsPanel employeeId={id} self={false} /> },
           { value: 'career', label: 'Promotions', content: <CareerTimeline employeeId={id} currency={currency} alwaysShow /> },
+          { value: 'id-card', label: 'ID card', hidden: !hr, content: <EmployeeIdCard emp={emp} /> },
           {
             value: 'attendance',
             label: 'Attendance (30 days)',

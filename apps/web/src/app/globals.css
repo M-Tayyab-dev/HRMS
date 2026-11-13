@@ -197,3 +197,91 @@
     }
   }
 }
+
+/* Org chart (Reporting lines): classic top-down tree with connector lines. */
+@layer components {
+  .org-tree ul {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    padding-top: 28px;
+  }
+  .org-tree > ul {
+    padding-top: 0;
+  }
+  .org-tree li {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 10px 0;
+    list-style: none;
+  }
+  .org-tree > ul > li {
+    padding-top: 0;
+  }
+  /* Horizontal line above siblings, and the drop into each card. */
+  .org-tree li::before,
+  .org-tree li::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 50%;
+    width: 50%;
+    height: 28px;
+    border-top: 2px solid color-mix(in oklab, var(--primary) 40%, var(--border));
+  }
+  .org-tree li::after {
+    right: auto;
+    left: 50%;
+    border-left: 2px solid color-mix(in oklab, var(--primary) 40%, var(--border));
+  }
+  .org-tree li:only-child::before,
+  .org-tree li:only-child::after {
+    border-top: 0;
+  }
+  .org-tree li:only-child::before {
+    display: none;
+  }
+  .org-tree li:first-child::before,
+  .org-tree li:last-child::after {
+    border: 0 none;
+  }
+  .org-tree li:last-child::before {
+    border-right: 2px solid color-mix(in oklab, var(--primary) 40%, var(--border));
+    border-radius: 0 10px 0 0;
+  }
+  .org-tree li:first-child::after {
+    border-radius: 10px 0 0 0;
+  }
+  .org-tree > ul > li::before,
+  .org-tree > ul > li::after {
+    display: none;
+  }
+  /* Line down from a manager to their reports. */
+  .org-tree ul ul::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    height: 28px;
+    border-left: 2px solid color-mix(in oklab, var(--primary) 40%, var(--border));
+  }
+}
+
+/* Homepage "How it works": a step lights up when the progress line reaches it. */
+@layer components {
+  .step-card[data-active] {
+    border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
+    box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--primary) 35%, transparent);
+  }
+  .step-card[data-active] .step-icon {
+    background-image: linear-gradient(135deg, var(--primary), #6366f1);
+    color: #fff;
+    transform: scale(1.08);
+    box-shadow: 0 10px 25px -8px color-mix(in oklab, var(--primary) 60%, transparent);
+  }
+  .step-card[data-active] .step-label {
+    color: var(--primary);
+  }
+}

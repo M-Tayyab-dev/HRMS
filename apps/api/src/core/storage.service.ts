@@ -1,8 +1,10 @@
+import { NotFoundException } from '@nestjs/common';
 import { Injectable, StreamableFile } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { createReadStream } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { extname, resolve, sep } from 'node:path';
 import { config } from '../config';
 import { currentUser } from '../common/context';
@@ -48,6 +50,12 @@ export class StorageService {
   }
 
   /** `anonymous` skips recording the uploader (F3 anonymous complaints). */
+  /** Is the stored file actually on disk? (A record can outlive its file, e.g. after a storage mishap.) */
+  isOnDisk(storageKey: string): boolean {
+    const abs = resolve(this.root(), storageKey);
+    return abs.startsWith(this.root() + sep) && existsSync(abs);
+  }
+
   async save(file: UploadedFileLike | undefined, kind: FileKind, opts: { anonymous?: boolean } = {}) {
     if (!file?.buffer?.length) throw badRequest('Please attach a file');
     const max = config().MAX_UPLOAD_MB * 1024 * 1024;
@@ -86,6 +94,8 @@ export class StorageService {
     if (!f) throw notFound('File');
     const abs = resolve(this.root(), f.storageKey);
     if (!abs.startsWith(this.root() + sep)) throw notFound('File');
+    // The record exists but the file is gone from storage: say so (a stream error would only give "Bad Request").
+    if (!existsSync(abs)) throw new NotFoundException({ message: 'This file is missing from storage. Please upload it again.', code: 'FILE_MISSING' });
     return new StreamableFile(createReadStream(abs), {
       type: f.mimeType,
       length: f.size,

@@ -87,6 +87,16 @@ export class AuthService {
    * Creates a company (tenant) with its default structure and first Super Admin. There is no public sign-up:
    * this is called only from the platform console. Without a password the Super Admin is emailed an invite.
    */
+  /** Signs a known user in without a password (right after website sign-up, or the read-only demo). */
+  async sessionFor(tenantId: string, userId: string): Promise<SessionTokens> {
+    return this.db.inTenant(tenantId, async (tx) => {
+      const [u] = await tx.select({ v: users.tokenVersion }).from(users).where(eq(users.id, userId));
+      if (!u) throw badRequest('Account not found');
+      const t = await this.issue(tx, tenantId, userId, u.v);
+      return { access: t.access, refresh: t.refresh };
+    });
+  }
+
   async createCompany(input: CreateCompanyInput, createdBy: string): Promise<{ tenantId: string; userId: string; invited: boolean }> {
     const [existing] = await this.db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, input.workspace)).limit(1);
     if (existing) throw conflict('That workspace name is taken', 'WORKSPACE_TAKEN');
@@ -463,7 +473,7 @@ export class AuthService {
       },
       employee: emp ?? null,
       onboardingRequired: !!emp && !emp.onboardingCompletedAt,
-      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, logoFileId: tenant!.logoFileId, emailDomain: tenant!.emailDomain, modules: tenant!.modules, maxEmployees: tenant!.maxEmployees, settings: tenant!.settings },
+      tenant: { id: tenant!.id, name: tenant!.name, slug: tenant!.slug, timezone: tenant!.timezone, currency: tenant!.currency, logoFileId: tenant!.logoFileId, emailDomain: tenant!.emailDomain, modules: tenant!.modules, maxEmployees: tenant!.maxEmployees, settings: tenant!.settings, billingStatus: tenant!.billingStatus, billingCycle: tenant!.billingCycle, paidUntil: tenant!.paidUntil, isDemo: tenant!.isDemo },
     };
   }
 }

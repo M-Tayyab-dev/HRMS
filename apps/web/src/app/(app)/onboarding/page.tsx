@@ -41,7 +41,8 @@ export default function OnboardingPage() {
     setV(Object.fromEntries(DETAIL_KEYS.map((k) => [k, (emp[k as keyof EmployeeDetail] as string | null) ?? ''])) as Record<DetailKey, string>);
   }, [emp]);
 
-  const have = new Set(docs?.map((d) => d.category));
+  // A document whose file was lost counts as not uploaded, so it can be sent again.
+  const have = new Set(docs?.filter((d) => !d.missing).map((d) => d.category));
   const docsDone = REQUIRED_ONBOARDING_DOCS.filter((c) => have.has(c)).length;
   const missing = (k: DetailKey) => !emp?.[k as keyof EmployeeDetail];
   const missingCount = DETAIL_KEYS.filter((k) => missing(k)).length;
@@ -90,7 +91,7 @@ export default function OnboardingPage() {
             <div className="h-full rounded-full bg-success transition-all duration-500" style={{ width: `${(docsDone / REQUIRED_ONBOARDING_DOCS.length) * 100}%` }} />
           </div>
           {REQUIRED_ONBOARDING_DOCS.map((c) => (
-            <DocUploadCard key={c} category={c} uploaded={docs?.find((d) => d.category === c)} onUploaded={() => qc.invalidateQueries({ queryKey: [docsKey] })} />
+            <DocUploadCard key={c} category={c} uploaded={docs?.find((d) => d.category === c && !d.missing)} onUploaded={() => qc.invalidateQueries({ queryKey: [docsKey] })} />
           ))}
         </CardBody>
       </Card>
@@ -134,7 +135,7 @@ export default function OnboardingPage() {
         <CardHeader title="3. Additional documents (optional)" description="Education certificates or anything else HR asked for. You can skip this and upload later through HR." />
         <CardBody className="space-y-4">
           {OPTIONAL_DOCS.map((c) => (
-            <DocUploadCard key={c} category={c} multiple={c === 'OTHER_ONBOARDING'} uploaded={docs?.find((d) => d.category === c)} uploads={docs?.filter((d) => d.category === c)} onUploaded={() => qc.invalidateQueries({ queryKey: [docsKey] })} />
+            <DocUploadCard key={c} category={c} multiple={c === 'OTHER_ONBOARDING'} uploaded={docs?.find((d) => d.category === c && !d.missing)} uploads={docs?.filter((d) => d.category === c && !d.missing)} onUploaded={() => qc.invalidateQueries({ queryKey: [docsKey] })} />
           ))}
         </CardBody>
       </Card>

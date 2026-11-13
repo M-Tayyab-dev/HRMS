@@ -50,6 +50,9 @@ export const companyUpdateSchema = z.object({
   modules: z.array(z.enum(MODULES)).optional(),
   maxEmployees: z.coerce.number().int().min(1).max(100000).nullable().optional(),
   emailDomain: emailDomain.optional(),
+  billingCycle: z.enum(['MONTHLY', 'ANNUAL']).optional(),
+  /** Use this company as the public read-only demo. */
+  isDemo: z.boolean().optional(),
 });
 export type CompanyUpdateInput = z.infer<typeof companyUpdateSchema>;
 
@@ -58,6 +61,8 @@ export const planSchema = z.object({
   name: trimmed(2, 60),
   description: z.string().trim().max(300).optional().transform((v) => v || undefined),
   priceMonthly: z.coerce.number().min(0).max(100_000_000),
+  /** Price for a year up front; empty = 12 × monthly. */
+  priceAnnual: z.coerce.number().min(0).max(1_000_000_000).nullable().optional(),
   currency: currencyCode.default('PKR'),
   modules: z.array(z.enum(MODULES)),
   maxEmployees: z.coerce.number().int().min(1).max(100000).nullable().optional(),

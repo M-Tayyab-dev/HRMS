@@ -120,7 +120,7 @@ export default function LoansPage() {
       <RequestLoanDialog open={requestOpen} onOpenChange={setRequestOpen} />
       <Dialog open={open} onOpenChange={setOpen} title="Record a loan" footer={<><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button loading={create.isPending} onClick={form.handleSubmit((v) => create.mutate(v))}>Save</Button></>}>
         <div className="space-y-4">
-          <Field label="Employee" required error={fieldError(form, 'employeeId')}>{(a) => <EmployeeSelect {...a} {...form.register('employeeId')} />}</Field>
+          <Field label="Employee" required error={fieldError(form, 'employeeId')}>{(a) => <EmployeeSelect {...a} value={(form.watch('employeeId') as string | null | undefined) ?? ''} onChange={(e) => form.setValue('employeeId', (e.target.value || undefined) as never, { shouldDirty: true, shouldValidate: true })} />}</Field>
           <FormGrid cols={3}>
             <Field label="Loan amount" required error={fieldError(form, 'principal')}>{(a) => <Input {...a} type="number" {...form.register('principal', num)} />}</Field>
             <Field label="Monthly instalment" required error={fieldError(form, 'installment')}>{(a) => <Input {...a} type="number" {...form.register('installment', num)} />}</Field>

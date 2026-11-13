@@ -71,7 +71,7 @@ function TargetDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o:
     <Dialog open={open} onOpenChange={onOpenChange} title="Set a target" description="Exceeding the target makes the employee eligible for an incentive." size="lg"
       footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={save.isPending} onClick={form.handleSubmit((v) => save.mutate(v))}>Save target</Button></>}>
       <div className="space-y-4">
-        <Field label="Employee" required error={fieldError(form, 'employeeId')} hint={!can(P.KPI_TARGETS_MANAGE) && isTeamLead ? 'Your team members only' : undefined}>{(a) => <EmployeeSelect {...a} {...form.register('employeeId')} />}</Field>
+        <Field label="Employee" required error={fieldError(form, 'employeeId')} hint={!can(P.KPI_TARGETS_MANAGE) && isTeamLead ? 'Your team members only' : undefined}>{(a) => <EmployeeSelect {...a} value={(form.watch('employeeId') as string | undefined) ?? ''} onChange={(e) => form.setValue('employeeId', (e.target.value || undefined) as never, { shouldDirty: true, shouldValidate: true })} />}</Field>
         <FormGrid cols={3}>
           <Field label="Metric" required error={fieldError(form, 'metric')}>{(a) => <Input {...a} {...form.register('metric')} />}</Field>
           <Field label="Unit" error={fieldError(form, 'unit')}>{(a) => <Input {...a} {...form.register('unit')} />}</Field>

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { PlatformSettingsInput } from '@hrms/shared';
+import { planPrice, type PlatformSettingsInput } from '@hrms/shared';
 import { eq, sql } from 'drizzle-orm';
 import { badRequest } from '../../common/errors';
 import { DbService } from '../../db/db.service';
@@ -105,10 +105,11 @@ export class PlatformSettingsService {
 
   /** Active plans for the public homepage (no company data). */
   async publicPlans() {
-    return this.db.root
-      .select({ id: platformPlans.id, name: platformPlans.name, description: platformPlans.description, priceMonthly: platformPlans.priceMonthly, currency: platformPlans.currency, modules: platformPlans.modules, maxEmployees: platformPlans.maxEmployees })
+    const rows = await this.db.root
+      .select({ id: platformPlans.id, name: platformPlans.name, description: platformPlans.description, priceMonthly: platformPlans.priceMonthly, priceAnnual: platformPlans.priceAnnual, currency: platformPlans.currency, modules: platformPlans.modules, maxEmployees: platformPlans.maxEmployees })
       .from(platformPlans)
       .where(eq(platformPlans.isActive, true))
       .orderBy(platformPlans.priceMonthly);
+    return rows.map((p) => ({ ...p, priceAnnual: planPrice(p, 'ANNUAL') }));
   }
 }

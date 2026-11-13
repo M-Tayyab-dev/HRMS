@@ -8,7 +8,7 @@ import {
   documentUploadSchema,
   type DocCategory,
 } from '@hrms/shared';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { config } from '../../config';
 import { currentUser } from '../../common/context';
@@ -52,8 +52,9 @@ export class DocumentsController {
   async list(@Param('id', ParseUUIDPipe) id: string) {
     const u = currentUser();
     if (u.employeeId !== id && !this.canViewAll()) throw forbidden();
-    return this.db.tx
+    const rows = await this.db.tx
       .select({
+        storageKey: files.storageKey,
         id: employeeDocuments.id,
         category: employeeDocuments.category,
         title: employeeDocuments.title,
@@ -68,9 +69,11 @@ export class DocumentsController {
       .innerJoin(files, eq(files.id, employeeDocuments.fileId))
       .where(eq(employeeDocuments.employeeId, id))
       .orderBy(desc(employeeDocuments.createdAt));
+    // `missing`: the record is there but the file isn't on disk any more (it can be uploaded again).
+    return rows.map(({ storageKey, ...d }) => ({ ...d, missing: !this.storage.isOnDisk(storageKey) }));
   }
 
-  /** Employee self-upload during onboarding (once per category). */
+  /** Employee self-upload during onboarding (once per category; a lost file can be replaced). */
   @Post('me/documents')
   @UseInterceptors(upload())
   @Audit('document.self_uploaded', 'employee_document')
@@ -79,10 +82,14 @@ export class DocumentsController {
     if (!u.employeeId) throw forbidden();
     if (!isOnboarding(body.category)) throw forbidden('HR uploads employment documents');
     const [exists] = await this.db.tx
-      .select({ id: employeeDocuments.id })
+      .select({ id: employeeDocuments.id, storageKey: files.storageKey })
       .from(employeeDocuments)
+      .innerJoin(files, eq(files.id, employeeDocuments.fileId))
       .where(and(eq(employeeDocuments.employeeId, u.employeeId), eq(employeeDocuments.category, body.category)));
-    if (exists && body.category !== 'OTHER_ONBOARDING') {
+    // The earlier upload's file is gone from storage: let them replace it instead of being stuck.
+    if (exists && body.category !== 'OTHER_ONBOARDING' && !this.storage.isOnDisk(exists.storageKey)) {
+      await this.db.tx.delete(employeeDocuments).where(eq(employeeDocuments.id, exists.id));
+    } else if (exists && body.category !== 'OTHER_ONBOARDING') {
       throw conflict('This document was already submitted. Contact HR to change it.', 'DOCUMENT_LOCKED');
     }
     if (body.category === 'OTHER_ONBOARDING') {
@@ -90,6 +97,10 @@ export class DocumentsController {
       if (n >= 20) throw conflict('You can upload up to 20 other documents. Ask HR to remove old ones first.', 'TOO_MANY');
     }
     const f = await this.storage.save(file, body.category === 'PHOTO' ? 'image' : 'document');
+    // The onboarding photograph doubles as the profile photo (directory, ID card) if none is set yet.
+    if (body.category === 'PHOTO') {
+      await this.db.tx.update(employees).set({ avatarFileId: f.id }).where(and(eq(employees.id, u.employeeId), isNull(employees.avatarFileId)));
+    }
     return one(
       await this.db.tx
         .insert(employeeDocuments)

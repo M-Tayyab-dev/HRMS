@@ -98,7 +98,7 @@ function AddEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
           </Field>
           <Field label="Joining date" required error={fieldError(form, 'joiningDate')}>{(a) => <Input {...a} type="date" {...form.register('joiningDate')} />}</Field>
           <Field label="Date of birth" error={fieldError(form, 'dateOfBirth')} hint="Used for birthday wishes (year is never shown)">{(a) => <Input {...a} type="date" {...form.register('dateOfBirth', empty)} />}</Field>
-          <Field label="Reporting manager" error={fieldError(form, 'reportingManagerId')}>{(a) => <EmployeeSelect {...a} placeholder="None" {...form.register('reportingManagerId', empty)} />}</Field>
+          <Field label="Reporting manager" error={fieldError(form, 'reportingManagerId')}>{(a) => <EmployeeSelect {...a} placeholder="None" value={(form.watch('reportingManagerId') as string | null | undefined) ?? ''} onChange={(e) => form.setValue('reportingManagerId', (e.target.value || undefined) as never, { shouldDirty: true, shouldValidate: true })} />}</Field>
           <Field label="Hierarchy" hint="Position in the org chart">
             {(a) => (
               <Select {...a} {...form.register('hierarchyTier')}>

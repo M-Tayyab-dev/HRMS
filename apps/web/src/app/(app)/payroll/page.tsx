@@ -76,7 +76,7 @@ function Components() {
           </FormGrid>
           <FormGrid>
             <Field label="Only for department">{(a) => <DepartmentSelect {...a} includeAll="All departments" {...form.register('departmentId', nul)} />}</Field>
-            <Field label="Only for employee">{(a) => <EmployeeSelect {...a} placeholder="All employees" {...form.register('employeeId', nul)} />}</Field>
+            <Field label="Only for employee">{(a) => <EmployeeSelect {...a} placeholder="All employees" value={(form.watch('employeeId') as string | null | undefined) ?? ''} onChange={(e) => form.setValue('employeeId', (e.target.value || null) as never, { shouldDirty: true, shouldValidate: true })} />}</Field>
           </FormGrid>
         </div>
       </Dialog>

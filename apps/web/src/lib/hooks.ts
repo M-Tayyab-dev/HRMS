@@ -31,7 +31,10 @@ export function useAction<TVars = unknown, TResult = unknown>(
   return useMutation<TResult, ApiError, TVars>({
     mutationFn: async (vars) => {
       const p = typeof path === 'function' ? path(vars) : path;
-      const body = (opts.body ? opts.body(vars) : vars) as Parameters<typeof api.post>[1];
+      // Without a body builder, only object variables are sent as the body. An id passed just to build the
+      // path (e.g. mark a notification read) must not become the body: a bare JSON string is rejected.
+      const raw = opts.body ? opts.body(vars) : vars;
+      const body = (raw !== null && typeof raw === 'object' ? raw : undefined) as Parameters<typeof api.post>[1];
       if (method === 'del') return api.del<TResult>(p);
       return api[method]<TResult>(p, body);
     },

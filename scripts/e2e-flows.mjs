@@ -253,6 +253,27 @@ async function main() {
   const relog = await login(ws, `esha@${ws}.test`, pw);
   expect((await relog.post('/community/posts', { body: 'Hello team!' })).status === 201, 'granted employee can post');
 
+  // ---- Moderation: reason required, two warnings, then disciplinary action
+  const strikes = [];
+  for (let i = 1; i <= 3; i++) {
+    const post = await relog.post('/community/posts', { body: `Off-topic post ${i}` });
+    expect((await HR.del(`/community/posts/${post.data.id}`)).status === 400, `removing someone else's post needs a reason (${i})`);
+    const removed = await HR.post(`/community/posts/${post.data.id}/remove`, { reason: 'Off-topic: please keep posts work related' });
+    expect(removed.status === 201 || removed.status === 200, `HR removes post ${i} with a reason`, removed);
+    strikes.push(removed.data.violation);
+  }
+  expect(strikes[0].warning && strikes[0].level === 1 && strikes[1].warning && strikes[2].disciplinary, 'warning 1, warning 2, then disciplinary action', strikes);
+  const standing = (await relog.get('/community/my-standing')).data;
+  expect(standing.count === 3, 'author sees their violations');
+  const warned = (await relog.get('/notifications')).data;
+  const titles = (warned.items ?? warned).map((n) => n.title).join(' | ');
+  expect(/Warning 1 of 2/.test(titles) && /Disciplinary action/.test(titles), 'author was notified with the reason', titles);
+  expect((await HR.get('/community/violations')).data.some((v) => v.disciplinary), 'HR sees the disciplinary case');
+
+  // ---- Birthday post template (Company Admin)
+  const tpl = await admin.patch('/settings', { birthdayPostTitle: 'Happy birthday {firstName}!', birthdayPostBody: '{name} from {department}, have a great day.' });
+  expect(tpl.status === 200 && tpl.data.settings.birthdayPostTitle === 'Happy birthday {firstName}!', 'Company Admin sets the birthday post template', tpl);
+
   // ---- Survey (F7) & queries (F6)
   const sv = await HR.post('/surveys', { title: 'Pulse check', kind: 'GENERAL', audience: 'ALL', anonymous: true, questions: [{ id: 'q1', type: 'RATING', label: 'How happy are you?', required: true }] });
   await HR.post(`/surveys/${sv.data.id}/open`);
@@ -381,10 +402,49 @@ async function main() {
   expect(plansPublic.status === 200 && Array.isArray(plansPublic.data), 'homepage can list plans without signing in');
   if (!hadFavicon) await platform.put('/platform/settings/favicon', { data: null });
 
+  // ---- Billing: yearly price, unpaid lock, company pays, Super Admin confirms
+  const pm = await platform.post('/platform/payment-methods', { name: 'Test Bank', kind: 'BANK_TRANSFER', instructions: 'IBAN PK00 TEST 0000 0000 0000' });
+  expect(pm.status === 201, 'Super Admin adds a payment method', pm);
+  await platform.patch(`/platform/companies/${companyId}`, { planId: starter.id, billingCycle: 'ANNUAL' });
+  const inv = await platform.post(`/platform/companies/${companyId}/invoices`);
+  expect(inv.status === 201 && inv.data.cycle === 'ANNUAL' && inv.data.amount === (starter.priceAnnual ?? starter.priceMonthly * 12), 'yearly invoice at the annual price', inv);
+  expect((await platform.post(`/platform/companies/${companyId}/unpaid`, {})).status === 200, 'Super Admin marks the company unpaid');
+  const lockedOut = await E.get('/me/profile');
+  expect(lockedOut.status === 402 && lockedOut.data.code === 'PAYMENT_REQUIRED', 'unpaid workspace is locked', lockedOut);
+  const billingView = (await admin.get('/billing')).data;
+  expect(billingView.billingStatus === 'UNPAID' && billingView.paymentMethods.some((m) => m.id === pm.data.id), 'Company Admin still sees Billing with payment methods');
+  expect((await admin.post(`/billing/invoices/${inv.data.id}/submit`, { paymentMethodId: pm.data.id, reference: 'TXN-12345' })).status === 200, 'company submits its payment reference');
+  const paidRes = await platform.post(`/platform/invoices/${inv.data.id}/paid`, {});
+  expect(paidRes.data.status === 'PAID' && paidRes.data.paidUntil === inv.data.periodEnd, 'Super Admin marks it paid', paidRes);
+  expect((await E.get('/me/profile')).status === 200, 'workspace unlocked after payment');
+  await platform.del(`/platform/payment-methods/${pm.data.id}`);
+
+  // ---- Read-only demo with lead capture
+  await platform.patch(`/platform/companies/${companyId}`, { isDemo: true });
+  const visitor = new Client();
+  await visitor.get('/auth/csrf');
+  const opened = await visitor.post('/public/demo', { name: 'Demo Visitor', email: `visitor@${ws}.test`, company: 'Visitor Co' });
+  expect(opened.status === 200, 'visitor opens the demo after leaving their details', opened);
+  expect((await visitor.get('/employees')).status === 200, 'demo visitor can look around');
+  const readOnly = await visitor.post('/departments', { name: 'Hackers', code: 'HCK' });
+  expect(readOnly.status === 403 && readOnly.data.code === 'DEMO_READ_ONLY', 'the demo cannot be changed', readOnly);
+  await platform.patch(`/platform/companies/${companyId}`, { isDemo: false });
+  expect((await platform.get('/platform/leads')).data.some((l) => l.email === `visitor@${ws}.test` && l.source === 'DEMO'), 'Super Admin sees the demo lead');
+
+  // ---- Website sign-up: plan + cycle, then Billing until paid
+  const webWs = `e2e-${randomBytes(3).toString('hex')}`;
+  const web = new Client();
+  await web.get('/auth/csrf');
+  const su = await web.post('/public/signup', { companyName: webWs, adminName: 'Web Owner', email: `owner@${webWs}.test`, password: pw, planId: starter.id, cycle: 'MONTHLY' });
+  expect(su.status === 200 && su.data.workspace === webWs, 'company signs up from the website', su);
+  const webBilling = (await web.get('/billing')).data;
+  expect(webBilling.billingStatus === 'UNPAID' && webBilling.invoices.length === 1 && webBilling.invoices[0].amount === starter.priceMonthly, 'new company gets its first invoice and waits for payment', webBilling);
+  expect((await web.get('/employees')).status === 402, 'signed-up company is on Billing until paid');
+
   console.log(`\nAll flows passed for workspace "${ws}".`);
   // Test companies are removed afterwards so they don't pile up.
   const { deleteTestCompanies } = await import('./cleanup-test-companies.mjs');
-  await deleteTestCompanies([ws, `${ws}-b`]);
+  await deleteTestCompanies([ws, `${ws}-b`, webWs]);
 }
 
 main().catch((e) => {

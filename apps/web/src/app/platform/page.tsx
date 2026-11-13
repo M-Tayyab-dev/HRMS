@@ -9,6 +9,7 @@ import { Badge, Card, EmptyState, PageHeader, Skeleton } from '@/components/ui/d
 import { Input } from '@/components/ui/form';
 import { useApi } from '@/lib/hooks';
 import { NewCompanyDialog, PlatformNav, usePlatformMe, type CompanyRow } from './shared';
+import { BILLING_LABEL, BILLING_TONE } from './billing';
 
 /** Landing page after a platform owner signs in: pick a company, or open platform-wide settings. */
 export default function PlatformPage() {
@@ -58,9 +59,12 @@ export default function PlatformPage() {
                     <p className="truncate text-xs text-muted-foreground">workspace: {c.slug}</p>
                   </div>
                   <Badge tone={c.status === 'ACTIVE' ? 'success' : 'danger'}>{c.status.toLowerCase()}</Badge>
+                  {!c.isDemo && <Badge tone={BILLING_TONE[c.billingStatus]}>{BILLING_LABEL[c.billingStatus]}</Badge>}
+                  {c.isDemo && <Badge tone="info">demo</Badge>}
+                  {c.signupSource === 'SELF' && <Badge>website</Badge>}
                 </div>
                 <div className="mt-auto flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{c.planName ?? 'Custom'} · {c.modules.length} modules</span>
+                  <span className="text-muted-foreground">{c.planName ?? 'Custom'} · {c.billingCycle === 'ANNUAL' ? 'yearly' : 'monthly'} · {c.modules.length} modules</span>
                   <span className="tabular-nums">{c.activeEmployees}{c.maxEmployees ? `/${c.maxEmployees}` : ''} <span className="text-muted-foreground">staff</span></span>
                 </div>
               </Link>

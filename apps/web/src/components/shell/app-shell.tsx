@@ -187,7 +187,8 @@ function ModuleGate({ children }: { children: ReactNode }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { me, loading, logout } = useAuth();
+  const { me, loading, logout, can } = useAuth();
+  const canPay = can(P.TENANT_SETTINGS);
   const { theme, toggle } = useTheme();
   const router = useRouter();
   const pathname = usePathname();
@@ -202,8 +203,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (pathname !== '/profile') router.replace('/profile?tab=security&force=1');
       return;
     }
+    // Unpaid subscription: the Company Admin goes to Billing to pay; everyone else sees a notice.
+    if (me.tenant.billingStatus === 'UNPAID') {
+      if (canPay && pathname !== '/billing') router.replace('/billing');
+      return;
+    }
     if (me.onboardingRequired && pathname !== '/onboarding') router.replace('/onboarding');
-  }, [me, pathname, router]);
+  }, [me, pathname, router, canPay]);
 
   if (loading || !me) {
     return (
@@ -295,9 +301,30 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Dropdown>
       </header>
 
+      {me.tenant.isDemo && (
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-gradient-to-r from-primary to-indigo-600 px-4 py-2 text-center text-sm text-white">
+          <span><span className="font-semibold">You're exploring a read-only demo.</span> Look around freely; changes are switched off.</span>
+          <a href="/signup" className="rounded-full bg-white px-3 py-0.5 text-xs font-semibold text-primary hover:bg-blue-50">Start your own company</a>
+        </div>
+      )}
+      {me.tenant.billingStatus === 'DUE' && canPay && pathname !== '/billing' && (
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-warning/30 bg-warning-soft px-4 py-2 text-center text-sm text-warning">
+          <span><span className="font-semibold">Your subscription payment is due.</span> Please pay soon to keep using the workspace.</span>
+          <a href="/billing" className="font-semibold underline underline-offset-2">Go to Billing</a>
+        </div>
+      )}
       <main id="main" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
+        {me.tenant.billingStatus === 'UNPAID' && !canPay ? (
+          <div className="mx-auto mt-16 max-w-md rounded-2xl border bg-card p-8 text-center shadow-sm">
+            <p className="text-lg font-semibold">Workspace waiting for payment</p>
+            <p className="mt-2 text-sm text-muted-foreground">{me.tenant.name}'s subscription isn't paid yet, so the workspace is paused. Your Company Admin can pay on the Billing page; everything will be back as soon as it's confirmed.</p>
+          </div>
+        ) : (
+          <>
         <SectionTabs />
         <ModuleGate>{children}</ModuleGate>
+          </>
+        )}
       </main>
     </div>
   );

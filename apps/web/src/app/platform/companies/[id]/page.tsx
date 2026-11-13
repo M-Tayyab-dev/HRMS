@@ -14,12 +14,14 @@ import { DataTable } from '@/components/ui/table';
 import { date, dateTime } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
 import { ModulePicker, PlatformNav, planLabel, usePlatformMe, type Plan } from '../../shared';
+import { CompanyBilling } from '../../billing';
 
 interface Detail {
   id: string; name: string; slug: string; status: 'ACTIVE' | 'SUSPENDED'; timezone: string; currency: string;
   planId: string | null; modules: Module[]; maxEmployees: number | null; emailDomain: string | null; createdAt: string;
   activeEmployees: number; totalEmployees: number;
   superAdmins: { id: string; email: string; status: string; lastLoginAt: string | null; name: string | null }[];
+  billingCycle: 'MONTHLY' | 'ANNUAL'; billingStatus: 'PAID' | 'DUE' | 'UNPAID'; paidUntil: string | null; signupSource: 'PLATFORM' | 'SELF'; isDemo: boolean;
 }
 
 export default function CompanyPage({ params }: { params: Promise<{ id: string }> }) {
@@ -117,6 +119,7 @@ export default function CompanyPage({ params }: { params: Promise<{ id: string }
           </CardBody>
         </Card>
       </div>
+      <CompanyBilling companyId={c.id} cycle={c.billingCycle} status={c.billingStatus} paidUntil={c.paidUntil} isDemo={c.isDemo} />
       {node}
     </>
   );

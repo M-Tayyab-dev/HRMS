@@ -434,11 +434,12 @@ export class EmployeesService {
     const tx = this.db.tx;
     const t = await tenantInfo(tx);
     const conds: SQL[] = [eq(employees.employmentStatus, 'ACTIVE')];
-    if (q.search) conds.push(or(ilike(employees.fullName, like(q.search)), ilike(employees.designation, like(q.search)), ilike(departments.name, like(q.search)))!);
+    if (q.search) conds.push(or(ilike(employees.fullName, like(q.search)), ilike(employees.designation, like(q.search)), ilike(departments.name, like(q.search)), ilike(employees.email, like(q.search)), ilike(employees.employeeCode, like(q.search)))!);
     if (q.departmentId) conds.push(eq(employees.departmentId, q.departmentId));
     const rows = await tx
       .select({
         id: employees.id,
+        employeeCode: employees.employeeCode,
         fullName: employees.fullName,
         avatarFileId: employees.avatarFileId,
         email: employees.email,

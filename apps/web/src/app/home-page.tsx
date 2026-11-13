@@ -5,10 +5,12 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   ArrowRight, BarChart3, Bell, Building2, CalendarCheck2, CalendarDays, Check, CheckCircle2, ChevronDown, Clock, FileLock2, FileText,
-  Fingerprint, KeyRound, LogIn, Megaphone, Menu, ScrollText, ShieldCheck, Smartphone, Sparkles, Target, UserPlus, Users, Wallet, X, type LucideIcon,
+  Fingerprint, KeyRound, LogIn, Megaphone, Menu, PlayCircle, ScrollText, ShieldCheck, Smartphone, Sparkles, Target, UserPlus, Users, Wallet, X, type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useLayoutEffect, useRef, useState } from 'react';
+import type { BillingCycle } from '@hrms/shared';
+import { CycleToggle } from '@/components/cycle-toggle';
 import { BrandLogo } from '@/components/brand';
 import { SiteCopyright } from '@/components/site-copyright';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -18,7 +20,7 @@ import { SITE } from '@/lib/site';
 
 gsap.registerPlugin(ScrollTrigger);
 
-interface PublicPlan { id: string; name: string; description: string | null; priceMonthly: number; currency: string; modules: Module[]; maxEmployees: number | null }
+interface PublicPlan { id: string; name: string; description: string | null; priceMonthly: number; priceAnnual: number; currency: string; modules: Module[]; maxEmployees: number | null }
 
 const MODULE_ICONS: Record<Module, LucideIcon> = {
   ATTENDANCE: CalendarCheck2,
@@ -107,7 +109,7 @@ function Header() {
     window.addEventListener('scroll', on, { passive: true });
     return () => window.removeEventListener('scroll', on);
   }, []);
-  const links = [['#features', 'Features'], ['#roles', 'For your team'], ['#security', 'Security'], ['#pricing', 'Pricing'], ['#faq', 'FAQ']] as const;
+  const links = [['#features', 'Features'], ['#roles', 'For your team'], ['#security', 'Security'], ['#pricing', 'Pricing'], ['#faq', 'FAQ'], ['/demo', 'Live demo']] as const;
   return (
     <header className={cn('sticky top-0 z-40 transition-all duration-300', scrolled ? 'border-b border-border/60 bg-background/80 shadow-sm backdrop-blur-md' : 'border-b border-transparent bg-transparent')}>
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
@@ -301,6 +303,7 @@ function Roles() {
 }
 
 function Pricing() {
+  const [cycle, setCycle] = useState<BillingCycle>('MONTHLY');
   // Always fresh, so plan or currency edits by the Super Admin show on the next visit.
   const { data: plans, isLoading, isError, refetch, isFetching } = useApi<PublicPlan[]>('/public/plans', { fresh: true });
   const ref = useRef<HTMLDivElement>(null);
@@ -309,15 +312,17 @@ function Pricing() {
     if (!plans?.length || !ref.current) return;
     const ctx = gsap.context(() => {
       gsap.matchMedia().add('(prefers-reduced-motion: no-preference)', () => {
-        // immediateRender: false keeps the cards visible until the animation actually starts, so they can never get stuck hidden.
-        gsap.from('[data-anim="plan"]', { y: 40, opacity: 0, duration: 0.7, stagger: 0.12, ease: 'power3.out', immediateRender: false, scrollTrigger: { trigger: ref.current, start: 'top 85%', once: true } });
+        // Cards start hidden just below their place and rise into it once (never down-then-up).
+        revealBatch(ref.current!.querySelectorAll('[data-anim="plan"]'), 40);
       });
     }, ref);
     ScrollTrigger.refresh();
     return () => ctx.revert();
   }, [plans]);
   return (
-    <div ref={ref} className="mt-14 grid items-start gap-6 md:grid-cols-2 lg:grid-cols-3">
+    <>
+    <div className="mt-10 flex justify-center"><CycleToggle value={cycle} onChange={setCycle} /></div>
+    <div ref={ref} className="mt-10 grid items-start gap-6 md:grid-cols-2 lg:grid-cols-3">
       {isLoading && [0, 1, 2].map((i) => <div key={i} className="h-96 animate-pulse rounded-2xl border bg-muted/40" />)}
       {isError && !plans && (
         <div className="col-span-full flex flex-col items-center gap-3 rounded-2xl border border-dashed p-10 text-center">
@@ -333,12 +338,14 @@ function Pricing() {
             {hot && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-primary to-indigo-500 px-3 py-1 text-xs font-medium text-white shadow">Most popular</span>}
             <h3 className="text-lg font-semibold">{p.name}</h3>
             {p.description && <p className="mt-1 min-h-10 text-sm text-muted-foreground">{p.description}</p>}
-            <p className="mt-5 flex items-baseline gap-1"><span className="text-4xl font-semibold tracking-tight tabular-nums">{money(p.priceMonthly, p.currency)}</span><span className="text-sm text-muted-foreground">/ month</span></p>
+            <p className="mt-5 flex items-baseline gap-1"><span className="text-4xl font-semibold tracking-tight tabular-nums">{money(cycle === 'ANNUAL' ? p.priceAnnual : p.priceMonthly, p.currency)}</span><span className="text-sm text-muted-foreground">/ {cycle === 'ANNUAL' ? 'year' : 'month'}</span></p>
+            {cycle === 'ANNUAL' && p.priceMonthly * 12 > p.priceAnnual && <p className="mt-1 text-xs font-medium text-success">Save {money(p.priceMonthly * 12 - p.priceAnnual, p.currency)} a year</p>}
+            {cycle === 'MONTHLY' && <p className="mt-1 text-xs text-muted-foreground">or {money(p.priceAnnual, p.currency)} billed yearly</p>}
             <p className="mt-1 text-sm text-muted-foreground">{p.maxEmployees ? `Up to ${p.maxEmployees} employees` : 'Unlimited employees'}</p>
-            <a href={SITE.supportEmail ? `mailto:${SITE.supportEmail}?subject=${encodeURIComponent(`${p.name} plan`)}` : '#contact'}
+            <Link href={`/signup?plan=${p.id}&cycle=${cycle}`}
               className={cn('mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-medium transition', hot ? 'bg-primary text-primary-foreground shadow-md shadow-primary/30 hover:shadow-lg' : 'border hover:bg-muted')}>
               Get started <ArrowRight className="h-4 w-4" aria-hidden />
-            </a>
+            </Link>
             <ul className="mt-7 space-y-3 border-t pt-6 text-sm">
               <li className="flex gap-2.5"><Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden /> Employees, departments and roles</li>
               {MODULES.map((m) => {
@@ -355,6 +362,7 @@ function Pricing() {
         );
       })}
     </div>
+    </>
   );
 }
 
@@ -377,6 +385,21 @@ function Faq() {
       </div>
     </section>
   );
+}
+
+/**
+ * Elements start hidden a little below their place and rise into it the first time they scroll into
+ * view. They only ever move up, and anything already on screen (or scrolled past) is shown at once.
+ */
+function revealBatch(targets: ArrayLike<Element> | Element[], y: number) {
+  const els = Array.from(targets);
+  if (!els.length) return;
+  gsap.set(els, { opacity: 0, y });
+  ScrollTrigger.batch(els, {
+    start: 'top 90%',
+    once: true,
+    onEnter: (batch) => gsap.to(batch, { opacity: 1, y: 0, duration: 0.7, stagger: 0.08, ease: 'power3.out', overwrite: true }),
+  });
 }
 
 export function HomePage() {
@@ -423,18 +446,40 @@ export function HomePage() {
         });
 
         gsap.to('[data-anim="glow"]', { yPercent: 30, ease: 'none', scrollTrigger: { trigger: root.current, start: 'top top', end: 'bottom top', scrub: true } });
-        gsap.utils.toArray<HTMLElement>('[data-anim="reveal"]').forEach((el) => {
-          gsap.from(el, { y: 32, opacity: 0, duration: 0.8, ease: 'power3.out', immediateRender: false, scrollTrigger: { trigger: el, start: 'top 85%', once: true } });
-        });
-        ScrollTrigger.batch('[data-anim="card"]', {
-          start: 'top 92%',
-          once: true,
-          onEnter: (els) => gsap.fromTo(els, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.7, stagger: 0.08, ease: 'power3.out', overwrite: true }),
-        });
-        gsap.from('[data-anim="line"]', { scaleX: 0, transformOrigin: 'left', ease: 'none', scrollTrigger: { trigger: '#how', start: 'top 70%', end: 'center 55%', scrub: true } });
-        gsap.from('[data-anim="cta"]', { scale: 0.94, opacity: 0, duration: 0.9, ease: 'power3.out', immediateRender: false, scrollTrigger: { trigger: '[data-anim="cta"]', start: 'top 85%', once: true } });
+        // Sections and cards start just below their place and only ever move up into it.
+        revealBatch(gsap.utils.toArray<HTMLElement>('[data-anim="reveal"]'), 32);
+        revealBatch(gsap.utils.toArray<HTMLElement>('[data-anim="card"]:not([data-step])'), 40);
+        revealBatch(gsap.utils.toArray<HTMLElement>('[data-anim="cta"]'), 40);
 
-        return () => hero?.removeEventListener('pointermove', onMove);
+        // How it works: the line draws across as you scroll, lighting each step as it reaches it.
+        const steps = gsap.utils.toArray<HTMLElement>('[data-step]');
+        const line = document.querySelector<HTMLElement>('[data-anim="line"]');
+        gsap.set(line, { scaleX: 0, transformOrigin: 'left center' });
+        const activate = (p: number) => steps.forEach((el, i) => el.toggleAttribute('data-active', p >= i / Math.max(1, steps.length - 1) - 0.001));
+        activate(0);
+        // Progress from the section's position: 0 when its top is 60% down the screen, 1 when its bottom
+        // reaches 75%. A plain scroll listener keeps it exact in both directions.
+        const how = document.querySelector<HTMLElement>('#how');
+        let shown = -1;
+        const onScroll = () => {
+          if (!how) return;
+          const r = how.getBoundingClientRect();
+          const vh = window.innerHeight;
+          const p = Math.min(1, Math.max(0, (vh * 0.6 - r.top) / Math.max(1, r.height - vh * 0.15)));
+          if (Math.abs(p - shown) < 0.002) return;
+          shown = p;
+          gsap.to(line, { scaleX: p, duration: 0.35, ease: 'power1.out', overwrite: true });
+          activate(p);
+        };
+        onScroll();
+        window.addEventListener('scroll', onScroll, { passive: true });
+        window.addEventListener('resize', onScroll);
+
+        return () => {
+          hero?.removeEventListener('pointermove', onMove);
+          window.removeEventListener('scroll', onScroll);
+          window.removeEventListener('resize', onScroll);
+        };
       });
     }, root);
     return () => ctx.revert();
@@ -476,7 +521,7 @@ export function HomePage() {
                 <Link href="/login" className="group inline-flex h-12 items-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/30 transition hover:shadow-xl hover:shadow-primary/40">
                   Sign in to your workspace <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
                 </Link>
-                <a href="#pricing" className="inline-flex h-12 items-center rounded-full border bg-card/80 px-6 text-sm font-medium backdrop-blur transition hover:bg-muted">See plans</a>
+                <Link href="/demo" className="inline-flex h-12 items-center gap-2 rounded-full border bg-card/80 px-6 text-sm font-medium backdrop-blur transition hover:bg-muted"><PlayCircle className="h-4 w-4 text-primary" aria-hidden /> Try the live demo</Link>
               </div>
               <ul className="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
                 {['Biometric device sync', 'PDF salary slips', 'Works on any phone'].map((t) => (
@@ -498,11 +543,13 @@ export function HomePage() {
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <SectionHeading eyebrow="How it works" title="Up and running in a day" />
           <div className="relative mt-16 grid gap-12 md:grid-cols-3">
-            <div data-anim="line" className="absolute top-[3.75rem] right-[16%] left-[16%] hidden h-0.5 rounded-full bg-gradient-to-r from-primary via-indigo-500 to-violet-500 md:block" aria-hidden />
+            {/* Track (grey) and the progress line that draws across it. */}
+            <div className="absolute top-[3.75rem] right-[16%] left-[16%] hidden h-1 rounded-full bg-border md:block" aria-hidden />
+            <div data-anim="line" className="absolute top-[3.75rem] right-[16%] left-[16%] hidden h-1 rounded-full bg-gradient-to-r from-primary via-indigo-500 to-violet-500 shadow-[0_0_12px] shadow-primary/50 md:block" aria-hidden />
             {STEPS.map((s, i) => (
-              <div key={s.title} data-anim="card" className="spotlight relative rounded-2xl border bg-card px-6 pt-8 pb-7 text-center shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
-                <div className="relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border-4 border-background bg-gradient-to-br from-primary to-indigo-500 text-white shadow-lg shadow-primary/30"><s.icon className="h-6 w-6" aria-hidden /></div>
-                <p className="mt-5 text-xs font-semibold tracking-wider text-primary uppercase">Step {i + 1}</p>
+              <div key={s.title} data-anim="card" data-step data-active="" className="step-card spotlight group/step relative rounded-2xl border bg-card px-6 pt-8 pb-7 text-center shadow-sm transition duration-500 hover:-translate-y-1 hover:shadow-lg">
+                <div className="step-icon relative mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border-4 border-background bg-muted text-muted-foreground shadow-sm transition-all duration-500"><s.icon className="h-6 w-6" aria-hidden /></div>
+                <p className="step-label mt-5 text-xs font-semibold tracking-wider text-muted-foreground uppercase transition-colors duration-500">Step {i + 1}</p>
                 <h3 className="mt-1 text-lg font-semibold">{s.title}</h3>
                 <p className="mx-auto mt-2 max-w-xs text-sm text-muted-foreground">{s.body}</p>
               </div>
@@ -536,23 +583,42 @@ export function HomePage() {
       {/* Pricing */}
       <section id="pricing" className="scroll-mt-20 border-t py-20 sm:py-28">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <SectionHeading eyebrow="Pricing" title="Plans that grow with your team" body="Simple monthly pricing per company. Change plans any time; your data stays put." />
+          <SectionHeading eyebrow="Pricing" title="Plans that grow with your team" body="Pay monthly, or yearly and save. Change plans any time; your data stays put." />
           <Pricing />
         </div>
       </section>
 
       <Faq />
 
-      {/* Call to action */}
+      {/* Call to action: deep navy with soft aurora light, works on light and dark pages. */}
       <section id="contact" className="scroll-mt-20 px-4 py-20 sm:px-6">
-        <div data-anim="cta" className="spotlight spotlight-light relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-br from-blue-700 via-indigo-700 to-violet-800 px-6 py-16 text-center text-white shadow-2xl shadow-primary/20 sm:px-12">
-          <div className="pointer-events-none absolute inset-0 [background-image:radial-gradient(rgba(255,255,255,0.15)_1px,transparent_1px)] [background-size:20px_20px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" aria-hidden />
-          <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
-          <h2 className="relative text-3xl font-semibold tracking-tight sm:text-4xl">Ready to bring your team together?</h2>
-          <p className="relative mx-auto mt-3 max-w-xl text-blue-100">Already have a workspace? Sign in. New company? Get in touch and we’ll set yours up.</p>
-          <div className="relative mt-9 flex flex-wrap justify-center gap-3">
-            <Link href="/login" className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-medium text-blue-800 shadow-lg transition hover:bg-blue-50"><LogIn className="h-4 w-4" aria-hidden /> Sign in</Link>
-            {SITE.supportEmail && <a href={`mailto:${SITE.supportEmail}`} className="inline-flex h-12 items-center rounded-full border border-white/30 px-6 text-sm font-medium transition hover:bg-white/10">Contact us</a>}
+        <div data-anim="cta" className="spotlight spotlight-light relative mx-auto max-w-6xl overflow-hidden rounded-3xl border border-white/10 bg-[#0b1224] px-6 py-16 text-white shadow-2xl shadow-primary/10 sm:px-12 sm:py-20">
+          <div className="pointer-events-none absolute -top-32 -left-20 h-80 w-80 rounded-full bg-[#3b82f6]/35 blur-[90px]" aria-hidden />
+          <div className="pointer-events-none absolute -right-16 -bottom-32 h-80 w-80 rounded-full bg-[#14b8a6]/25 blur-[90px]" aria-hidden />
+          <div className="pointer-events-none absolute top-1/2 left-1/2 h-64 w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6366f1]/15 blur-[80px]" aria-hidden />
+          <div className="pointer-events-none absolute inset-0 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:44px_44px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]" aria-hidden />
+          <div className="relative grid items-center gap-10 lg:grid-cols-[1.3fr_1fr]">
+            <div>
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-sky-200"><Sparkles className="h-3.5 w-3.5" aria-hidden /> Set up in a day</span>
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">Ready to bring your team <span className="bg-gradient-to-r from-sky-300 via-cyan-200 to-teal-200 bg-clip-text text-transparent">together?</span></h2>
+              <p className="mt-3 max-w-xl text-slate-300">Start your company in minutes, or look around a real sample company first. Already on {SITE.name}? Sign in to your workspace.</p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link href="/signup" className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-slate-900 shadow-lg shadow-sky-500/20 transition hover:bg-sky-50">Start your company <ArrowRight className="h-4 w-4" aria-hidden /></Link>
+                <Link href="/demo" className="inline-flex h-12 items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 text-sm font-medium backdrop-blur transition hover:bg-white/10"><PlayCircle className="h-4 w-4" aria-hidden /> Try the demo</Link>
+                <Link href="/login" className="inline-flex h-12 items-center gap-2 px-3 text-sm font-medium text-slate-300 transition hover:text-white"><LogIn className="h-4 w-4" aria-hidden /> Sign in</Link>
+              </div>
+            </div>
+            <ul className="grid gap-3 text-sm">
+              {[[ShieldCheck, 'Your data walled off from every other company'], [Smartphone, 'Works on any phone, light or dark'], [Fingerprint, 'Connects to your biometric devices']].map(([Icon, text]) => {
+                const I = Icon as LucideIcon;
+                return (
+                  <li key={text as string} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400/30 to-teal-400/20 text-sky-200"><I className="h-4 w-4" aria-hidden /></span>
+                    <span className="text-slate-200">{text as string}</span>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </div>
       </section>

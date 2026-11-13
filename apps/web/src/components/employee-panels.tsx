@@ -24,6 +24,8 @@ export interface Doc {
   fileName: string;
   size: number;
   createdAt: string;
+  /** The record exists but its file was lost from storage; it can be uploaded again. */
+  missing?: boolean;
 }
 
 function PreviewButton({ path, name }: { path: string; name: string }) {
@@ -56,7 +58,7 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
     ...(self || hrOnboarding ? ONBOARDING_DOC_CATEGORIES : []),
     ...(!self && hrDocs ? EMPLOYMENT_DOC_CATEGORIES : []),
   ] as DocCategory[];
-  const uploaded = new Set(data?.map((d) => d.category));
+  const uploaded = new Set(data?.filter((d) => !d.missing).map((d) => d.category));
 
   const upload = async () => {
     const file = files[0];
@@ -111,15 +113,16 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
                 <ul className="divide-y rounded-md border">
                   {docs.map((d) => (
                     <li key={d.id} className="flex items-center gap-3 px-3 py-2.5">
-                      <FileThumb path={`/documents/${d.id}/file`} name={d.fileName} />
+                      {d.missing ? <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-danger/30 bg-danger-soft"><FileText className="h-5 w-5 text-danger" aria-hidden /></span> : <FileThumb path={`/documents/${d.id}/file`} name={d.fileName} />}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{d.title || DOC_CATEGORY_LABELS[d.category]}</p>
                         <p className="text-xs text-muted-foreground">
                           {DOC_CATEGORY_LABELS[d.category]} · {date(d.createdAt)} · {(d.size / 1024).toFixed(0)} KB {d.source === 'HR' && <Badge tone="info" className="ml-1">From HR</Badge>}
                         </p>
                       </div>
-                      <PreviewButton path={`/documents/${d.id}/file`} name={d.fileName} />
-                      <Button size="icon" variant="ghost" aria-label={`Download ${d.fileName}`} onClick={() => downloadFile(`/documents/${d.id}/file`, d.fileName).catch((e) => toast.error(e.message))}>
+                      {d.missing && <Badge tone="danger">File missing – upload again</Badge>}
+                      {!d.missing && <PreviewButton path={`/documents/${d.id}/file`} name={d.fileName} />}
+                      <Button size="icon" variant="ghost" disabled={d.missing} aria-label={`Download ${d.fileName}`} onClick={() => downloadFile(`/documents/${d.id}/file`, d.fileName).catch((e) => toast.error(e.message))}>
                         <Download className="h-4 w-4" />
                       </Button>
                       {!self && (hrDocs || hrOnboarding) && (

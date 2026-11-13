@@ -34,11 +34,16 @@ export async function deleteTestCompanies(slugs) {
       await db.query('begin');
       try {
         await db.query("select set_config('app.tenant_id', $1, true)", [t.id]);
-        const files = (await db.query('select storage_key from files')).rows.map((r) => r.storage_key);
+        // Filter by company explicitly: the admin connection may bypass row-level security, and an unfiltered
+        // query would return (and delete) every company's files.
+        const files = (await db.query('select storage_key from files where tenant_id = $1', [t.id])).rows.map((r) => r.storage_key);
         await db.query('delete from tenants where id = $1', [t.id]); // everything else cascades
         await db.query('commit');
-        for (const key of files) rmSync(resolve(storage, key), { force: true });
+        // Only ever delete inside this company's own folder.
+        for (const key of files) if (key.startsWith(`${t.id}/`)) rmSync(resolve(storage, key), { force: true });
         deleted.push(t.slug);
+        // Marketing leads left by test runs (demo visitors / sign-ups on the test domain).
+        await db.query('delete from marketing_leads where email like $1', [`%@${t.slug}.test`]);
       } catch (e) {
         await db.query('rollback');
         throw e;

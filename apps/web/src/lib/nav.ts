@@ -7,6 +7,7 @@ import {
   CalendarRange,
   Clock,
   Contact,
+  CreditCard,
   FileText,
   Gift,
   HandCoins,
@@ -23,6 +24,7 @@ import {
   Receipt,
   ScrollText,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Target,
@@ -120,6 +122,7 @@ export const NAV: NavGroup[] = [
       { href: '/community', label: 'Feed', icon: Sparkles, module: 'COMMUNITY' },
       { href: '/announcements', label: 'Announcements', icon: Megaphone, module: 'COMMUNITY' },
       { href: '/birthdays', label: 'Birthdays', icon: Gift, module: 'COMMUNITY' },
+      { href: '/community/moderation', label: 'Moderation', icon: ShieldAlert, module: 'COMMUNITY', any: [P.COMMUNITY_MODERATE, P.EMPLOYEES_MANAGE] },
     ],
   },
   {
@@ -131,7 +134,14 @@ export const NAV: NavGroup[] = [
       { href: '/access/audit', label: 'Audit trail', icon: History, any: [P.AUDIT_READ] },
     ],
   },
-  { label: 'Settings', icon: Settings, items: [{ href: '/settings', label: 'Settings', icon: Settings, any: [P.TENANT_SETTINGS, P.ATTENDANCE_MANAGE, P.LEAVE_MANAGE, P.DIRECTORY_SETTINGS] }] },
+  {
+    label: 'Settings',
+    icon: Settings,
+    items: [
+      { href: '/settings', label: 'Settings', icon: Settings, any: [P.TENANT_SETTINGS, P.ATTENDANCE_MANAGE, P.LEAVE_MANAGE, P.DIRECTORY_SETTINGS] },
+      { href: '/billing', label: 'Billing & plan', icon: CreditCard, any: [P.TENANT_SETTINGS] },
+    ],
+  },
 ];
 
 /** True when `pathname` is `href` or a page below it. */

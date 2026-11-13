@@ -17,12 +17,13 @@ import { dateTime, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
 import { currencyOptions } from '@/lib/locale-options';
 import { ModulePicker, NewOwnerDialog, PlatformNav, usePlatformMe, type Plan } from '../shared';
+import { PaymentMethods } from '../billing';
 
 function PlanDialog({ plan, open, onOpenChange }: { plan?: Plan; open: boolean; onOpenChange: (o: boolean) => void }) {
   const form = useZodForm(planSchema);
   const { data: settings } = useApi<PlatformSettings>(open ? '/platform/settings' : null);
   useEffect(() => {
-    if (open) form.reset(plan ? { name: plan.name, description: plan.description ?? undefined, priceMonthly: plan.priceMonthly, currency: plan.currency, modules: plan.modules, maxEmployees: plan.maxEmployees, isActive: plan.isActive } : { name: '', description: undefined, priceMonthly: 0, currency: settings?.defaultCurrency ?? 'PKR', modules: ['ATTENDANCE', 'LEAVE'], maxEmployees: null, isActive: true });
+    if (open) form.reset(plan ? { name: plan.name, description: plan.description ?? undefined, priceMonthly: plan.priceMonthly, priceAnnual: plan.priceAnnual, currency: plan.currency, modules: plan.modules, maxEmployees: plan.maxEmployees, isActive: plan.isActive } : { name: '', description: undefined, priceMonthly: 0, priceAnnual: null, currency: settings?.defaultCurrency ?? 'PKR', modules: ['ATTENDANCE', 'LEAVE'], maxEmployees: null, isActive: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, plan, settings?.defaultCurrency]);
   const done = { invalidate: ['/platform/plans', '/public/plans'], success: 'Plan saved', onSuccess: () => onOpenChange(false) };
@@ -37,6 +38,7 @@ function PlanDialog({ plan, open, onOpenChange }: { plan?: Plan; open: boolean; 
         <FormGrid>
           <Field label="Name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} {...form.register('name')} />}</Field>
           <Field label={`Monthly price (${settings?.defaultCurrency ?? 'PKR'})`} hint="Currency is set for the whole platform in General." required error={fieldError(form, 'priceMonthly')}>{(a) => <Input {...a} type="number" min={0} {...form.register('priceMonthly', { valueAsNumber: true })} />}</Field>
+          <Field label={`Yearly price (${settings?.defaultCurrency ?? 'PKR'})`} hint="Paid once a year. Leave empty for 12 × monthly." error={fieldError(form, 'priceAnnual')}>{(a) => <Input {...a} type="number" min={0} {...form.register('priceAnnual', { setValueAs: (v) => (v === '' || v === null ? null : Number(v)) })} />}</Field>
           <Field label="Employee limit" hint="Leave empty for no limit" error={fieldError(form, 'maxEmployees')}>{(a) => <Input {...a} type="number" min={1} {...form.register('maxEmployees', { setValueAs: (v) => (v === '' || v === null ? null : Number(v)) })} />}</Field>
         </FormGrid>
         <Field label="Description" error={fieldError(form, 'description')}>{(a) => <Textarea {...a} rows={2} {...form.register('description')} />}</Field>
@@ -61,7 +63,7 @@ function Plans() {
       <CardHeader title="Plans" description="What you sell. Each company is on one plan, or a custom set of modules." action={<Button size="sm" onClick={() => setEdit({ open: true })}><Plus className="h-4 w-4" /> New plan</Button>} />
       <DataTable loading={isLoading} rows={data} rowKey={(p) => p.id} onRowClick={(p) => setEdit({ open: true, plan: p })} empty="No plans yet" columns={[
         { key: 'n', header: 'Plan', cell: (p) => <div><p className="font-medium">{p.name} {!p.isActive && <Badge>inactive</Badge>}</p>{p.description && <p className="text-xs text-muted-foreground">{p.description}</p>}</div> },
-        { key: 'p', header: 'Price', cell: (p) => <span className="tabular-nums">{money(p.priceMonthly, p.currency)}<span className="text-muted-foreground">/mo</span></span> },
+        { key: 'p', header: 'Price', cell: (p) => <div className="tabular-nums"><p>{money(p.priceMonthly, p.currency)}<span className="text-muted-foreground">/mo</span></p><p className="text-xs text-muted-foreground">{money(p.priceAnnual ?? p.priceMonthly * 12, p.currency)}/yr</p></div> },
         { key: 'm', header: 'Modules', cell: (p) => <div className="flex flex-wrap gap-1">{p.modules.map((m) => <Badge key={m} tone="primary">{MODULE_INFO[m].label}</Badge>)}</div> },
         { key: 'e', header: 'Employees', hideOnMobile: true, cell: (p) => p.maxEmployees ?? 'Unlimited' },
         { key: 'c', header: 'Companies', cell: (p) => p.companies },
@@ -218,6 +220,7 @@ export default function PlatformSettingsPage() {
       <Tabs tabs={[
         { value: 'plans', label: 'Plans & pricing', content: <Plans /> },
         { value: 'general', label: 'General', content: <div className="space-y-6"><General /><Branding /></div> },
+        { value: 'payments', label: 'Payment methods', content: <PaymentMethods /> },
         { value: 'owners', label: 'Super Admins', content: <Owners /> },
         { value: 'email', label: 'Email', content: <Email myEmail={me.email} /> },
       ]} />

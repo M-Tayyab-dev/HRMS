@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { idCardTemplateSchema } from './idcard';
 import {
   COMMUNITY_POSTING_MODES,
   COMPLAINT_CATEGORIES,
@@ -121,6 +122,28 @@ export const communitySettingsSchema = z.object({
 
 export const grantPostingSchema = z.object({ canPost: z.boolean() });
 
+/** A moderator removing someone else's post or comment must say why (sent to the author). */
+export const moderationRemovalSchema = z.object({ reason: trimmed(5, 500) });
+/** Warnings before a guidelines breach becomes a disciplinary case (within 12 months). */
+export const COMMUNITY_WARNINGS_BEFORE_ACTION = 2;
+
+/* ---------- Birthday post template (G3) ---------- */
+export const DEFAULT_BIRTHDAY_TITLE = 'Happy birthday, {name}! 🎂';
+export const DEFAULT_BIRTHDAY_BODY = 'Join us in wishing {name} from {department} a wonderful birthday! 🎉';
+export const BIRTHDAY_PLACEHOLDERS = ['{name}', '{firstName}', '{department}', '{designation}', '{company}'] as const;
+
+/** Fills a birthday template; unknown placeholders are left as typed. */
+export function renderBirthdayTemplate(template: string, vars: { name: string; department?: string | null; designation?: string | null; company?: string | null }): string {
+  const values: Record<string, string> = {
+    '{name}': vars.name,
+    '{firstName}': vars.name.split(/\s+/)[0] ?? vars.name,
+    '{department}': vars.department ?? '',
+    '{designation}': vars.designation ?? '',
+    '{company}': vars.company ?? '',
+  };
+  return template.replace(/\{(name|firstName|department|designation|company)\}/g, (m) => values[m] ?? m).replace(/\s{2,}/g, ' ').trim();
+}
+
 /* ---------- Tenant settings ---------- */
 export const tenantSettingsSchema = z.object({
   name: trimmed(2, 120).optional(),
@@ -132,5 +155,10 @@ export const tenantSettingsSchema = z.object({
   medicalAnnualLimit: money.optional(),
   overtimeThresholdMinutes: z.coerce.number().int().min(0).max(600).optional(),
   payrollWorkingHoursBased: z.boolean().optional(),
+  /** Birthday post template set by the Company Admin; placeholders like {name} are filled in. */
+  birthdayPostTitle: trimmed(3, 150).optional(),
+  birthdayPostBody: trimmed(3, 1000).optional(),
+  /** Employee ID card template. */
+  idCard: idCardTemplateSchema.optional(),
 });
 export type TenantSettingsInput = z.infer<typeof tenantSettingsSchema>;
