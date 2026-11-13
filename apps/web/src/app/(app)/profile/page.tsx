@@ -176,7 +176,7 @@ function MyIdCard({ emp }: { emp: EmployeeDetail }) {
   const { template, company } = useIdCardContext();
   return (
     <Card>
-      <CardHeader title="Your ID card" description="Issued when you joined. Download it as an image or print it; ask HR if anything on it is wrong." />
+      <CardHeader title="Your ID card" description="Issued when you joined. Download it as a PDF (front and back) or print it; ask HR if anything on it is wrong." />
       <CardBody><IdCard person={emp} template={template} company={company} /></CardBody>
     </Card>
   );

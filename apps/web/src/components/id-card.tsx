@@ -67,18 +67,22 @@ export function IdCard({ person, template: saved, company, className }: { person
   const render = async (node: HTMLDivElement) => toPng(node, { pixelRatio: 3, cacheBust: true, skipFonts: true, backgroundColor: '#ffffff' });
   const fileBase = `id-card-${person.employeeCode || person.fullName}`.replace(/[^\w-]+/g, '-');
 
+  /** One PDF, two card-sized pages (85.6 × 54 mm, the standard ID card size): front, then back. */
   const download = async () => {
+    if (!front.current || !back.current) return;
     setBusy(true);
     try {
-      for (const [node, side] of [[front.current, 'front'], [back.current, 'back']] as const) {
-        if (!node) continue;
-        const a = document.createElement('a');
-        a.href = await render(node);
-        a.download = `${fileBase}-${side}.png`;
-        a.click();
-      }
+      const [f, b] = await Promise.all([render(front.current), render(back.current)]);
+      const { jsPDF } = await import('jspdf'); // loaded only when needed
+      const [w, h] = vertical ? [54, 85.6] : [85.6, 54];
+      const pdf = new jsPDF({ orientation: vertical ? 'portrait' : 'landscape', unit: 'mm', format: [w, h] });
+      pdf.setProperties({ title: `${person.fullName} – ID card`, subject: company.name });
+      pdf.addImage(f, 'PNG', 0, 0, w, h);
+      pdf.addPage([w, h], vertical ? 'portrait' : 'landscape');
+      pdf.addImage(b, 'PNG', 0, 0, w, h);
+      pdf.save(`${fileBase}.pdf`);
     } catch {
-      toast.error('Could not create the image. Please try again.');
+      toast.error('Could not create the PDF. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -186,7 +190,7 @@ export function IdCard({ person, template: saved, company, className }: { person
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button onClick={download} loading={busy}><Download className="h-4 w-4" /> Download (PNG)</Button>
+        <Button onClick={download} loading={busy}><Download className="h-4 w-4" /> Download PDF</Button>
         <Button variant="outline" onClick={print} disabled={busy}><Printer className="h-4 w-4" /> Print</Button>
       </div>
     </div>
