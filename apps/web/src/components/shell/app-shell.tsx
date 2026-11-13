@@ -7,7 +7,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth, useMedicalEligible } from '@/lib/auth';
 import { cn, relative } from '@/lib/format';
-import { SITE } from '@/lib/site';
 import { useAction, useApi } from '@/lib/hooks';
 import { activeItem, LogoutIcon, matches, NAV, type NavGroup, type NavItem } from '@/lib/nav';
 import { BrandMark, CompanyLogo } from '../brand';
@@ -15,6 +14,7 @@ import { useTheme } from '../theme';
 import { Button } from '../ui/button';
 import { Avatar, Badge, Skeleton } from '../ui/display';
 import { Dropdown, DropdownItem, DropdownLabel, DropdownSeparator } from '../ui/overlay';
+import { useSiteName } from '@/lib/branding';
 
 interface Notification {
   id: string;
@@ -173,6 +173,7 @@ function SectionTabs() {
 
 /** Pages of a module the company's plan doesn't include show a short explanation instead. */
 function ModuleGate({ children }: { children: ReactNode }) {
+  const siteName = useSiteName();
   const pathname = usePathname();
   const { hasModule } = useAuth();
   const item = activeItem(pathname, NAV.flatMap((g) => g.items));
@@ -181,13 +182,14 @@ function ModuleGate({ children }: { children: ReactNode }) {
     <div className="mx-auto max-w-md rounded-xl border bg-card p-8 text-center">
       <span className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary-soft text-primary"><Lock className="h-5 w-5" aria-hidden /></span>
       <h1 className="text-lg font-semibold">{MODULE_INFO[item.module].label} isn't in your plan</h1>
-      <p className="mt-1 text-sm text-muted-foreground">{MODULE_INFO[item.module].description} Contact your {SITE.name} provider to add it.</p>
+      <p className="mt-1 text-sm text-muted-foreground">{MODULE_INFO[item.module].description} Contact your {siteName} provider to add it.</p>
       <Link href="/dashboard" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">Back to dashboard</Link>
     </div>
   );
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const siteName = useSiteName();
   const { me, loading, logout, can } = useAuth();
   const canPay = can(P.TENANT_SETTINGS);
   const { theme, toggle } = useTheme();
@@ -240,7 +242,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <LogoutIcon className="h-4 w-4" aria-hidden /> Log out
         </button>
         <p className="mt-2 flex items-center gap-1.5 px-3 text-[11px] text-sidebar-heading">
-          <BrandMark className="h-4 w-4" /> Powered by {SITE.name}
+          <BrandMark className="h-4 w-4" /> Powered by {siteName}
         </p>
       </div>
     </div>

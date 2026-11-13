@@ -18,6 +18,8 @@ import { useAction, useApi } from '@/lib/hooks';
 import { currencyOptions } from '@/lib/locale-options';
 import { ModulePicker, NewOwnerDialog, PlatformNav, usePlatformMe, type Plan } from '../shared';
 import { PaymentMethods } from '../billing';
+import { defaultCopyright } from '@/lib/branding';
+import { SITE } from '@/lib/site';
 
 function PlanDialog({ plan, open, onOpenChange }: { plan?: Plan; open: boolean; onOpenChange: (o: boolean) => void }) {
   const form = useZodForm(planSchema);
@@ -125,18 +127,19 @@ function Email({ myEmail }: { myEmail: string }) {
   );
 }
 
-interface PlatformSettings { defaultCurrency: string; copyright: string | null }
+interface PlatformSettings { defaultCurrency: string; siteName: string | null; copyright: string | null }
 
 function General() {
   const { data } = useApi<PlatformSettings>('/platform/settings');
-  const form = useZodForm(platformSettingsSchema, { defaultCurrency: 'PKR', copyright: undefined });
+  const form = useZodForm(platformSettingsSchema, { defaultCurrency: 'PKR', siteName: undefined, copyright: undefined });
   useEffect(() => {
-    if (data) form.reset({ defaultCurrency: data.defaultCurrency, copyright: data.copyright ?? undefined });
+    if (data) form.reset({ defaultCurrency: data.defaultCurrency, siteName: data.siteName ?? undefined, copyright: data.copyright ?? undefined });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
   const save = useAction('put', '/platform/settings', { invalidate: ['/platform/settings', '/platform/plans', '/public/branding', '/public/plans'], success: 'Settings saved. Every plan now uses this currency.' });
   const copyright = form.watch('copyright');
-  const preview = (copyright || `© {year} HRMS`).replaceAll('{year}', String(new Date().getFullYear()));
+  const siteName = form.watch('siteName');
+  const preview = copyright ? copyright.replaceAll('{year}', String(new Date().getFullYear())) : defaultCopyright(siteName || SITE.name);
   if (!data) return <Skeleton className="h-64" />;
   return (
     <Card>
@@ -147,6 +150,9 @@ function General() {
             <Combobox {...a} value={form.watch('defaultCurrency')} onChange={(c) => form.setValue('defaultCurrency', c, { shouldDirty: true, shouldValidate: true })} options={currencyOptions()} renderValue={(o) => o.value} searchPlaceholder="Search currency…" />
           )}</Field>
         </FormGrid>
+        <Field label="Platform name" hint={`Shown in the logo, browser tab titles, footer and everywhere the product is named. Empty = "${SITE.name}".`} error={fieldError(form, 'siteName')}>{(a) => (
+          <Input {...a} maxLength={40} placeholder={SITE.name} {...form.register('siteName')} />
+        )}</Field>
         <Field label="Sign-in page footer" hint="Shown at the bottom of the login pages. Write {year} for the current year. Leave empty for the default." error={fieldError(form, 'copyright')}>{(a) => (
           <Input {...a} maxLength={200} placeholder="© {year} Your Company. All rights reserved." {...form.register('copyright')} />
         )}</Field>

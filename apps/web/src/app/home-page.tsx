@@ -17,6 +17,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { cn, money } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import { SITE } from '@/lib/site';
+import { useSiteName } from '@/lib/branding';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -101,6 +102,7 @@ function SectionHeading({ eyebrow, title, body }: { eyebrow: string; title: stri
 }
 
 function Header() {
+  const siteName = useSiteName();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   useLayoutEffect(() => {
@@ -113,7 +115,7 @@ function Header() {
   return (
     <header className={cn('sticky top-0 z-40 transition-all duration-300', scrolled ? 'border-b border-border/60 bg-background/80 shadow-sm backdrop-blur-md' : 'border-b border-transparent bg-transparent')}>
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
-        <Link href="/" aria-label={`${SITE.name} home`}><BrandLogo /></Link>
+        <Link href="/" aria-label={`${siteName} home`}><BrandLogo /></Link>
         <nav className="ml-6 hidden items-center gap-1 text-sm text-muted-foreground lg:flex" aria-label="Main">
           {links.map(([href, label]) => <a key={href} href={href} className="rounded-md px-3 py-1.5 transition-colors hover:bg-muted hover:text-foreground">{label}</a>)}
         </nav>
@@ -403,6 +405,7 @@ function revealBatch(targets: ArrayLike<Element> | Element[], y: number) {
 }
 
 export function HomePage() {
+  const siteName = useSiteName();
   const root = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -511,7 +514,7 @@ export function HomePage() {
             </h1>
             <div data-anim="hero-rest">
               <p className="mt-6 max-w-xl text-lg text-pretty text-muted-foreground">
-                {SITE.name} brings attendance, leave, payroll, performance and company policies into one secure workspace, so HR spends less time chasing and more time on people.
+                {siteName} brings attendance, leave, payroll, performance and company policies into one secure workspace, so HR spends less time chasing and more time on people.
               </p>
               <div className="mt-9 flex flex-wrap gap-3">
                 <Link href="/login" className="group inline-flex h-12 items-center gap-2 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/30 transition hover:shadow-xl hover:shadow-primary/40">
@@ -562,7 +565,7 @@ export function HomePage() {
           <div data-anim="reveal">
             <p className="inline-flex items-center gap-1.5 rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary"><ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Security and privacy</p>
             <h2 className="mt-4 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">Your company’s data stays your company’s</h2>
-            <p className="mt-4 text-muted-foreground">Salaries, CNICs and complaints are sensitive. {SITE.name} is built so one company can never see another’s data, and every employee sees only what their role allows.</p>
+            <p className="mt-4 text-muted-foreground">Salaries, CNICs and complaints are sensitive. {siteName} is built so one company can never see another’s data, and every employee sees only what their role allows.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {SECURITY.map((s) => (
@@ -597,7 +600,7 @@ export function HomePage() {
             <div>
               <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-sky-200"><Sparkles className="h-3.5 w-3.5" aria-hidden /> Set up in a day</span>
               <h2 className="mt-4 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">Ready to bring your team <span className="bg-gradient-to-r from-sky-300 via-cyan-200 to-teal-200 bg-clip-text text-transparent">together?</span></h2>
-              <p className="mt-3 max-w-xl text-slate-300">Start your company in minutes, or look around a real sample company first. Already on {SITE.name}? Sign in to your workspace.</p>
+              <p className="mt-3 max-w-xl text-slate-300">Start your company in minutes, or look around a real sample company first. Already on {siteName}? Sign in to your workspace.</p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link href="/signup" className="inline-flex h-12 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-slate-900 shadow-lg shadow-sky-500/20 transition hover:bg-sky-50">Start your company <ArrowRight className="h-4 w-4" aria-hidden /></Link>
                 <Link href="/demo" className="inline-flex h-12 items-center gap-2 rounded-full border border-white/20 bg-white/5 px-6 text-sm font-medium backdrop-blur transition hover:bg-white/10"><PlayCircle className="h-4 w-4" aria-hidden /> Try the demo</Link>

@@ -9,6 +9,7 @@ import { badRequest, conflict } from '../../common/errors';
 import { emailInUse } from '../../common/util';
 import { AuditService } from '../../core/audit.service';
 import { MailService } from '../../core/mail.service';
+import { PlatformSettingsService } from '../platform/platform-settings.service';
 import { DbService, type Tx } from '../../db/db.service';
 import {
   departments,
@@ -58,6 +59,7 @@ export class AuthService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
     private readonly mail: MailService,
+    private readonly platform: PlatformSettingsService,
   ) {}
 
   private async issue(tx: Tx, tenantId: string, userId: string, tokenVersion: number, familyId: string = randomUUID(), lastActivityAt: Date = new Date()): Promise<SessionTokens & { id: string }> {
@@ -322,7 +324,7 @@ export class AuthService {
     const link = `${config().APP_URL}/reset-password?token=${encodeURIComponent(`${tenantId}.${secret}`)}${purpose === 'INVITE' ? '&invite=1' : ''}`;
     await this.mail.send({
       to: user.email,
-      subject: purpose === 'INVITE' ? `You're invited to ${tenant?.name} on HRMS` : 'Reset your HRMS password',
+      subject: purpose === 'INVITE' ? `You're invited to ${tenant?.name} on ${await this.platform.name()}` : `Reset your ${await this.platform.name()} password`,
       text:
         purpose === 'INVITE'
           ? `You've been added to ${tenant?.name}'s HR portal.\n\nWorkspace: ${tenant?.slug}\nSet your password (link valid for ${INVITE_TTL_H} hours):\n${link}`

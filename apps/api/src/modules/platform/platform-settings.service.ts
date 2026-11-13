@@ -7,6 +7,7 @@ import { platformPlans, platformSettings } from '../../db/schema';
 
 export interface PlatformSettings {
   defaultCurrency: string;
+  siteName: string | null;
   copyright: string | null;
   /** Cache-busting versions; null when no custom image is set. */
   logoVersion: string | null;
@@ -15,7 +16,7 @@ export interface PlatformSettings {
 
 export type BrandImage = 'logo' | 'favicon';
 
-const DEFAULTS: PlatformSettings = { defaultCurrency: 'PKR', copyright: null, logoVersion: null, faviconVersion: null };
+const DEFAULTS: PlatformSettings = { defaultCurrency: 'PKR', siteName: null, copyright: null, logoVersion: null, faviconVersion: null };
 const MAX_IMAGE_BYTES = 256 * 1024;
 
 /** Detects the image type from its first bytes; the browser-supplied type is not trusted. SVG is refused (it can carry scripts). */
@@ -43,6 +44,7 @@ export class PlatformSettingsService {
     const [row] = await this.db.root
       .select({
         defaultCurrency: platformSettings.defaultCurrency,
+        siteName: platformSettings.siteName,
         copyright: platformSettings.copyright,
         hasLogo: sql<boolean>`${platformSettings.logo} is not null`,
         hasFavicon: sql<boolean>`${platformSettings.favicon} is not null`,
@@ -52,14 +54,19 @@ export class PlatformSettingsService {
       .where(eq(platformSettings.id, 'default'));
     const version = row ? String(row.updatedAt.getTime()) : null;
     const value: PlatformSettings = row
-      ? { defaultCurrency: row.defaultCurrency, copyright: row.copyright, logoVersion: row.hasLogo ? version : null, faviconVersion: row.hasFavicon ? version : null }
+      ? { defaultCurrency: row.defaultCurrency, siteName: row.siteName, copyright: row.copyright, logoVersion: row.hasLogo ? version : null, faviconVersion: row.hasFavicon ? version : null }
       : DEFAULTS;
     this.cache = { value, at: Date.now() };
     return value;
   }
 
+  /** The product name for emails and anything else server-side: the Super Admin's setting, or the default. */
+  async name(): Promise<string> {
+    return (await this.get()).siteName || process.env.NEXT_PUBLIC_APP_NAME || 'HRMS';
+  }
+
   async update(input: PlatformSettingsInput): Promise<PlatformSettings> {
-    const values = { defaultCurrency: input.defaultCurrency, copyright: input.copyright ?? null };
+    const values = { defaultCurrency: input.defaultCurrency, siteName: input.siteName ?? null, copyright: input.copyright ?? null };
     await this.db.root.transaction(async (tx) => {
       await tx.insert(platformSettings).values({ id: 'default', ...values }).onConflictDoUpdate({ target: platformSettings.id, set: { ...values, updatedAt: new Date() } });
       // One platform currency: every plan follows it, so prices everywhere (console, homepage) match.
@@ -97,6 +104,7 @@ export class PlatformSettingsService {
   async branding() {
     const s = await this.get();
     return {
+      siteName: s.siteName,
       copyright: s.copyright ? s.copyright.replaceAll('{year}', String(new Date().getFullYear())) : null,
       logoVersion: s.logoVersion,
       faviconVersion: s.faviconVersion,

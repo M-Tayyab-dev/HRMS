@@ -13,17 +13,23 @@ import { api, ApiError } from '@/lib/api';
 import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
 import { cn, money } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
+import { useSiteName } from '@/lib/branding';
 
 interface PublicPlan { id: string; name: string; description: string | null; priceMonthly: number; priceAnnual: number; currency: string; modules: Module[]; maxEmployees: number | null }
 
+const signupFormSchema = signupSchema.omit({ planId: true, cycle: true });
+
 function SignupInner() {
+  const siteName = useSiteName();
   const params = useSearchParams();
   const { data: plans, isLoading } = useApi<PublicPlan[]>('/public/plans');
   const [planId, setPlanId] = useState(params.get('plan') ?? '');
   const [cycle, setCycle] = useState<BillingCycle>(params.get('cycle') === 'ANNUAL' ? 'ANNUAL' : 'MONTHLY');
   const [step, setStep] = useState<1 | 2>(params.get('plan') ? 2 : 1);
   const [error, setError] = useState<string | null>(null);
-  const form = useZodForm(signupSchema, { companyName: '', adminName: '', email: '', password: '', planId, cycle } as never);
+  // Plan and cycle come from the picker (sent below), not from form fields: validating hidden copies of them
+  // used to block "Create account and pay" silently when the page opened without a plan in the link.
+  const form = useZodForm(signupFormSchema, { companyName: '', adminName: '', email: '', password: '' } as never);
   useEffect(() => {
     if (!planId && plans?.length) setPlanId(plans[Math.min(1, plans.length - 1)]!.id);
   }, [plans, planId]);
@@ -33,6 +39,10 @@ function SignupInner() {
   const submit = form.handleSubmit(async (v) => {
     setError(null);
     try {
+      if (!planId) {
+        setStep(1);
+        return setError('Choose a plan first.');
+      }
       await api.post('/public/signup', { ...v, planId, cycle });
       window.location.href = '/billing';
     } catch (e) {
@@ -43,7 +53,7 @@ function SignupInner() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       <div className="mx-auto max-w-2xl text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">Start your company on {plan?.name ?? 'HRMS'}</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Start your company on {siteName}</h1>
         <p className="mt-2 text-muted-foreground">Pick a plan, create your Company Admin account, then pay to activate your workspace.</p>
         <ol className="mt-6 flex items-center justify-center gap-3 text-sm" aria-label="Steps">
           {['Choose plan', 'Your details', 'Payment'].map((s, i) => (

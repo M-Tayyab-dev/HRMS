@@ -333,7 +333,7 @@ export class PlatformController {
   async testEmail(@Req() req: Request, @Body(zp(testEmailSchema)) body: z.infer<typeof testEmailSchema>) {
     const admin = await this.requireAdmin(req);
     try {
-      return await this.mail.sendNow({ to: body.to, subject: 'HRMS test email', text: `This is a test email from the HRMS platform console, sent by ${admin.email}.\n\nIf you received it, outgoing email works.` });
+      return await this.mail.sendNow({ to: body.to, subject: `${await this.settings.name()} test email`, text: `This is a test email from the ${await this.settings.name()} platform console, sent by ${admin.email}.\n\nIf you received it, outgoing email works.` });
     } catch (e) {
       throw badRequest(`The mail server refused: ${(e as Error).message}`, 'SMTP_ERROR');
     }

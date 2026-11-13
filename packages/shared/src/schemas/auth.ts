@@ -74,6 +74,8 @@ export type PlanInput = z.infer<typeof planSchema>;
 export const platformSettingsSchema = z.object({
   /** The platform's currency: every plan (and the homepage) is priced in it. */
   defaultCurrency: currencyCode,
+  /** Product name shown across the website and app (empty = the default). */
+  siteName: z.string().trim().max(40).optional().transform((v) => v || undefined),
   copyright: z.string().trim().max(200).optional().transform((v) => v || undefined),
 });
 export type PlatformSettingsInput = z.infer<typeof platformSettingsSchema>;
