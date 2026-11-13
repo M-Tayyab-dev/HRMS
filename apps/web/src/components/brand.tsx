@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/format';
+import { cn, initials } from '@/lib/format';
 import { useBranding } from '@/lib/branding';
 import { AuthImage } from './ui/auth-image';
 import { SITE } from '@/lib/site';
@@ -52,10 +52,9 @@ export function BrandLogo({ className, inverted, size = 'md' }: { className?: st
 
 /** The client company's own logo, or its initials when none has been uploaded (or it can't be loaded). */
 export function CompanyLogo({ name, logoFileId, className }: { name: string; logoFileId?: string | null; className?: string }) {
-  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
   const fallback = (
     <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-sm font-semibold text-primary', className)} aria-hidden>
-      {initials}
+      {initials(name)}
     </span>
   );
   return logoFileId ? (

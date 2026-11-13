@@ -9,7 +9,8 @@ import { Badge, Card, EmptyState, PageHeader, Skeleton } from '@/components/ui/d
 import { Input } from '@/components/ui/form';
 import { useApi } from '@/lib/hooks';
 import { NewCompanyDialog, PlatformNav, usePlatformMe, type CompanyRow } from './shared';
-import { BILLING_LABEL, BILLING_TONE } from './billing';
+import { RecentLeads } from './billing';
+import { BillingStatusBadge } from '@/components/billing-status';
 
 /** Landing page after a platform owner signs in: pick a company, or open platform-wide settings. */
 export default function PlatformPage() {
@@ -28,6 +29,8 @@ export default function PlatformPage() {
       <PlatformNav me={me} />
       <PageHeader title="Choose a company" description="Open a company to manage its plan, modules and Company Admins, or change settings that apply to all companies."
         actions={<Button onClick={() => setNewCompany(true)}><Plus className="h-4 w-4" /> New company</Button>} />
+
+      <RecentLeads />
 
       <Link href="/platform/settings" className="mb-6 flex items-center gap-4 rounded-xl border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-primary-soft/40">
         <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-soft text-primary"><Settings className="h-5 w-5" aria-hidden /></span>
@@ -59,7 +62,7 @@ export default function PlatformPage() {
                     <p className="truncate text-xs text-muted-foreground">workspace: {c.slug}</p>
                   </div>
                   <Badge tone={c.status === 'ACTIVE' ? 'success' : 'danger'}>{c.status.toLowerCase()}</Badge>
-                  {!c.isDemo && <Badge tone={BILLING_TONE[c.billingStatus]}>{BILLING_LABEL[c.billingStatus]}</Badge>}
+                  {!c.isDemo && <BillingStatusBadge status={c.billingStatus} />}
                   {c.isDemo && <Badge tone="info">demo</Badge>}
                   {c.signupSource === 'SELF' && <Badge>website</Badge>}
                 </div>

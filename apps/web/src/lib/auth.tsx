@@ -105,6 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/** D3: may this person claim medical expenses? (HR ticked them, and the company has a yearly limit.) */
+export function useMedicalEligible(): boolean {
+  const { me } = useAuth();
+  return !!me?.employee?.medicalEligible && (me?.tenant.settings.medicalAnnualLimit ?? 0) > 0;
+}
+
 export function useAuth() {
   const v = useContext(Ctx);
   if (!v) throw new Error('useAuth outside AuthProvider');

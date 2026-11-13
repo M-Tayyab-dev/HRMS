@@ -12,6 +12,14 @@ import { cn } from '@/lib/format';
 const isImageName = (name: string) => /\.(png|jpe?g|webp|gif)$/i.test(name);
 const isPdfName = (name: string) => /\.pdf$/i.test(name);
 
+/** Shows an image or PDF from a URL (object URL or data URL), full size. Shared by every preview. */
+export function MediaView({ url, isPdf, title }: { url: string; isPdf: boolean; title: string }) {
+  return isPdf
+    ? <iframe src={url} title={title} className="h-[70vh] w-full rounded-md border" />
+    // eslint-disable-next-line @next/next/no-img-element
+    : <img src={url} alt={title} className="mx-auto max-h-[70vh] w-auto rounded-md object-contain" />;
+}
+
 /** Full-size viewer for a private file (fetched with the session): images inline, PDFs in a frame. */
 export function FilePreviewDialog({ path, name, open, onOpenChange }: { path: string; name: string; open: boolean; onOpenChange: (o: boolean) => void }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -39,11 +47,8 @@ export function FilePreviewDialog({ path, name, open, onOpenChange }: { path: st
       footer={<Button variant="outline" onClick={() => downloadFile(path, name).catch((e) => toast.error(e.message))}><Download className="h-4 w-4" /> Download</Button>}>
       {!url ? (
         <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Loading preview…</div>
-      ) : pdf ? (
-        <iframe src={url} title={name} className="h-[70vh] w-full rounded-md border" />
-      ) : image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={name} className="mx-auto max-h-[70vh] w-auto rounded-md object-contain" />
+      ) : pdf || image ? (
+        <MediaView url={url} isPdf={pdf} title={name} />
       ) : (
         <div className="flex h-48 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"><FileText className="h-8 w-8" /> No preview for this file type. Use Download.</div>
       )}

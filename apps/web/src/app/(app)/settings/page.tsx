@@ -20,6 +20,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { currencyOptions, timeZoneOptions } from '@/lib/locale-options';
 import { DeleteButton } from '@/components/delete-button';
 import { IdCard } from '@/components/id-card';
+import { todayLocal } from '@/lib/format';
 
 interface S { name: string; slug: string; timezone: string; currency: string; settings: { directoryShowJoinDate: boolean; sessionIdleMinutes?: number; medicalAnnualLimit: number; overtimeThresholdMinutes: number; payrollWorkingHoursBased: boolean; birthdayPostTitle?: string; birthdayPostBody?: string; idCard?: Partial<IdCardTemplate> } }
 interface WS { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; workingDays: number[]; isDefault: boolean }
@@ -184,7 +185,7 @@ function IdCardSettings() {
     contactNo: '0300 1234567',
     bloodGroup: 'B+',
     emergencyContact: '0321 7654321',
-    joiningDate: new Date().toISOString().slice(0, 10),
+    joiningDate: todayLocal(),
     avatarFileId: me?.employee?.avatarFileId ?? null,
   };
   return (

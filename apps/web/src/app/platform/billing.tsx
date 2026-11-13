@@ -1,7 +1,8 @@
 'use client';
 
-import { PAYMENT_METHOD_KINDS, PAYMENT_METHOD_LABELS, paymentMethodSchema } from '@hrms/shared';
+import { PAYMENT_METHOD_KINDS, PAYMENT_METHOD_LABELS, paymentMethodSchema, type BillingStatus } from '@hrms/shared';
 import { Ban, CheckCircle2, CreditCard, Pencil, Plus, ReceiptText, XCircle } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardBody, CardHeader, EmptyState } from '@/components/ui/display';
@@ -11,10 +12,9 @@ import { DataTable } from '@/components/ui/table';
 import { fieldError, useZodForm } from '@/lib/form';
 import { date, dateTime, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { BillingStatusBadge, InvoiceStatusBadge } from '@/components/billing-status';
+import { downloadCsv } from '@/lib/api';
 
-export type BillingStatus = 'PAID' | 'DUE' | 'UNPAID';
-export const BILLING_TONE: Record<BillingStatus, 'success' | 'warning' | 'danger'> = { PAID: 'success', DUE: 'warning', UNPAID: 'danger' };
-export const BILLING_LABEL: Record<BillingStatus, string> = { PAID: 'Paid', DUE: 'Payment due', UNPAID: 'Unpaid' };
 
 interface Invoice { id: string; planName: string; cycle: 'MONTHLY' | 'ANNUAL'; amount: number; currency: string; periodStart: string; periodEnd: string; status: 'PENDING' | 'PAID' | 'VOID'; paymentReference: string | null; paymentMethodName: string | null; submittedAt: string | null; paidAt: string | null; note: string | null }
 
@@ -34,7 +34,7 @@ export function CompanyBilling({ companyId, cycle, status, paidUntil, isDemo }: 
   return (
     <Card className="mt-6">
       <CardHeader title="Billing" description="Payments are confirmed by hand: when the money arrives, Mark paid. Unpaid companies can only open their Billing page."
-        action={<Badge tone={BILLING_TONE[status]}>{BILLING_LABEL[status]}{paidUntil ? ` · until ${date(paidUntil)}` : ''}</Badge>} />
+        action={<BillingStatusBadge status={status} paidUntil={paidUntil} />} />
       <CardBody className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Billing cycle" className="w-48">{(a) => (
@@ -55,7 +55,7 @@ export function CompanyBilling({ companyId, cycle, status, paidUntil, isDemo }: 
           { key: 'p', header: 'Period', cell: (i) => <div className="flex items-center gap-2"><ReceiptText className="h-4 w-4 text-muted-foreground" />{date(i.periodStart)} – {date(i.periodEnd)}</div> },
           { key: 'a', header: 'Amount', cell: (i) => <div><p className="tabular-nums">{money(i.amount, i.currency)}</p><p className="text-xs text-muted-foreground">{i.planName} · {i.cycle === 'ANNUAL' ? 'yearly' : 'monthly'}</p></div> },
           { key: 'r', header: 'Paid with', cell: (i) => (i.paymentReference ? <div className="text-xs"><p className="font-medium">{i.paymentMethodName ?? '—'}</p><p className="text-muted-foreground">Ref {i.paymentReference}{i.submittedAt ? ` · ${dateTime(i.submittedAt)}` : ''}</p></div> : <span className="text-xs text-muted-foreground">—</span>) },
-          { key: 's', header: 'Status', cell: (i) => <Badge tone={i.status === 'PAID' ? 'success' : i.status === 'VOID' ? 'neutral' : i.submittedAt ? 'info' : 'warning'}>{i.status === 'PAID' ? 'Paid' : i.status === 'VOID' ? 'Cancelled' : i.submittedAt ? 'Check payment' : 'Unpaid'}</Badge> },
+          { key: 's', header: 'Status', cell: (i) => <InvoiceStatusBadge invoice={i} viewer="admin" /> },
           { key: 'x', header: <span className="sr-only">Actions</span>, cell: (i) => (
             <div className="flex justify-end gap-1">
               {i.status === 'PENDING' && <Button size="sm" loading={paid.isPending && paid.variables === i.id} onClick={() => paid.mutate(i.id)}><CheckCircle2 className="h-4 w-4" /> Mark paid</Button>}
@@ -129,14 +129,10 @@ export function Leads() {
   const { data, isLoading } = useApi<Lead[]>('/platform/leads');
   const [filter, setFilter] = useState<'' | 'DEMO' | 'SIGNUP'>('');
   const rows = (data ?? []).filter((l) => !filter || l.source === filter);
-  const csv = () => {
-    const lines = [['Date', 'Source', 'Name', 'Email', 'Company', 'Phone'], ...rows.map((l) => [l.createdAt, l.source, l.name ?? '', l.email, l.company ?? '', l.phone ?? ''])];
-    const blob = new Blob([lines.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'hrms-leads.csv';
-    a.click();
-  };
+  const csv = () => downloadCsv('hrms-leads.csv', [
+    ['Date', 'Source', 'Name', 'Email', 'Company', 'Phone'],
+    ...rows.map((l) => [l.createdAt, l.source === 'SIGNUP' ? 'Signed up' : 'Tried demo', l.name, l.email, l.company, l.phone]),
+  ]);
   return (
     <Card>
       <CardHeader title="Leads" description="People who tried the demo or signed up on the website."
@@ -148,6 +144,32 @@ export function Leads() {
         { key: 's', header: 'Source', cell: (l) => <Badge tone={l.source === 'SIGNUP' ? 'success' : 'info'}>{l.source === 'SIGNUP' ? 'Signed up' : 'Tried demo'}</Badge> },
         { key: 'd', header: 'When', hideOnMobile: true, cell: (l) => dateTime(l.createdAt) },
       ]} />
+    </Card>
+  );
+}
+
+/** Super Admin home: the newest demo visitors and sign-ups at a glance. */
+export function RecentLeads() {
+  const { data } = useApi<Lead[]>('/platform/leads', { fresh: true });
+  if (!data?.length) return null;
+  const week = data.filter((l) => Date.now() - new Date(l.createdAt).getTime() < 7 * 864e5).length;
+  return (
+    <Card className="mb-6">
+      <CardHeader title="Demo requests and sign-ups" description={`${week} in the last 7 days · ${data.length} in total`}
+        action={<Link href="/platform/leads" className="text-sm font-medium text-primary hover:underline">View all leads</Link>} />
+      <ul className="divide-y">
+        {data.slice(0, 5).map((l) => (
+          <li key={l.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3 text-sm">
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">{l.name ?? l.email}</span>
+              <a href={`mailto:${l.email}`} className="ml-2 text-muted-foreground hover:text-primary">{l.email}</a>
+              {l.company && <span className="text-muted-foreground"> · {l.company}</span>}
+            </span>
+            <Badge tone={l.source === 'SIGNUP' ? 'success' : 'info'}>{l.source === 'SIGNUP' ? 'Signed up' : 'Tried demo'}</Badge>
+            <span className="text-xs text-muted-foreground">{dateTime(l.createdAt)}</span>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { api, downloadFile } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { date, monthLabel, money } from '@/lib/format';
+import { date, monthLabel, money, fileSize } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from './ui/button';
@@ -117,7 +117,7 @@ export function DocumentsPanel({ employeeId, self }: { employeeId: string; self:
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{d.title || DOC_CATEGORY_LABELS[d.category]}</p>
                         <p className="text-xs text-muted-foreground">
-                          {DOC_CATEGORY_LABELS[d.category]} · {date(d.createdAt)} · {(d.size / 1024).toFixed(0)} KB {d.source === 'HR' && <Badge tone="info" className="ml-1">From HR</Badge>}
+                          {DOC_CATEGORY_LABELS[d.category]} · {date(d.createdAt)} · {fileSize(d.size)} {d.source === 'HR' && <Badge tone="info" className="ml-1">From HR</Badge>}
                         </p>
                       </div>
                       {d.missing && <Badge tone="danger">File missing – upload again</Badge>}

@@ -7,12 +7,11 @@ import { toast } from 'sonner';
 import type { Doc } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/overlay';
-import { FileThumb } from '@/components/file-preview';
+import { FileThumb, MediaView } from '@/components/file-preview';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/format';
+import { cn, fileSize } from '@/lib/format';
 
 const MAX_MB = 10;
-const fmtSize = (b: number) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
 
 /* ------------------------------------------------------------------ */
 /* Sample illustrations (generic, not a real card)                     */
@@ -311,7 +310,7 @@ export function DocUploadCard({ category, uploaded: single, uploads = [], multip
                 <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} placeholder="What is this document? e.g. Experience letter"
                   aria-label="Document name" className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none" />
               )}
-              <p className="truncate text-sm"><span className="font-medium">{file.name}</span> <span className="text-muted-foreground">· {fmtSize(file.size)}</span></p>
+              <p className="truncate text-sm"><span className="font-medium">{file.name}</span> <span className="text-muted-foreground">· {fileSize(file.size)}</span></p>
               {warnings.map((w) => (
                 <p key={w} className="flex gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden /> {w}</p>
               ))}
@@ -342,10 +341,7 @@ export function DocUploadCard({ category, uploaded: single, uploads = [], multip
       </div>
 
       <Dialog open={!!zoom} onOpenChange={(o) => !o && setZoom(null)} title={label} size="lg">
-        {zoom && (zoom.isPdf
-          ? <iframe src={zoom.url} title={label} className="h-[70vh] w-full rounded-md border" />
-          // eslint-disable-next-line @next/next/no-img-element
-          : <img src={zoom.url} alt={label} className="mx-auto max-h-[70vh] w-auto rounded-md object-contain" />)}
+        {zoom && <MediaView url={zoom.url} isPdf={zoom.isPdf} title={label} />}
       </Dialog>
     </div>
   );

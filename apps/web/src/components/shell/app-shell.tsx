@@ -5,7 +5,7 @@ import { Bell, Lock, Menu, Moon, Sun, UserRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { useAuth } from '@/lib/auth';
+import { useAuth, useMedicalEligible } from '@/lib/auth';
 import { cn, relative } from '@/lib/format';
 import { SITE } from '@/lib/site';
 import { useAction, useApi } from '@/lib/hooks';
@@ -86,12 +86,13 @@ function NotificationBell() {
 /** Nav entries this person may open, with groups that end up empty removed. */
 function useVisibleNav(): NavGroup[] {
   const { can, isTeamLead, me, hasModule } = useAuth();
+  const medicalEligible = useMedicalEligible();
   const visible = (i: NavItem) => {
     if (i.module && !hasModule(i.module)) return false;
     if (i.employeeOnly && !me?.employee) return false;
     if (i.teamLead && !isTeamLead) return false;
     if (i.any?.length && !can(...i.any)) return false;
-    if (i.medical && !can(P.MEDICAL_MANAGE) && !(me?.employee?.medicalEligible && (me.tenant.settings.medicalAnnualLimit ?? 0) > 0)) return false;
+    if (i.medical && !can(P.MEDICAL_MANAGE) && !medicalEligible) return false;
     return true;
   };
   return NAV.map((g) => {

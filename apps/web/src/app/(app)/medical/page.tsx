@@ -13,7 +13,7 @@ import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
 import { FileUpload } from '@/components/ui/file-upload';
 import { api, downloadFile } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { useAuth, useMedicalEligible } from '@/lib/auth';
 import { date, money, todayLocal } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 
@@ -40,7 +40,7 @@ export default function MedicalPage() {
   const qc = useQueryClient();
   const currency = me?.tenant.currency ?? 'PKR';
   // Offered to this person? (HR ticks "Eligible for medical claims" per employee; the company sets the yearly limit.)
-  const eligible = !!me?.employee?.medicalEligible && (me?.tenant.settings.medicalAnnualLimit ?? 0) > 0;
+  const eligible = useMedicalEligible();
   const { data: mine, isLoading } = useApi<Res>(eligible ? '/payroll/medical?mine=true' : null);
   const { data: all, isLoading: allLoading } = useApi<Res>(can(P.MEDICAL_MANAGE) ? '/payroll/medical' : null);
   const [open, setOpen] = useState(false);

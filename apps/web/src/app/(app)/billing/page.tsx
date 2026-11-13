@@ -12,6 +12,7 @@ import { DataTable } from '@/components/ui/table';
 import { useAuth } from '@/lib/auth';
 import { cn, date, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
+import { BillingStatusBadge, InvoiceStatusBadge } from '@/components/billing-status';
 
 interface PlanInfo { id: string; name: string; description?: string | null; currency: string; priceMonthly: number; priceAnnual: number; modules: Module[]; maxEmployees: number | null }
 interface Invoice { id: string; planName: string; cycle: 'MONTHLY' | 'ANNUAL'; amount: number; currency: string; periodStart: string; periodEnd: string; status: 'PENDING' | 'PAID' | 'VOID'; paymentReference: string | null; submittedAt: string | null; paidAt: string | null }
@@ -78,7 +79,6 @@ export default function BillingPage() {
   const { data, isLoading } = useApi<Overview>('/billing');
   const [paying, setPaying] = useState<Invoice | null>(null);
   if (isLoading || !data) return <Skeleton className="h-96" />;
-  const status = STATUS[data.billingStatus];
   const open = data.invoices.filter((i) => i.status === 'PENDING');
   return (
     <>
@@ -96,7 +96,7 @@ export default function BillingPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader title="Current plan" action={<Badge tone={status.tone}>{status.label}</Badge>} />
+          <CardHeader title="Current plan" action={<BillingStatusBadge status={data.billingStatus} />} />
           <CardBody>
             {data.plan ? (
               <div className="space-y-4">
@@ -172,7 +172,7 @@ export default function BillingPage() {
           { key: 'p', header: 'Period', cell: (i) => <div className="flex items-center gap-2"><Receipt className="h-4 w-4 text-muted-foreground" />{date(i.periodStart)} – {date(i.periodEnd)}</div> },
           { key: 'n', header: 'Plan', cell: (i) => `${i.planName} · ${i.cycle === 'ANNUAL' ? 'yearly' : 'monthly'}` },
           { key: 'a', header: 'Amount', cell: (i) => <span className="tabular-nums">{money(i.amount, i.currency)}</span> },
-          { key: 's', header: 'Status', cell: (i) => <Badge tone={i.status === 'PAID' ? 'success' : i.status === 'VOID' ? 'neutral' : i.submittedAt ? 'info' : 'warning'}>{i.status === 'PAID' ? `Paid ${i.paidAt ? date(i.paidAt) : ''}` : i.status === 'VOID' ? 'Cancelled' : i.submittedAt ? 'Awaiting confirmation' : 'Unpaid'}</Badge> },
+          { key: 's', header: 'Status', cell: (i) => <InvoiceStatusBadge invoice={i} viewer="company" /> },
         ]} />
       </Card>
 

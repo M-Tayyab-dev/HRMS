@@ -14,12 +14,16 @@ import { useState } from 'react';
 export default function DemoPage() {
   const form = useZodForm(demoRequestSchema, { name: '', email: '', company: '' } as never);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const submit = form.handleSubmit(async (v) => {
     setError(null);
+    setNotice(null);
     try {
       await api.post('/public/demo', v);
       window.location.href = '/dashboard';
     } catch (e) {
+      // Demo company not set up yet: the details were still saved, so thank them instead of showing an error.
+      if (e instanceof ApiError && e.code === 'DEMO_UNAVAILABLE') return setNotice(e.message);
       setError(e instanceof ApiError ? e.message : 'Could not open the demo');
     }
   });
@@ -39,6 +43,7 @@ export default function DemoPage() {
         <Card>
           <CardBody>
             <form onSubmit={submit} className="space-y-4" noValidate>
+              {notice && <div role="status" className="rounded-md border border-success/30 bg-success-soft px-3 py-2 text-sm text-success">{notice}</div>}
               {error && <div role="alert" className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</div>}
               <Field label="Your name" required error={fieldError(form, 'name')}>{(a) => <Input {...a} autoComplete="name" {...form.register('name')} />}</Field>
               <Field label="Work email" required error={fieldError(form, 'email')}>{(a) => <Input {...a} type="email" autoComplete="email" {...form.register('email')} />}</Field>

@@ -14,14 +14,13 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/hooks';
 import type { EmployeeDetail } from '../profile/page';
+import { todayLocal } from '@/lib/format';
 
 const OPTIONAL_DOCS: DocCategory[] = ['EDUCATION', 'OTHER_ONBOARDING'];
 
 type DetailKey = 'cnic' | 'fatherName' | 'fatherCnic' | 'dateOfBirth' | 'bloodGroup' | 'contactNo' | 'emergencyContact';
 const REQUIRED_DETAILS: DetailKey[] = ['cnic', 'emergencyContact'];
 const DETAIL_KEYS: DetailKey[] = ['cnic', 'fatherName', 'fatherCnic', 'dateOfBirth', 'bloodGroup', 'contactNo', 'emergencyContact'];
-
-const todayLocal = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 
 /** B2 – first sign-in: documents plus every personal detail that is still missing. */
 export default function OnboardingPage() {

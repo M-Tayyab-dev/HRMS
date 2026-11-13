@@ -15,7 +15,7 @@ import { DataTable, Pagination } from '@/components/ui/table';
 import { api, qs } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
-import { date, money } from '@/lib/format';
+import { date, money, todayLocal } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import type { EmployeeDetail } from '../profile/page';
 
@@ -23,7 +23,7 @@ function AddEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const { me } = useAuth();
   const qc = useQueryClient();
   const router = useRouter();
-  const form = useZodForm(employeeSchema, { roles: ['EMPLOYEE'], sendInvite: true, mustChangePassword: true, hierarchyTier: 'MEMBER', joiningDate: new Date().toISOString().slice(0, 10) } as never);
+  const form = useZodForm(employeeSchema, { roles: ['EMPLOYEE'], sendInvite: true, mustChangePassword: true, hierarchyTier: 'MEMBER', joiningDate: todayLocal() } as never);
   const dept = form.watch('departmentId') as string | undefined;
   const levelId = form.watch('levelId') as string | undefined;
   const roles = (form.watch('roles') as string[] | undefined) ?? [];
