@@ -3,21 +3,25 @@
 import { cn, initials } from '@/lib/format';
 import { useBranding } from '@/lib/branding';
 import { AuthImage } from './ui/auth-image';
+import { useId } from 'react';
 
 /**
  * Product mark: two people side by side, joined at the middle so together they form an "H"
  * (people + HRMS). Kept in one place so the favicon (app/icon.svg) and every screen match.
  */
 export function BrandMark({ className, title }: { className?: string; title?: string }) {
+  // A unique gradient id per logo: with one shared id, a logo hidden on small screens (display:none) takes
+  // the gradient with it and every other logo on the page loses its blue background.
+  const gradientId = `brand-gradient-${useId().replace(/:/g, '')}`;
   return (
     <svg viewBox="0 0 32 32" className={cn('h-8 w-8 shrink-0', className)} role={title ? 'img' : undefined} aria-label={title} aria-hidden={title ? undefined : true}>
       <defs>
-        <linearGradient id="hrms-brand-gradient" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
           <stop offset="0" stopColor="#2563eb" />
           <stop offset="1" stopColor="#4f46e5" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="8" fill="url(#hrms-brand-gradient)" />
+      <rect width="32" height="32" rx="8" fill={`url(#${gradientId})`} />
       <g fill="#fff">
         <circle cx="10.5" cy="9.5" r="3" />
         <circle cx="21.5" cy="9.5" r="3" />

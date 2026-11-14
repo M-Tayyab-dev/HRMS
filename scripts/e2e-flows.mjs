@@ -2,6 +2,8 @@
 import { randomBytes } from 'node:crypto';
 import { Client, createCompany, expect, platformClient, testPassword } from './smoke.mjs';
 
+// Same server as the rest of the tests (API_URL), also for device endpoints outside /api/v1.
+const ORIGIN = (process.env.API_URL ?? 'http://localhost:4000/api/v1').replace(/\/api\/v1\/?$/, '');
 const TZ = 'Asia/Karachi';
 const ymd = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 const today = ymd(new Date());
@@ -108,7 +110,7 @@ async function main() {
   expect(dev.status === 201 && dev.data.apiKey, 'device registered', dev);
   const d1 = prevWeekday(today, 1);
   const d2 = prevWeekday(today, 2);
-  const devRes = await fetch('http://localhost:4000/api/v1/attendance/device/punches', {
+  const devRes = await fetch(ORIGIN + '/api/v1/attendance/device/punches', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-device-key': dev.data.apiKey },
     body: JSON.stringify({ punches: [
@@ -120,7 +122,7 @@ async function main() {
   });
   const devJson = await devRes.json();
   expect(devRes.status === 200 && devJson.inserted === 6 && devJson.unknownEmployeeCodes[0] === 'NOPE-1', 'device push accepted', devJson);
-  const badDev = await fetch('http://localhost:4000/api/v1/attendance/device/punches', { method: 'POST', headers: { 'content-type': 'application/json', 'x-device-key': `${dev.data.apiKey.slice(0, 37)}wrong-secret-value-xx` }, body: JSON.stringify({ punches: [{ employeeCode: emp.employeeCode, at: pk(d1, '09:00') }] }) });
+  const badDev = await fetch(ORIGIN + '/api/v1/attendance/device/punches', { method: 'POST', headers: { 'content-type': 'application/json', 'x-device-key': `${dev.data.apiKey.slice(0, 37)}wrong-secret-value-xx` }, body: JSON.stringify({ punches: [{ employeeCode: emp.employeeCode, at: pk(d1, '09:00') }] }) });
   expect(badDev.status === 401, 'invalid device key rejected');
   const days = (await E.get(`/attendance/days?from=${d2}&to=${d1}`)).data;
   const day1 = days.find((d) => d.date === d1);
@@ -192,18 +194,18 @@ async function main() {
   const sn = `ZK${randomBytes(4).toString('hex').toUpperCase()}`;
   expect((await admin.post('/attendance/devices', { name: 'Gate ZK', protocol: 'ZKTECO_ADMS', location: 'Main gate' })).status === 400, 'ZKTeco device needs a serial number');
   expect((await admin.post('/attendance/devices', { name: 'Gate ZK', protocol: 'ZKTECO_ADMS', serialNumber: sn, location: 'Main gate' })).status === 201, 'ZKTeco device registered with serial and location');
-  const hs = await fetch(`http://localhost:4000/iclock/cdata?SN=${sn}&options=all&pushver=2.4.1`);
+  const hs = await fetch(`${ORIGIN}/iclock/cdata?SN=${sn}&options=all&pushver=2.4.1`);
   expect(hs.status === 200 && (await hs.text()).includes(`GET OPTION FROM: ${sn}`), 'ADMS handshake');
   const d3 = prevWeekday(today, 3);
   // Status codes: 0 check-in, 2 break-out, 3 break-in, 1 check-out.
   const attlog = [`${emp.employeeCode}\t${d3} 09:00:00\t0\t1`, `${emp.employeeCode}\t${d3} 13:00:00\t2\t1`, `${emp.employeeCode}\t${d3} 14:00:00\t3\t1`, `${emp.employeeCode}\t${d3} 18:00:00\t1\t1`, `9999\t${d3} 09:05:00\t0\t1`, ''].join('\n');
-  const up1 = await fetch(`http://localhost:4000/iclock/cdata?SN=${sn}&table=ATTLOG&Stamp=1`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: attlog });
+  const up1 = await fetch(`${ORIGIN}/iclock/cdata?SN=${sn}&table=ATTLOG&Stamp=1`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: attlog });
   expect(up1.status === 200 && (await up1.text()) === 'OK: 5', 'ADMS ATTLOG upload acknowledged');
-  const up2 = await fetch(`http://localhost:4000/iclock/cdata?SN=${sn}&table=ATTLOG&Stamp=1`, { method: 'POST', body: attlog });
+  const up2 = await fetch(`${ORIGIN}/iclock/cdata?SN=${sn}&table=ATTLOG&Stamp=1`, { method: 'POST', body: attlog });
   expect(up2.status === 200, 'late re-upload after outage accepted');
   const d3day = (await E.get(`/attendance/days?from=${d3}&to=${d3}`)).data[0];
   expect(d3day?.status === 'PRESENT' && d3day.workedMinutes === 480 && d3day.breakMinutes === 60, 'device punches became attendance without duplicates', d3day);
-  expect((await fetch(`http://localhost:4000/iclock/getrequest?SN=UNKNOWN${sn}`)).status === 403, 'unregistered device rejected');
+  expect((await fetch(`${ORIGIN}/iclock/getrequest?SN=UNKNOWN${sn}`)).status === 403, 'unregistered device rejected');
   const heldList = (await admin.get('/attendance/held-punches')).data;
   const held9999 = heldList.find((h) => h.deviceUserId === '9999');
   expect(held9999?.punches === 1 && heldList.some((h) => h.deviceUserId === 'NOPE-1') && !Number.isNaN(Date.parse(held9999.firstAt)), 'unknown device users held for HR', heldList);
@@ -216,7 +218,7 @@ async function main() {
   // ---- Hikvision ISAPI listener
   const hik = await admin.post('/attendance/devices', { name: 'Lobby Hik', protocol: 'HIKVISION_ISAPI' });
   const d4 = prevWeekday(today, 4);
-  const hikRes = await fetch(`http://localhost:4000/api/v1/attendance/hikvision/${hik.data.apiKey}`, {
+  const hikRes = await fetch(`${ORIGIN}/api/v1/attendance/hikvision/${hik.data.apiKey}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ dateTime: `${d4}T09:00:00+05:00`, eventType: 'AccessControllerEvent', AccessControllerEvent: { employeeNoString: emp.employeeCode, attendanceStatus: 'checkIn' } }),
@@ -231,7 +233,7 @@ async function main() {
   const fd = new FormData();
   fd.set('category', 'MISCONDUCT');
   fd.set('description', 'Something inappropriate happened in the meeting room on Monday.');
-  const cRes = await fetch('http://localhost:4000/api/v1/complaints', {
+  const cRes = await fetch(ORIGIN + '/api/v1/complaints', {
     method: 'POST',
     headers: { cookie: [...E.jar].map(([k, v]) => `${k}=${v}`).join('; '), 'x-csrf-token': E.jar.get('hrms_csrf') },
     body: fd,
