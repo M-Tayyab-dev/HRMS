@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, StreamableFile } from '@nestjs/common';
 import { PERMISSIONS as P, billingCycleSchema, submitPaymentSchema } from '@hrms/shared';
 import type { z } from 'zod';
 import { currentUser } from '../../common/context';
@@ -28,6 +28,20 @@ export class BillingController {
   async cycle(@Body(zp(billingCycleSchema)) body: z.infer<typeof billingCycleSchema>) {
     const r = await this.billing.changeCycle(currentUser().tenantId, body.cycle);
     return { ...r, overview: await this.billing.overview(currentUser().tenantId) };
+  }
+
+  /** One of the company's own invoices. */
+  @Get('invoices/:id')
+  @RequireAny(P.TENANT_SETTINGS)
+  invoice(@Param('id', ParseUUIDPipe) id: string) {
+    return this.billing.invoice(id, currentUser().tenantId);
+  }
+
+  @Get('invoices/:id/pdf')
+  @RequireAny(P.TENANT_SETTINGS)
+  async invoicePdf(@Param('id', ParseUUIDPipe) id: string) {
+    const { file, name } = await this.billing.invoicePdf(id, currentUser().tenantId);
+    return new StreamableFile(file, { type: 'application/pdf', disposition: `attachment; filename="${name}"` });
   }
 
   /** "We've paid": method + transaction reference. The Super Admin confirms and unlocks the workspace. */

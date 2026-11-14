@@ -413,14 +413,31 @@ async function main() {
   const inv = await platform.post(`/platform/companies/${companyId}/invoices`);
   expect(inv.status === 201 && inv.data.cycle === 'ANNUAL' && inv.data.amount === (starter.priceAnnual ?? starter.priceMonthly * 12), 'yearly invoice at the annual price', inv);
   expect((await platform.post(`/platform/companies/${companyId}/unpaid`, {})).status === 200, 'Super Admin marks the company unpaid');
-  const lockedOut = await E.get('/me/profile');
+  const lockedOut = await E.get('/dashboard');
+  expect((await E.get('/me/profile')).status === 200, 'own profile (and password change) still open while unpaid');
   expect(lockedOut.status === 402 && lockedOut.data.code === 'PAYMENT_REQUIRED', 'unpaid workspace is locked', lockedOut);
   const billingView = (await admin.get('/billing')).data;
   expect(billingView.billingStatus === 'UNPAID' && billingView.paymentMethods.some((m) => m.id === pm.data.id), 'Company Admin still sees Billing with payment methods');
   expect((await admin.post(`/billing/invoices/${inv.data.id}/submit`, { paymentMethodId: pm.data.id, reference: 'TXN-12345' })).status === 200, 'company submits its payment reference');
   const paidRes = await platform.post(`/platform/invoices/${inv.data.id}/paid`, {});
   expect(paidRes.data.status === 'PAID' && paidRes.data.paidUntil === inv.data.periodEnd, 'Super Admin marks it paid', paidRes);
-  expect((await E.get('/me/profile')).status === 200, 'workspace unlocked after payment');
+  expect((await E.get('/dashboard')).status === 200, 'workspace unlocked after payment');
+  // ---- Invoices: template, custom invoice, details and PDF for both sides
+  const tplBefore = (await platform.get('/platform/settings/invoice-template')).data;
+  const invTpl = await platform.put('/platform/settings/invoice-template', { ...tplBefore, businessName: 'E2E Billing Co', phone: '0300 1234567', accentColor: '#0f766e' });
+  expect(invTpl.status === 200 && invTpl.data.businessName === 'E2E Billing Co', 'Super Admin sets the invoice template', invTpl);
+  expect(inv.data.number?.startsWith('INV-') && inv.data.title, 'subscription invoice has a number and a title', inv.data);
+  const custom = await platform.post(`/platform/companies/${companyId}/invoices/custom`, { title: 'Onboarding and data import', items: [{ description: 'Data import', quantity: 2, unitPrice: 5000 }, { description: 'Training session', quantity: 1, unitPrice: 7500 }], notes: 'Thanks!' });
+  expect(custom.status === 201 && custom.data.amount === 17500 && custom.data.kind === 'CUSTOM', 'Super Admin creates a custom invoice with lines', custom);
+  const pdfOf = async (c, path) => { const cookie = [...c.jar].map(([k, v]) => `${k}=${v}`).join('; '); const r = await fetch(ORIGIN + '/api/v1' + path, { headers: { cookie } }); return { status: r.status, type: r.headers.get('content-type'), head: (await r.text()).slice(0, 5) }; };
+  const adminPdf = await pdfOf(platform, `/platform/invoices/${custom.data.id}/pdf`);
+  expect(adminPdf.status === 200 && adminPdf.type === 'application/pdf' && adminPdf.head === '%PDF-', 'Super Admin downloads the invoice PDF', adminPdf);
+  const seen = (await admin.get(`/billing/invoices/${custom.data.id}`)).data;
+  expect(seen.title === 'Onboarding and data import' && seen.items.length === 2, 'company opens its invoice and sees what it is for');
+  const companyPdf = await pdfOf(admin, `/billing/invoices/${custom.data.id}/pdf`);
+  expect(companyPdf.status === 200 && companyPdf.head === '%PDF-', 'company downloads its invoice PDF', companyPdf);
+  expect((await platform.post(`/platform/invoices/${custom.data.id}/paid`, {})).data.status === 'PAID', 'custom invoice marked paid');
+  await platform.put('/platform/settings/invoice-template', tplBefore);
   await platform.del(`/platform/payment-methods/${pm.data.id}`);
 
   // ---- Read-only demo with lead capture
@@ -445,10 +462,22 @@ async function main() {
   expect(webBilling.billingStatus === 'UNPAID' && webBilling.invoices.length === 1 && webBilling.invoices[0].amount === starter.priceMonthly, 'new company gets its first invoice and waits for payment', webBilling);
   expect((await web.get('/employees')).status === 402, 'signed-up company is on Billing until paid');
 
+  // ---- Free plan (price 0): no payment, workspace open straight away
+  const freePlan = await platform.post('/platform/plans', { name: `E2E Free ${webWs}`, priceMonthly: 0, priceAnnual: 0, modules: ['ATTENDANCE', 'LEAVE'], isActive: true });
+  expect(freePlan.status === 201, 'Super Admin creates a free plan', freePlan);
+  const freeWs = `e2e-${randomBytes(3).toString('hex')}`;
+  const free = new Client();
+  await free.get('/auth/csrf');
+  expect((await free.post('/public/signup', { companyName: freeWs, adminName: 'Free Owner', email: `owner@${freeWs}.test`, password: pw, planId: freePlan.data.id, cycle: 'MONTHLY' })).status === 200, 'company signs up on the free plan');
+  const freeBilling = (await free.get('/billing')).data;
+  expect(freeBilling.billingStatus === 'PAID' && freeBilling.invoices.every((i) => i.status === 'PAID'), 'free plan needs no payment', freeBilling);
+  expect((await free.get('/employees')).status === 200, 'free-plan workspace is open straight away');
+
   console.log(`\nAll flows passed for workspace "${ws}".`);
   // Test companies are removed afterwards so they don't pile up.
   const { deleteTestCompanies } = await import('./cleanup-test-companies.mjs');
-  await deleteTestCompanies([ws, `${ws}-b`, webWs]);
+  await deleteTestCompanies([ws, `${ws}-b`, webWs, freeWs]);
+  await platform.del(`/platform/plans/${freePlan.data.id}`);
 }
 
 main().catch((e) => {

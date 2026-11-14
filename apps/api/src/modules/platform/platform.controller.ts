@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Req, Res, StreamableFile, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { companyUpdateSchema, createCompanySchema, planSchema, platformAdminSchema, platformLoginSchema, platformSettingsSchema, brandImageSchema, markPaidSchema, paymentMethodSchema, type PaymentMethodInput, type PlatformSettingsInput, testEmailSchema, type CompanyUpdateInput, type CreateCompanyInput, type PlanInput } from '@hrms/shared';
+import { companyUpdateSchema, createCompanySchema, planSchema, platformAdminSchema, platformLoginSchema, platformSettingsSchema, brandImageSchema, customInvoiceSchema, invoiceTemplateSchema, type CustomInvoiceInput, type InvoiceTemplate, markPaidSchema, paymentMethodSchema, type PaymentMethodInput, type PlatformSettingsInput, testEmailSchema, type CompanyUpdateInput, type CreateCompanyInput, type PlanInput } from '@hrms/shared';
 import type { Request, Response } from 'express';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -236,6 +236,38 @@ export class PlatformController {
   async createInvoice(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     await this.requireAdmin(req);
     return this.billing.createInvoice(id);
+  }
+
+  /** Super Admin bills something by hand: title (what it's for), lines, due date, notes. */
+  @Post('companies/:id/invoices/custom')
+  async createCustomInvoice(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body(zp(customInvoiceSchema)) body: CustomInvoiceInput) {
+    await this.requireAdmin(req);
+    return this.billing.createCustomInvoice(id, body);
+  }
+
+  @Get('invoices/:id')
+  async invoiceDetail(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    await this.requireAdmin(req);
+    return this.billing.invoice(id);
+  }
+
+  @Get('invoices/:id/pdf')
+  async invoicePdf(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    await this.requireAdmin(req);
+    const { file, name } = await this.billing.invoicePdf(id);
+    return new StreamableFile(file, { type: 'application/pdf', disposition: `attachment; filename="${name}"` });
+  }
+
+  @Get('settings/invoice-template')
+  async getInvoiceTemplate(@Req() req: Request) {
+    await this.requireAdmin(req);
+    return this.settings.invoiceTemplate();
+  }
+
+  @Put('settings/invoice-template')
+  async putInvoiceTemplate(@Req() req: Request, @Body(zp(invoiceTemplateSchema)) body: InvoiceTemplate) {
+    await this.requireAdmin(req);
+    return this.settings.setInvoiceTemplate(body);
   }
 
   @Post('invoices/:id/paid')

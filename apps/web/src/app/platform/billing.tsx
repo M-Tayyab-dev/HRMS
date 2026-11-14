@@ -1,6 +1,6 @@
 'use client';
 
-import { PAYMENT_METHOD_KINDS, PAYMENT_METHOD_LABELS, paymentMethodSchema, type BillingStatus } from '@hrms/shared';
+import { DEFAULT_INVOICE_TEMPLATE, PAYMENT_METHOD_KINDS, PAYMENT_METHOD_LABELS, paymentMethodSchema, type BillingStatus, type InvoiceTemplate } from '@hrms/shared';
 import { Ban, CheckCircle2, CreditCard, Pencil, Plus, ReceiptText, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -14,9 +14,11 @@ import { date, dateTime, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
 import { BillingStatusBadge, InvoiceStatusBadge } from '@/components/billing-status';
 import { downloadCsv } from '@/lib/api';
+import { InvoiceDialog, InvoiceView, type InvoiceDetail } from '@/components/invoice-view';
+import { useBranding } from '@/lib/branding';
 
 
-interface Invoice { id: string; planName: string; cycle: 'MONTHLY' | 'ANNUAL'; amount: number; currency: string; periodStart: string; periodEnd: string; status: 'PENDING' | 'PAID' | 'VOID'; paymentReference: string | null; paymentMethodName: string | null; submittedAt: string | null; paidAt: string | null; note: string | null }
+interface Invoice { id: string; number: string | null; title: string | null; kind: 'SUBSCRIPTION' | 'CUSTOM'; planName: string; cycle: 'MONTHLY' | 'ANNUAL'; amount: number; currency: string; periodStart: string; periodEnd: string; status: 'PENDING' | 'PAID' | 'VOID'; paymentReference: string | null; paymentMethodName: string | null; submittedAt: string | null; paidAt: string | null; note: string | null }
 
 /** Company page: cycle, payment status and invoices, with Mark paid / Mark unpaid. */
 export function CompanyBilling({ companyId, cycle, status, paidUntil, isDemo }: { companyId: string; cycle: 'MONTHLY' | 'ANNUAL'; status: BillingStatus; paidUntil: string | null; isDemo: boolean }) {
@@ -26,7 +28,9 @@ export function CompanyBilling({ companyId, cycle, status, paidUntil, isDemo }: 
   const { confirm, node } = useConfirm();
   const setCycle = useAction<'MONTHLY' | 'ANNUAL'>('patch', `/platform/companies/${companyId}`, { invalidate: inv, success: 'Billing cycle changed (applies from the next invoice)', body: (c) => ({ billingCycle: c }) });
   const setDemo = useAction<boolean>('patch', `/platform/companies/${companyId}`, { invalidate: inv, success: (r: unknown) => 'Demo setting saved', body: (d) => ({ isDemo: d }) });
-  const create = useAction('post', `/platform/companies/${companyId}/invoices`, { invalidate: [key, ...inv], success: 'Invoice created' });
+  const create = useAction('post', `/platform/companies/${companyId}/invoices`, { invalidate: [key, ...inv], success: 'Invoice created for the next period', onSuccess: () => setNewOpen(false) });
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
   const paid = useAction<string>('post', (id) => `/platform/invoices/${id}/paid`, { invalidate: [key, ...inv], success: 'Marked paid. The workspace is unlocked.', body: () => ({}) });
   const unpaid = useAction<string | undefined>('post', `/platform/companies/${companyId}/unpaid`, { invalidate: [key, ...inv], success: 'Marked unpaid. The workspace is locked to Billing.', body: (invoiceId) => ({ invoiceId }) });
   const voidInv = useAction<string>('post', (id) => `/platform/invoices/${id}/void`, { invalidate: [key], success: 'Invoice cancelled', body: () => ({}) });
@@ -43,7 +47,7 @@ export function CompanyBilling({ companyId, cycle, status, paidUntil, isDemo }: 
               <option value="ANNUAL">Yearly</option>
             </Select>
           )}</Field>
-          <Button variant="outline" loading={create.isPending} onClick={() => create.mutate(undefined)}><Plus className="h-4 w-4" /> New invoice</Button>
+          <Button variant="outline" onClick={() => setNewOpen(true)}><Plus className="h-4 w-4" /> New invoice</Button>
           {status !== 'UNPAID' && (
             <Button variant="outline" className="text-danger" loading={unpaid.isPending} onClick={async () => { if (await confirm({ title: 'Mark this company unpaid?', body: 'Their workspace is paused (only Billing works) until you mark an invoice paid.', danger: true, confirmLabel: 'Mark unpaid' })) unpaid.mutate(undefined); }}>
               <Ban className="h-4 w-4" /> Mark unpaid
@@ -51,13 +55,14 @@ export function CompanyBilling({ companyId, cycle, status, paidUntil, isDemo }: 
           )}
           <span className="ml-auto"><Checkbox label="Public demo company (read-only)" checked={isDemo} onChange={(e) => setDemo.mutate(e.target.checked)} /></span>
         </div>
-        <DataTable loading={isLoading} rows={invoices} rowKey={(i) => i.id} empty="No invoices yet. Use New invoice to bill the current period." columns={[
-          { key: 'p', header: 'Period', cell: (i) => <div className="flex items-center gap-2"><ReceiptText className="h-4 w-4 text-muted-foreground" />{date(i.periodStart)} – {date(i.periodEnd)}</div> },
+        <DataTable loading={isLoading} rows={invoices} rowKey={(i) => i.id} onRowClick={(i) => setOpenId(i.id)} empty="No invoices yet. Use New invoice to bill this company." columns={[
+          { key: 'n', header: 'Invoice', cell: (i) => <div className="flex items-start gap-2"><ReceiptText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="font-mono text-xs font-semibold">{i.number ?? '—'}</p><p className="truncate text-xs text-muted-foreground">{i.title ?? `${i.planName} subscription`}</p></div></div> },
+          { key: 'p', header: 'Period', hideOnMobile: true, cell: (i) => (i.kind === 'CUSTOM' ? <Badge>custom</Badge> : <span className="text-xs">{date(i.periodStart)} – {date(i.periodEnd)}</span>) },
           { key: 'a', header: 'Amount', cell: (i) => <div><p className="tabular-nums">{money(i.amount, i.currency)}</p><p className="text-xs text-muted-foreground">{i.planName} · {i.cycle === 'ANNUAL' ? 'yearly' : 'monthly'}</p></div> },
           { key: 'r', header: 'Paid with', cell: (i) => (i.paymentReference ? <div className="text-xs"><p className="font-medium">{i.paymentMethodName ?? '—'}</p><p className="text-muted-foreground">Ref {i.paymentReference}{i.submittedAt ? ` · ${dateTime(i.submittedAt)}` : ''}</p></div> : <span className="text-xs text-muted-foreground">—</span>) },
           { key: 's', header: 'Status', cell: (i) => <InvoiceStatusBadge invoice={i} viewer="admin" /> },
           { key: 'x', header: <span className="sr-only">Actions</span>, cell: (i) => (
-            <div className="flex justify-end gap-1">
+            <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
               {i.status === 'PENDING' && <Button size="sm" loading={paid.isPending && paid.variables === i.id} onClick={() => paid.mutate(i.id)}><CheckCircle2 className="h-4 w-4" /> Mark paid</Button>}
               {i.status === 'PAID' && <Button size="sm" variant="outline" onClick={async () => { if (await confirm({ title: 'Mark this invoice unpaid?', body: 'Use this if the payment bounced or was refunded. The workspace is paused until it is paid.', danger: true, confirmLabel: 'Mark unpaid' })) unpaid.mutate(i.id); }}>Mark unpaid</Button>}
               {i.status === 'PENDING' && <Button size="icon" variant="ghost" aria-label="Cancel invoice" onClick={async () => { if (await confirm({ title: 'Cancel this invoice?', danger: true, confirmLabel: 'Cancel invoice' })) voidInv.mutate(i.id); }}><XCircle className="h-4 w-4 text-danger" /></Button>}
@@ -65,7 +70,121 @@ export function CompanyBilling({ companyId, cycle, status, paidUntil, isDemo }: 
           ) },
         ]} />
       </CardBody>
+      {openId && <InvoiceDialog path={`/platform/invoices/${openId}`} pdfPath={`/platform/invoices/${openId}/pdf`} viewer="admin" onClose={() => setOpenId(null)}
+        actions={(i) => (i.status === 'PENDING' ? <Button onClick={() => { paid.mutate(i.id); setOpenId(null); }}><CheckCircle2 className="h-4 w-4" /> Mark paid</Button> : null)} />}
+      <NewInvoiceDialog open={newOpen} onOpenChange={setNewOpen} companyId={companyId} onSubscription={() => create.mutate(undefined)} subscriptionBusy={create.isPending} invalidate={[key, ...inv]} />
       {node}
+    </Card>
+  );
+}
+
+/** New invoice: the next subscription period, or a custom invoice the Super Admin writes (what it's for + lines). */
+function NewInvoiceDialog({ open, onOpenChange, companyId, onSubscription, subscriptionBusy, invalidate }: { open: boolean; onOpenChange: (o: boolean) => void; companyId: string; onSubscription: () => void; subscriptionBusy: boolean; invalidate: string[] }) {
+  const [mode, setMode] = useState<'SUBSCRIPTION' | 'CUSTOM'>('CUSTOM');
+  const [title, setTitle] = useState('');
+  const [items, setItems] = useState([{ description: '', quantity: '1', unitPrice: '' }]);
+  const [dueDate, setDueDate] = useState('');
+  const [notes, setNotes] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    setTitle(''); setItems([{ description: '', quantity: '1', unitPrice: '' }]); setDueDate(''); setNotes('');
+  }, [open]);
+  const lines = items.map((i) => ({ description: i.description.trim(), quantity: Number(i.quantity) || 0, unitPrice: Number(i.unitPrice) || 0 }));
+  const total = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const valid = title.trim().length >= 3 && lines.length > 0 && lines.every((l) => l.description.length >= 2 && l.quantity > 0);
+  const create = useAction('post', `/platform/companies/${companyId}/invoices/custom`, {
+    invalidate, success: 'Invoice created. The company can see it on its Billing page.', onSuccess: () => onOpenChange(false),
+    body: () => ({ title: title.trim(), items: lines, ...(dueDate ? { dueDate } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) }),
+  });
+  const setItem = (k: number, patch: Partial<(typeof items)[number]>) => setItems((x) => x.map((it, i) => (i === k ? { ...it, ...patch } : it)));
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="New invoice" size="lg"
+      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>{mode === 'SUBSCRIPTION'
+        ? <Button loading={subscriptionBusy} onClick={onSubscription}>Create subscription invoice</Button>
+        : <Button loading={create.isPending} disabled={!valid} onClick={() => create.mutate(undefined)}>Create invoice</Button>}</>}>
+      <div className="space-y-5">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {([['CUSTOM', 'Custom invoice', 'Setup, training, extra services… you write the lines.'], ['SUBSCRIPTION', 'Next subscription period', 'The plan price for the next monthly or yearly period.']] as const).map(([m, label, hint]) => (
+            <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}
+              className={`rounded-lg border p-3 text-left text-sm transition ${mode === m ? 'border-primary bg-primary-soft ring-1 ring-primary' : 'hover:bg-muted'}`}>
+              <p className="font-medium">{label}</p><p className="text-xs text-muted-foreground">{hint}</p>
+            </button>
+          ))}
+        </div>
+        {mode === 'CUSTOM' && (
+          <>
+            <Field label="What is this invoice for?" required hint="Shown as the invoice heading, e.g. Onboarding and data import">{(a) => <Input {...a} maxLength={150} value={title} onChange={(e) => setTitle(e.target.value)} />}</Field>
+            <div>
+              <p className="mb-2 text-sm font-medium">Lines</p>
+              <div className="space-y-2">
+                {items.map((it, k) => (
+                  <div key={k} className="grid grid-cols-[1fr_5rem_8rem_auto] items-center gap-2">
+                    <Input aria-label="Description" placeholder="Description" value={it.description} onChange={(e) => setItem(k, { description: e.target.value })} />
+                    <Input aria-label="Quantity" type="number" min={1} value={it.quantity} onChange={(e) => setItem(k, { quantity: e.target.value })} />
+                    <Input aria-label="Unit price" type="number" min={0} placeholder="Price" value={it.unitPrice} onChange={(e) => setItem(k, { unitPrice: e.target.value })} />
+                    <Button size="icon" variant="ghost" aria-label="Remove line" disabled={items.length === 1} onClick={() => setItems((x) => x.filter((_, i) => i !== k))}><XCircle className="h-4 w-4" /></Button>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <Button size="sm" variant="outline" onClick={() => setItems((x) => [...x, { description: '', quantity: '1', unitPrice: '' }])}><Plus className="h-4 w-4" /> Add line</Button>
+                <p className="text-sm">Total <span className="ml-2 text-lg font-semibold tabular-nums">{total.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></p>
+              </div>
+            </div>
+            <FormGrid>
+              <Field label="Due date" hint="Empty = the payment terms from your invoice settings">{(a) => <Input {...a} type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}</Field>
+            </FormGrid>
+            <Field label="Notes" hint="Printed on the invoice">{(a) => <Textarea {...a} rows={2} maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
+          </>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+/** Platform settings → Invoices: who invoices are from and how they look, with a live preview. */
+export function InvoiceTemplateSettings() {
+  const { data } = useApi<InvoiceTemplate>('/platform/settings/invoice-template');
+  const { logoUrl } = useBranding();
+  const [t, setT] = useState<InvoiceTemplate>(DEFAULT_INVOICE_TEMPLATE);
+  useEffect(() => { if (data) setT(data); }, [data]);
+  const save = useAction('put', '/platform/settings/invoice-template', { invalidate: ['/platform/settings/invoice-template'], success: 'Invoice settings saved', body: () => t });
+  const set = (patch: Partial<InvoiceTemplate>) => setT((x) => ({ ...x, ...patch }));
+  const sample: InvoiceDetail = {
+    id: 'sample', number: 'INV-2026-00042', kind: 'SUBSCRIPTION', title: 'Professional subscription (monthly)', planName: 'Professional',
+    items: [{ description: 'Professional plan, monthly', quantity: 1, unitPrice: 35000 }], amount: 35000, currency: 'PKR',
+    periodStart: '2026-11-01', periodEnd: '2026-11-30', dueDate: '2026-11-08', status: 'PENDING', submittedAt: null, paidAt: null,
+    paymentReference: null, note: null, createdAt: '2026-11-01T00:00:00Z', company: { name: 'Acme Pvt Ltd', workspace: 'acme', emailDomain: 'acme.com' },
+  };
+  return (
+    <Card>
+      <CardHeader title="Invoices" description="Your business details and style on every invoice. The platform logo (General tab) is used when shown." />
+      <CardBody className="grid gap-8 xl:grid-cols-2">
+        <div className="space-y-4">
+          <FormGrid>
+            <Field label="Business name" hint="Who the invoice is from">{(a) => <Input {...a} maxLength={120} value={t.businessName} onChange={(e) => set({ businessName: e.target.value })} />}</Field>
+            <Field label="Phone">{(a) => <Input {...a} maxLength={40} value={t.phone} onChange={(e) => set({ phone: e.target.value })} />}</Field>
+            <Field label="Email">{(a) => <Input {...a} type="email" maxLength={120} value={t.email} onChange={(e) => set({ email: e.target.value })} />}</Field>
+            <Field label="Website">{(a) => <Input {...a} maxLength={120} value={t.website} onChange={(e) => set({ website: e.target.value })} />}</Field>
+            <Field label="Tax / registration no.">{(a) => <Input {...a} maxLength={60} value={t.taxId} onChange={(e) => set({ taxId: e.target.value })} />}</Field>
+            <Field label="Payment due after (days)">{(a) => <Input {...a} type="number" min={0} max={120} value={t.paymentTermsDays} onChange={(e) => set({ paymentTermsDays: Math.max(0, Math.min(120, Number(e.target.value) || 0)) })} />}</Field>
+          </FormGrid>
+          <Field label="Address">{(a) => <Textarea {...a} rows={2} maxLength={300} value={t.address} onChange={(e) => set({ address: e.target.value })} />}</Field>
+          <Field label="Colour">{(a) => (
+            <div className="flex flex-wrap items-center gap-2">
+              {['#1d4ed8', '#0f766e', '#7c3aed', '#be123c', '#0f172a'].map((c) => <button key={c} type="button" aria-label={`Use ${c}`} onClick={() => set({ accentColor: c })} className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-card ${t.accentColor === c ? 'ring-2 ring-foreground' : ''}`} style={{ background: c }} />)}
+              <input {...a} type="color" value={t.accentColor} onChange={(e) => set({ accentColor: e.target.value })} className="h-8 w-12 cursor-pointer rounded border bg-transparent" />
+            </div>
+          )}</Field>
+          <Checkbox label="Show the platform logo" checked={t.showLogo} onChange={(e) => set({ showLogo: e.target.checked })} />
+          <Field label="Footer" hint="Thank-you note, bank details, terms… printed at the bottom">{(a) => <Textarea {...a} rows={3} maxLength={600} value={t.footerNote} onChange={(e) => set({ footerNote: e.target.value })} />}</Field>
+          <Button loading={save.isPending} onClick={() => save.mutate(undefined)}>Save invoice settings</Button>
+        </div>
+        <div>
+          <p className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Preview</p>
+          <InvoiceView invoice={sample} template={t} logoUrl={logoUrl} viewer="admin" />
+        </div>
+      </CardBody>
     </Card>
   );
 }

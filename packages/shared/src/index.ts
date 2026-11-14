@@ -9,6 +9,7 @@ export * from './schemas/workforce';
 export * from './schemas/payroll';
 export * from './schemas/engagement';
 export * from './schemas/billing';
+export * from './schemas/invoice';
 export * from './schemas/idcard';
 export * from './audit-labels';
 export * from './tenure';
