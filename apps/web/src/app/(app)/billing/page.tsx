@@ -2,7 +2,7 @@
 
 import { MODULE_INFO, PAYMENT_METHOD_LABELS, type Module } from '@hrms/shared';
 import { AlertTriangle, Check, CheckCircle2, Clock, Copy, CreditCard, Receipt } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardBody, CardHeader, PageHeader, Skeleton } from '@/components/ui/display';
@@ -13,9 +13,10 @@ import { useAuth } from '@/lib/auth';
 import { cn, date, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
 import { BillingStatusBadge, InvoiceStatusBadge } from '@/components/billing-status';
+import { InvoiceDialog } from '@/components/invoice-view';
 
 interface PlanInfo { id: string; name: string; description?: string | null; currency: string; priceMonthly: number; priceAnnual: number; modules: Module[]; maxEmployees: number | null }
-interface Invoice { id: string; planName: string; cycle: 'MONTHLY' | 'ANNUAL'; amount: number; currency: string; periodStart: string; periodEnd: string; status: 'PENDING' | 'PAID' | 'VOID'; paymentReference: string | null; submittedAt: string | null; paidAt: string | null }
+interface Invoice { id: string; number: string | null; title: string | null; kind: 'SUBSCRIPTION' | 'CUSTOM'; planName: string; cycle: 'MONTHLY' | 'ANNUAL'; amount: number; currency: string; periodStart: string; periodEnd: string; status: 'PENDING' | 'PAID' | 'VOID'; paymentReference: string | null; submittedAt: string | null; paidAt: string | null }
 interface Method { id: string; name: string; kind: keyof typeof PAYMENT_METHOD_LABELS; instructions: string }
 interface Overview { billingCycle: 'MONTHLY' | 'ANNUAL'; billingStatus: 'PAID' | 'DUE' | 'UNPAID'; paidUntil: string | null; plan: PlanInfo | null; plans: PlanInfo[]; invoices: Invoice[]; paymentMethods: Method[] }
 
@@ -75,9 +76,14 @@ function PayDialog({ invoice, methods, onClose }: { invoice: Invoice | null; met
 
 /** Company Admin: subscription plan, prices for both cycles, invoices and paying them. */
 export default function BillingPage() {
-  const { me } = useAuth();
+  const { me, refresh } = useAuth();
   const { data, isLoading } = useApi<Overview>('/billing');
+  // Billing can settle on its own (e.g. a free plan): reload the session so the lock lifts right away.
+  useEffect(() => {
+    if (data && me && data.billingStatus !== me.tenant.billingStatus) void refresh();
+  }, [data, me, refresh]);
   const [paying, setPaying] = useState<Invoice | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const changeCycle = useAction<'MONTHLY' | 'ANNUAL', { billingCycle: string; replacedInvoice: boolean }>('post', '/billing/cycle', {
     invalidate: ['/billing'],
     body: (cycle) => ({ cycle }),
@@ -178,16 +184,20 @@ export default function BillingPage() {
       </Card>
 
       <Card className="mt-6">
-        <CardHeader title="Invoices" />
-        <DataTable rows={data.invoices} rowKey={(i) => i.id} empty="No invoices yet" columns={[
-          { key: 'p', header: 'Period', cell: (i) => <div className="flex items-center gap-2"><Receipt className="h-4 w-4 text-muted-foreground" />{date(i.periodStart)} – {date(i.periodEnd)}</div> },
-          { key: 'n', header: 'Plan', cell: (i) => `${i.planName} · ${i.cycle === 'ANNUAL' ? 'yearly' : 'monthly'}` },
+        <CardHeader title="Invoices" description="Click an invoice to see what it is for or download it as a PDF." />
+        <DataTable rows={data.invoices} rowKey={(i) => i.id} onRowClick={(i) => setOpenId(i.id)} empty="No invoices yet" columns={[
+          { key: 'n', header: 'Invoice', cell: (i) => <div className="flex items-start gap-2"><Receipt className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="font-mono text-xs font-semibold">{i.number ?? '—'}</p><p className="truncate text-xs text-muted-foreground">{i.title ?? `${i.planName} subscription`}</p></div></div> },
+          { key: 'p', header: 'Period', hideOnMobile: true, cell: (i) => (i.kind === 'CUSTOM' ? '—' : `${date(i.periodStart)} – ${date(i.periodEnd)}`) },
           { key: 'a', header: 'Amount', cell: (i) => <span className="tabular-nums">{money(i.amount, i.currency)}</span> },
           { key: 's', header: 'Status', cell: (i) => <InvoiceStatusBadge invoice={i} viewer="company" /> },
         ]} />
       </Card>
 
       <PayDialog invoice={paying} methods={data.paymentMethods} onClose={() => setPaying(null)} />
+      {openId && (
+        <InvoiceDialog path={`/billing/invoices/${openId}`} pdfPath={`/billing/invoices/${openId}/pdf`} viewer="company" onClose={() => setOpenId(null)}
+          actions={(i) => (i.status === 'PENDING' ? <Button onClick={() => { setOpenId(null); setPaying(data.invoices.find((x) => x.id === i.id) ?? null); }}><CreditCard className="h-4 w-4" /> {i.submittedAt ? 'Update payment' : 'Pay now'}</Button> : null)} />
+      )}
     </>
   );
 }

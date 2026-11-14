@@ -162,6 +162,14 @@ export const billingInvoices = pgTable(
       .references(() => tenants.id, { onDelete: 'cascade' }),
     planId: uuid('plan_id'),
     planName: text('plan_name').notNull(),
+    /** Invoice number shown on the PDF, e.g. INV-2026-00012. */
+    number: text('number').unique(),
+    /** SUBSCRIPTION: a billing period of the plan. CUSTOM: anything else the Super Admin bills (setup, training…). */
+    kind: text('kind', { enum: ['SUBSCRIPTION', 'CUSTOM'] }).notNull().default('SUBSCRIPTION'),
+    /** What the invoice is for, shown as its heading. */
+    title: text('title'),
+    items: jsonb('items').$type<{ description: string; quantity: number; unitPrice: number }[]>().notNull().default([]),
+    dueDate: date('due_date', { mode: 'string' }),
     cycle: text('cycle', { enum: ['MONTHLY', 'ANNUAL'] }).notNull(),
     amount: money('amount').notNull(),
     currency: text('currency').notNull(),
@@ -201,6 +209,8 @@ export const platformSettings = pgTable('platform_settings', {
   siteName: text('site_name'),
   /** Footer text on the sign-in pages; `{year}` is replaced with the current year. */
   copyright: text('copyright'),
+  /** How invoices look and who they're from (InvoiceTemplate in @hrms/shared). */
+  invoiceTemplate: jsonb('invoice_template').$type<Record<string, unknown>>(),
   /** Platform logo and favicon uploaded by the Super Admin (small images, kept in the row). */
   logo: bytea('logo'),
   logoType: text('logo_type'),

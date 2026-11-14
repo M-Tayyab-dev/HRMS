@@ -64,8 +64,9 @@ export class AuthGuard implements CanActivate {
     if (user.isDemo && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       throw new ForbiddenException({ message: 'This is a read-only demo. Sign up to try it with your own company.', code: 'DEMO_READ_ONLY' });
     }
-    // Unpaid subscription: only Billing (to pay) and the person's own notifications work until it's paid.
-    if (user.billingStatus === 'UNPAID' && !/\/api\/v1\/(billing|notifications)(\/|$|\?)/.test(req.originalUrl ?? req.url)) {
+    // Unpaid subscription: only Billing (to pay), the person's notifications, their own profile and their
+    // own password (a required password change must still work) are open until it's paid.
+    if (user.billingStatus === 'UNPAID' && !/\/api\/v1\/(billing|notifications|auth|me\/profile)(\/|$|\?)/.test(req.originalUrl ?? req.url)) {
       throw new HttpException({ message: 'Your workspace is waiting for payment. Your Company Admin can pay on the Billing page.', code: 'PAYMENT_REQUIRED' }, HttpStatus.PAYMENT_REQUIRED);
     }
 

@@ -17,7 +17,7 @@ import { dateTime, money } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
 import { currencyOptions } from '@/lib/locale-options';
 import { ModulePicker, NewOwnerDialog, PlatformNav, usePlatformMe, type Plan } from '../shared';
-import { PaymentMethods } from '../billing';
+import { InvoiceTemplateSettings, PaymentMethods } from '../billing';
 import { defaultCopyright } from '@/lib/branding';
 import { SITE } from '@/lib/site';
 
@@ -227,6 +227,7 @@ export default function PlatformSettingsPage() {
         { value: 'plans', label: 'Plans & pricing', content: <Plans /> },
         { value: 'general', label: 'General', content: <div className="space-y-6"><General /><Branding /></div> },
         { value: 'payments', label: 'Payment methods', content: <PaymentMethods /> },
+        { value: 'invoices', label: 'Invoices', content: <InvoiceTemplateSettings /> },
         { value: 'owners', label: 'Super Admins', content: <Owners /> },
         { value: 'email', label: 'Email', content: <Email myEmail={me.email} /> },
       ]} />

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { planPrice, type PlatformSettingsInput } from '@hrms/shared';
+import { invoiceTemplate, planPrice, type InvoiceTemplate, type PlatformSettingsInput } from '@hrms/shared';
 import { eq, sql } from 'drizzle-orm';
 import { badRequest } from '../../common/errors';
 import { DbService } from '../../db/db.service';
@@ -58,6 +58,19 @@ export class PlatformSettingsService {
       : DEFAULTS;
     this.cache = { value, at: Date.now() };
     return value;
+  }
+
+  /** How invoices look and who they're from (Super Admin → Platform settings → Invoices). */
+  async invoiceTemplate(): Promise<InvoiceTemplate> {
+    const [row] = await this.db.root.select({ t: platformSettings.invoiceTemplate }).from(platformSettings).where(eq(platformSettings.id, 'default'));
+    return invoiceTemplate(row?.t as Partial<InvoiceTemplate> | null);
+  }
+
+  async setInvoiceTemplate(input: InvoiceTemplate): Promise<InvoiceTemplate> {
+    const value = input as unknown as Record<string, unknown>;
+    await this.db.root.insert(platformSettings).values({ id: 'default', invoiceTemplate: value })
+      .onConflictDoUpdate({ target: platformSettings.id, set: { invoiceTemplate: value, updatedAt: new Date() } });
+    return this.invoiceTemplate();
   }
 
   /** The product name for emails and anything else server-side: the Super Admin's setting, or the default. */
