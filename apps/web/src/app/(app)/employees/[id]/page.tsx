@@ -115,7 +115,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
       <FormGrid cols={3}>
         <Field label="Full name">{(a) => <Input {...a} value={s('fullName')} onChange={set('fullName')} />}</Field>
         <Field label="Company email">{(a) => <CompanyEmailInput {...a} domain={me?.tenant.emailDomain} value={s('email')} onChange={(v) => setV((x) => ({ ...x, email: v }))} />}</Field>
-        <Field label="Designation">{(a) => <Input {...a} value={s('designation')} onChange={set('designation')} />}</Field>
+        <Field label="Designation" hint="Set by the level">{(a) => <Input {...a} readOnly tabIndex={-1} className="cursor-not-allowed bg-muted text-muted-foreground" value={s('designation')} />}</Field>
         <Field label="Department">{(a) => <DepartmentSelect {...a} value={s('departmentId')} onChange={(e) => setV((x) => ({ ...x, departmentId: e.target.value, levelId: '' }))} />}</Field>
         <Field label="Level" hint="Choosing a level fills in its designation and default salary">{(a) => <Select {...a} value={s('levelId')} onChange={(e) => { const l = levels?.find((x) => x.id === e.target.value); setV((x) => ({ ...x, levelId: e.target.value, ...(l ? { designation: l.title, basicSalary: l.defaultSalary } : {}) })); }}><option value="">Select…</option>{levels?.map((l) => <option key={l.id} value={l.id}>{l.code} – {l.title}</option>)}</Select>}</Field>
         <Field label="Basic salary">{(a) => <Input {...a} type="number" value={s('basicSalary')} onChange={set('basicSalary')} />}</Field>
@@ -170,7 +170,7 @@ function PromoteDialog({ emp, open, onOpenChange, currency }: { emp: EmployeeDet
       <FormGrid>
         <Field label="Department" error={fieldError(form, 'departmentId')}>{(a) => <DepartmentSelect {...a} {...form.register('departmentId')} />}</Field>
         <Field label="New level" required error={fieldError(form, 'levelId')}>{(a) => <Select {...a} {...form.register('levelId')}><option value="">Select…</option>{levels?.filter((l) => l.isActive).map((l) => <option key={l.id} value={l.id} disabled={l.id === emp.levelId}>{l.code} – {l.title}</option>)}</Select>}</Field>
-        <Field label="Designation" error={fieldError(form, 'designation')}>{(a) => <Input {...a} {...form.register('designation')} />}</Field>
+        <Field label="Designation" error={fieldError(form, 'designation')} hint="Set by the level">{(a) => <Input {...a} readOnly tabIndex={-1} className="cursor-not-allowed bg-muted text-muted-foreground" placeholder="Pick a level" {...form.register('designation')} />}</Field>
         <Field label="Salary" error={fieldError(form, 'salary')} hint={level ? `Default ${money(level.defaultSalary, currency)}` : undefined}>{(a) => <Input {...a} type="number" {...form.register('salary', { setValueAs: (v) => (v === '' ? undefined : Number(v)) })} />}</Field>
         <Field label="Effective date" required error={fieldError(form, 'effectiveDate')}>{(a) => <Input {...a} type="date" {...form.register('effectiveDate')} />}</Field>
       </FormGrid>

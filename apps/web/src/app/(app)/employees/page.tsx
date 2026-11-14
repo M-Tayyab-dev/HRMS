@@ -34,7 +34,7 @@ function AddEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   useEffect(() => {
     if (level) {
       form.setValue('basicSalary', level.defaultSalary as never);
-      if (!form.getValues('designation')) form.setValue('designation', level.title as never);
+      form.setValue('designation', level.title as never, { shouldValidate: form.formState.isSubmitted });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelId]);
@@ -88,7 +88,7 @@ function AddEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
               </Select>
             )}
           </Field>
-          <Field label="Designation" required error={fieldError(form, 'designation')}>{(a) => <Input {...a} {...form.register('designation')} />}</Field>
+          <Field label="Designation" required error={fieldError(form, 'designation')} hint="Set by the level">{(a) => <Input {...a} readOnly tabIndex={-1} className="cursor-not-allowed bg-muted text-muted-foreground" placeholder="Pick a level" {...form.register('designation')} />}</Field>
           <Field
             label="Basic salary"
             error={fieldError(form, 'basicSalary')}
