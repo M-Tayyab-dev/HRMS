@@ -76,6 +76,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return;
     }
     if (pg?.code === '23503') {
+      const p = pg as { constraint?: string; detail?: string };
+      this.logger.warn(`Foreign key failed: ${p.constraint ?? '?'} ${p.detail ?? ''}`);
       res.status(409).json({ statusCode: 409, code: 'REFERENCE', message: 'This record is linked to other data' });
       return;
     }

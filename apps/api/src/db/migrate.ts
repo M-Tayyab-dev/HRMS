@@ -53,6 +53,28 @@ async function ensureAppRole(client: Client, role: { name: string; password?: st
   console.log(`Created database role "${role.name}" for the application.`);
 }
 
+/**
+ * One-login databases (Prisma Postgres, Neon…): the app signs in as the owner, which often has BYPASSRLS, so
+ * company filtering would be skipped. We create a restricted, no-login role the app switches to for every
+ * company request (DbService.inTenant → SET LOCAL ROLE). Returns null if the role can't be created.
+ */
+export const RLS_ROLE = 'hrms_rls';
+async function ensureRlsRole(client: Client): Promise<string | null> {
+  try {
+    const { rowCount } = await client.query('select 1 from pg_roles where rolname = $1', [RLS_ROLE]);
+    if (!rowCount) await client.query(`CREATE ROLE ${quoteIdent(RLS_ROLE)} NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`);
+    await client.query(`GRANT ${quoteIdent(RLS_ROLE)} TO CURRENT_USER`).catch(() => undefined); // already a member, or superuser
+    console.log(`Company requests run as the restricted role "${RLS_ROLE}".`);
+    return RLS_ROLE;
+  } catch (e) {
+    console.warn(
+      `Could not create the restricted role "${RLS_ROLE}" (${(e as Error).message}). Company isolation (RLS) is only guaranteed if the ` +
+        'database login lacks BYPASSRLS; use a separate user in DATABASE_URL to fix this.',
+    );
+    return null;
+  }
+}
+
 function tenantTables(): string[] {
   return (Object.values(schema) as unknown[])
     .filter((v): v is PgTable => is(v, PgTable))
@@ -198,12 +220,8 @@ async function main() {
     await migrate(db, { migrationsFolder: resolve(__dirname, '../../drizzle'), migrationsSchema: 'public' });
     const appRole = appRoleFrom(process.env.DATABASE_URL, url);
     if (appRole) await ensureAppRole(client, appRole);
-    else
-      console.warn(
-        'DATABASE_URL uses the same login as DATABASE_ADMIN_URL, so app-role grants are skipped. Company isolation (RLS) is only ' +
-          'guaranteed if that login lacks BYPASSRLS; use a separate user in DATABASE_URL and it will be created here.',
-      );
-    await client.query(hardeningSql(appRole?.name ?? null));
+    const rlsRole = appRole ? null : await ensureRlsRole(client);
+    await client.query(hardeningSql(appRole?.name ?? rlsRole));
     await client.query(sameTenantFkSql());
     const encrypted = await encryptLegacyValues(client);
     console.log(`Migrations applied; RLS enforced on ${tenantTables().length} tenant tables; ${encrypted} rows encrypted.`);

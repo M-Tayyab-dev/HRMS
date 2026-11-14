@@ -125,9 +125,9 @@ export class AccessController {
     return { id, status: body.status };
   }
 
-  /** Operations/HR: email a password reset link (A1). */
+  /** Operations/HR, or anyone who can edit employees: email a password reset link (A1). */
   @Post('users/:id/reset-link')
-  @RequireAny(P.USERS_MANAGE_ACCESS)
+  @RequireAny(P.USERS_MANAGE_ACCESS, P.EMPLOYEES_MANAGE)
   @Audit('access.reset_link_sent', 'user')
   async resetLink(@Param('id', ParseUUIDPipe) id: string) {
     const t = await this.targetUser(id);
@@ -135,9 +135,9 @@ export class AccessController {
     return { id, sent: true };
   }
 
-  /** Operations/HR: set a password directly; user must change it at next sign-in (A1). */
+  /** Operations/HR, or anyone who can edit employees: set a password directly (A1). */
   @Post('users/:id/password')
-  @RequireAny(P.USERS_MANAGE_ACCESS)
+  @RequireAny(P.USERS_MANAGE_ACCESS, P.EMPLOYEES_MANAGE)
   @Audit('access.password_set', 'user')
   async setPassword(@Param('id', ParseUUIDPipe) id: string, @Body(zp(adminSetPasswordSchema)) body: z.infer<typeof adminSetPasswordSchema>) {
     if (id === currentUser().userId) throw badRequest('Use "Change password" for your own account');
