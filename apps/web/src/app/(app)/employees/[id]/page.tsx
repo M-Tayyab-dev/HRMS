@@ -1,7 +1,7 @@
 'use client';
 
 import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, phoneProblem, promotionSchema, joinedLabel } from '@hrms/shared';
-import { ArrowLeft, BadgeCheck, Camera, Info, Pencil, UserCheck, UserX } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Camera, Info, KeyRound, Mail, Pencil, UserCheck, UserX } from 'lucide-react';
 import Link from 'next/link';
 import { use, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -29,6 +29,46 @@ function EmployeeIdCard({ emp }: { emp: EmployeeDetail }) {
       <CardHeader title="ID card" description="Uses the company's ID card template (Settings → ID card)." />
       <CardBody><IdCard person={emp} template={template} company={company} /></CardBody>
     </Card>
+  );
+}
+
+/** In Edit employee: email a reset link, or set a new password directly (signs them out everywhere). */
+function SignInAccess({ userId, email }: { userId: string; email: string }) {
+  const [pw, setPw] = useState('');
+  const [mustChange, setMustChange] = useState(true);
+  const [busy, setBusy] = useState<'link' | 'pw' | null>(null);
+  const run = async (kind: 'link' | 'pw') => {
+    setBusy(kind);
+    try {
+      if (kind === 'link') {
+        await api.post(`/access/users/${userId}/reset-link`, {});
+        toast.success(`Reset link emailed to ${email}`);
+      } else {
+        await api.post(`/access/users/${userId}/password`, { password: pw, mustChange });
+        toast.success('Password set. They were signed out everywhere.');
+        setPw('');
+      }
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="mt-5 space-y-3 border-t pt-4">
+      <div>
+        <p className="text-sm font-medium">Sign-in</p>
+        <p className="text-xs text-muted-foreground">Email them a link to choose a new password, or set one yourself and share it securely.</p>
+      </div>
+      <Button size="sm" variant="outline" loading={busy === 'link'} onClick={() => run('link')}><Mail className="h-4 w-4" /> Send password reset link</Button>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-[1_1_16rem]">
+          <Field label="New password" hint="At least 12 characters with upper and lower case letters and a number.">{(a) => <Input {...a} type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />}</Field>
+        </div>
+        <Button size="sm" variant="outline" className="mb-6" loading={busy === 'pw'} disabled={pw.length < 12} onClick={() => run('pw')}><KeyRound className="h-4 w-4" /> Reset password</Button>
+      </div>
+      <Checkbox label="Require a new password at next sign-in" checked={mustChange} onChange={(e) => setMustChange(e.target.checked)} />
+    </div>
   );
 }
 
@@ -77,7 +117,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         <Field label="Company email">{(a) => <CompanyEmailInput {...a} domain={me?.tenant.emailDomain} value={s('email')} onChange={(v) => setV((x) => ({ ...x, email: v }))} />}</Field>
         <Field label="Designation">{(a) => <Input {...a} value={s('designation')} onChange={set('designation')} />}</Field>
         <Field label="Department">{(a) => <DepartmentSelect {...a} value={s('departmentId')} onChange={(e) => setV((x) => ({ ...x, departmentId: e.target.value, levelId: '' }))} />}</Field>
-        <Field label="Level" hint="Choosing a level fills in its default salary">{(a) => <Select {...a} value={s('levelId')} onChange={(e) => { const l = levels?.find((x) => x.id === e.target.value); setV((x) => ({ ...x, levelId: e.target.value, ...(l ? { basicSalary: l.defaultSalary } : {}) })); }}><option value="">Select…</option>{levels?.map((l) => <option key={l.id} value={l.id}>{l.code} – {l.title}</option>)}</Select>}</Field>
+        <Field label="Level" hint="Choosing a level fills in its designation and default salary">{(a) => <Select {...a} value={s('levelId')} onChange={(e) => { const l = levels?.find((x) => x.id === e.target.value); setV((x) => ({ ...x, levelId: e.target.value, ...(l ? { designation: l.title, basicSalary: l.defaultSalary } : {}) })); }}><option value="">Select…</option>{levels?.map((l) => <option key={l.id} value={l.id}>{l.code} – {l.title}</option>)}</Select>}</Field>
         <Field label="Basic salary">{(a) => <Input {...a} type="number" value={s('basicSalary')} onChange={set('basicSalary')} />}</Field>
         <Field label="Joining date">{(a) => <Input {...a} type="date" value={s('joiningDate')} onChange={set('joiningDate')} />}</Field>
         <Field label="Date of birth">{(a) => <Input {...a} type="date" value={s('dateOfBirth')} onChange={set('dateOfBirth')} />}</Field>
@@ -95,6 +135,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         <Checkbox label="Eligible for medical claims" checked={!!v.medicalEligible} onChange={(e) => setV((x) => ({ ...x, medicalEligible: e.target.checked }))} />
         <p className="mt-1 ml-6 text-xs text-muted-foreground">They can claim medical expenses up to the company's yearly limit. Without this, Medical claims is hidden for them.</p>
       </div>
+      {emp.userId && emp.userId !== me?.user.id && <SignInAccess userId={emp.userId} email={emp.email} />}
     </Dialog>
   );
 }

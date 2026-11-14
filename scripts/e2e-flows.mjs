@@ -73,7 +73,7 @@ async function main() {
   const HR = await login(ws, `hina@${ws}.test`, pw);
   const OPS = await login(ws, `omar@${ws}.test`, pw);
   const TL = await login(ws, `tariq@${ws}.test`, pw);
-  const E = await login(ws, `esha@${ws}.test`, pw);
+  let E = await login(ws, `esha@${ws}.test`, pw);
 
   // ---- Access control & data scope (F4)
   expect((await E.get('/employees')).status === 403, 'employee cannot list employees');
@@ -84,6 +84,15 @@ async function main() {
   expect((await TL.get(`/employees/${hr.id}`)).status === 403, 'team lead cannot see non-members');
   const selfEdit = await E.req('PATCH', '/me/profile', { contactNo: '+92 300 1234567', bloodGroup: 'O+' });
   expect(selfEdit.status === 200, 'employee edits own allowed fields (B1)');
+
+  // ---- Password help from Edit employee
+  const eUser = (await HR.get(`/employees/${emp.id}`)).data.userId;
+  expect((await HR.post(`/access/users/${eUser}/reset-link`, {})).status === 201, 'HR emails a reset link from Edit employee');
+  expect((await HR.post(`/access/users/${eUser}/password`, { password: pw, mustChange: false })).status === 201, 'HR resets an employee password from Edit employee');
+  E = await login(ws, `esha@${ws}.test`, pw); // a new password signs them out everywhere
+  expect((await HR.post(`/access/users/${(await admin.get("/auth/me")).data.user.id}/password`, { password: pw, mustChange: false })).status === 403, 'HR cannot reset the Company Admin password');
+  const eLink = await E.post(`/access/users/${eUser}/reset-link`, {});
+  expect(eLink.status === 403, 'employees cannot send reset links', eLink);
 
   // ---- Leave: Team Lead → HR (C3)
   const types = (await E.get('/leave/types')).data;

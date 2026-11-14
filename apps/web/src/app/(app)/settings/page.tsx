@@ -191,8 +191,9 @@ function IdCardSettings() {
   return (
     <Card>
       <CardHeader title="ID card" description="Every employee gets an ID card from this template, with their photo, name and employee ID. They can view and download it from their profile." />
-      <CardBody className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_auto]">
-        <div className="space-y-5">
+      <CardBody className="flex flex-wrap items-start gap-8">
+        {/* The form keeps a usable width; the preview wraps below it when both don't fit side by side. */}
+        <div className="min-w-0 flex-[1_1_24rem] space-y-5">
           <Field label="Colour">{(a) => (
             <div className="flex flex-wrap items-center gap-2">
               {SWATCHES.map((c) => <button key={c} type="button" aria-label={`Use ${c}`} onClick={() => set({ accentColor: c })} className={`h-8 w-8 rounded-full ring-offset-2 ring-offset-card ${t.accentColor === c ? 'ring-2 ring-foreground' : ''}`} style={{ background: c }} />)}
@@ -224,7 +225,7 @@ function IdCardSettings() {
             <Button variant="outline" onClick={() => setT(DEFAULT_ID_CARD)}><RotateCcw className="h-4 w-4" /> Default</Button>
           </div>
         </div>
-        <div>
+        <div className="max-w-full min-w-0 overflow-x-auto">
           <p className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Preview</p>
           <IdCard person={sample} template={t} company={{ name: me?.tenant.name ?? 'Company', logoFileId: me?.tenant.logoFileId }} />
         </div>
