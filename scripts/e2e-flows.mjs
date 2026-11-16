@@ -297,6 +297,174 @@ async function main() {
   await TL.post(`/queries/${q.data.id}/messages`, { body: 'Checking with HR.' });
   expect((await E.get(`/queries/${q.data.id}`)).data.status === 'IN_PROGRESS', 'query moves to in progress on reply');
 
+  // ======== Profile, privacy, sales access and survey members ========
+  const upload = async (c, path, bytes, name, type) => {
+    const fd = new FormData();
+    fd.set('file', new Blob([bytes], { type }), name);
+    const cookie = [...c.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    const r = await fetch(ORIGIN + '/api/v1' + path, { method: 'POST', headers: { cookie, 'x-csrf-token': c.jar.get('hrms_csrf') ?? '' }, body: fd });
+    return { status: r.status, data: await r.json().catch(() => null) };
+  };
+  const raw = async (c, path) => {
+    const cookie = [...c.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    const r = await fetch(ORIGIN + '/api/v1' + path, { headers: { cookie } });
+    return { status: r.status, type: r.headers.get('content-type') ?? '', text: await r.text() };
+  };
+  const zara = await mk('Zara Colleague', `zara@${ws}.test`, hrDept.id, lvl('L1', hrLevels).id, ['EMPLOYEE'], { contactNo: '0300 7654321' });
+  expect(zara.contactNo === '+92 3007654321', 'phone stored in international format (+92 default)', zara.contactNo);
+  const Z = await login(ws, `zara@${ws}.test`, pw);
+  const badCountryPhone = await admin.post('/employees', { fullName: 'Bad Phone', email: `badphone@${ws}.test`, departmentId: hrDept.id, levelId: lvl('L1', hrLevels).id, designation: 'X', joiningDate: joined, roles: ['EMPLOYEE'], sendInvite: false, contactNo: '+92 30012' });
+  expect(badCountryPhone.status === 400, 'phone validated for the selected country (+92 needs 9–10 digits)', badCountryPhone.data);
+  const ukPhone = await Z.req('PATCH', '/me/profile', { emergencyContact: '+44 7911 123456' });
+  expect(ukPhone.status === 200 && ukPhone.data.emergencyContact === '+44 7911123456', 'other country codes accepted and stored internationally', ukPhone.data);
+
+  // Phone privacy: hidden from colleagues, Team Leads, directory search and CSV; HR and the person still see it.
+  const hide = await E.req('PATCH', '/me/profile', { contactNo: '+92 333 5551234', hidePhone: true });
+  expect(hide.status === 200 && hide.data.hidePhone === true, 'employee hides their phone number');
+  expect((await E.get('/me/profile')).data.contactNo === '+92 3335551234', 'employee still sees their own hidden number');
+  expect((await HR.get(`/employees/${emp.id}`)).data.contactNo === '+92 3335551234', 'HR still sees a hidden number');
+  expect((await TL.get(`/employees/${emp.id}`)).data.contactNo === null, 'team lead does not see a hidden number');
+  const zDir = (await Z.get('/directory')).data;
+  expect(zDir.find((d) => d.id === emp.id)?.contactNo === null && zDir.find((d) => d.id === zara.id)?.contactNo === '+92 3007654321', 'directory hides the number but shows visible ones');
+  expect(!(await Z.get('/directory?search=5551234')).data.some((d) => d.id === emp.id), 'directory search cannot find a hidden number');
+  expect((await HR.get('/directory?search=5551234')).data.some((d) => d.id === emp.id), 'HR directory search finds the number');
+  const zCsv = await raw(Z, '/directory/export');
+  expect(zCsv.status === 200 && zCsv.type.includes('text/csv') && zCsv.text.includes('Esha Exec') && !zCsv.text.includes('3335551234'), 'directory CSV export hides the number', zCsv.text.slice(0, 200));
+  expect((await raw(HR, '/directory/export')).text.includes('3335551234'), 'HR CSV export includes the number');
+  expect((await HR.patch(`/employees/${emp.id}`, { hidePhone: false })).data.hidePhone === false, 'HR can switch the privacy setting');
+  expect((await Z.get('/directory')).data.find((d) => d.id === emp.id)?.contactNo === '+92 3335551234', 'number visible again once shown');
+  await E.req('PATCH', '/me/profile', { hidePhone: true });
+
+  // Dependents: HR / Company Admin only.
+  expect((await HR.patch(`/employees/${emp.id}`, { dependents: -1 })).status === 400, 'dependents cannot be negative');
+  expect((await HR.patch(`/employees/${emp.id}`, { dependents: 2 })).data.dependents === 2, 'HR records number of dependents');
+  expect((await HR.get(`/employees/${emp.id}`)).data.dependents === 2, 'HR sees dependents');
+  expect((await E.get('/me/profile')).data.dependents === null, 'employee profile API hides dependents');
+  expect((await TL.get(`/employees/${emp.id}`)).data.dependents === null, 'team lead does not see dependents');
+  expect((await OPS.get(`/employees/${emp.id}`)).data.dependents === null, 'operations (no employee management) does not see dependents');
+  expect(!('dependents' in ((await Z.get('/directory')).data[0] ?? {})), 'directory never includes dependents');
+  expect((await E.req('PATCH', '/me/profile', { dependents: 5 })).data.dependents === null && (await HR.get(`/employees/${emp.id}`)).data.dependents === 2, 'employees cannot set or read their own dependents');
+
+  // Social links: http(s) only.
+  const badLink = await E.req('PATCH', '/me/profile', { socialLinks: { x: 'javascript:alert(1)' } });
+  expect(badLink.status === 400, 'unsafe social link rejected', badLink.data);
+  const links = await E.req('PATCH', '/me/profile', { socialLinks: { linkedin: 'linkedin.com/in/esha', custom: [{ label: 'GitHub', url: 'https://github.com/esha' }] } });
+  expect(links.status === 200 && links.data.socialLinks.linkedin === 'https://linkedin.com/in/esha', 'social links saved with https', links.data.socialLinks);
+
+  // Previous experience: several entries at once, edit, delete, "No experience".
+  const rec = (id) => `/employees/${id}/records`;
+  const expBad = await E.post(`${rec(emp.id)}/experience`, { items: [{ companyName: 'Acme', designation: 'Rep', employmentType: 'FULL_TIME', startDate: '2022-05-01', endDate: '2021-01-01', responsibilities: 'Sales' }] });
+  expect(expBad.status === 400, 'experience end date before start is rejected');
+  const exp2 = await E.post(`${rec(emp.id)}/experience`, { items: [
+    { companyName: 'Acme', designation: 'Sales Rep', employmentType: 'FULL_TIME', startDate: '2019-01-01', endDate: '2021-06-30', responsibilities: 'Field sales', reasonForLeaving: 'Growth' },
+    { companyName: 'Beta Ltd', designation: 'Intern', employmentType: 'INTERNSHIP', startDate: '2018-06-01', endDate: '2018-08-31', responsibilities: 'Support' },
+  ] });
+  expect(exp2.status === 201 && exp2.data.added === 2, '"Add more experience" saves independent records', exp2);
+  let mine = (await E.get(rec(emp.id))).data;
+  expect(mine.experience.length === 2 && mine.experience.find((x) => x.companyName === 'Acme').duration === '2 yrs 5 mos', 'experience duration calculated', mine.experience.map((x) => x.duration));
+  const acme = mine.experience.find((x) => x.companyName === 'Acme');
+  expect((await E.patch(`${rec(emp.id)}/experience/${acme.id}`, { companyName: 'Acme', designation: 'Senior Sales Rep', employmentType: 'FULL_TIME', startDate: '2019-01-01', endDate: '2021-06-30', responsibilities: 'Field sales and key accounts' })).status === 200, 'employee edits their experience');
+  expect((await E.get(rec(emp.id))).data.experience.find((x) => x.id === acme.id).designation === 'Senior Sales Rep', 'edit saved');
+  expect((await E.req('PATCH', '/me/profile', { noExperience: true })).status === 400, '"No experience" refused while entries exist');
+  for (const x of mine.experience) expect((await E.del(`${rec(emp.id)}/experience/${x.id}`)).status === 200, 'employee deletes an experience entry');
+  expect((await E.req('PATCH', '/me/profile', { noExperience: true })).data.noExperience === true, 'employee ticks "No experience"');
+  expect((await E.post(`${rec(emp.id)}/experience`, { items: [{ companyName: 'X Co', designation: 'Y', employmentType: 'OTHER', startDate: '2020-01-01', responsibilities: 'Z' }] })).status === 400, '"No experience" disables adding experience');
+  await E.req('PATCH', '/me/profile', { noExperience: false });
+
+  // Education: submitted once by the employee, then read-only for them; HR edits and deletes.
+  const eduItems = [
+    { qualificationLevel: 'BACHELORS', degreeTitle: 'BBA', institution: 'LUMS', startDate: '2013-09-01', completionDate: '2017-06-30', grade: '3.4' },
+    { qualificationLevel: 'MASTERS', degreeTitle: 'MBA', institution: 'IBA', startDate: '2023-09-01', currentlyStudying: true },
+  ];
+  expect((await E.post(`${rec(emp.id)}/education`, { items: [{ ...eduItems[0], completionDate: undefined }] })).status === 400, 'education needs a completion date unless currently studying');
+  const edu = await E.post(`${rec(emp.id)}/education`, { items: eduItems });
+  expect(edu.status === 201 && edu.data.added === 2, 'employee submits several education entries at once');
+  const eduAgain = await E.post(`${rec(emp.id)}/education`, { items: [eduItems[0]] });
+  expect(eduAgain.status === 403, 'employee cannot submit education a second time', eduAgain.data);
+  mine = (await E.get(rec(emp.id))).data;
+  expect(mine.canEdit.education === false && mine.canChange.education === false, 'education is read-only for the employee after submitting');
+  const bba = mine.education.find((x) => x.degreeTitle === 'BBA');
+  expect((await E.patch(`${rec(emp.id)}/education/${bba.id}`, { ...eduItems[0], grade: '4.0' })).status === 403, 'employee cannot edit submitted education');
+  expect((await E.del(`${rec(emp.id)}/education/${bba.id}`)).status === 403, 'employee cannot delete submitted education');
+  expect((await HR.patch(`${rec(emp.id)}/education/${bba.id}`, { ...eduItems[0], grade: '3.6' })).status === 200, 'HR edits submitted education');
+  expect((await HR.post(`${rec(emp.id)}/education`, { items: [{ qualificationLevel: 'INTERMEDIATE', degreeTitle: 'FSc', institution: 'GC', startDate: '2011-09-01', completionDate: '2013-06-30' }] })).status === 201, 'HR adds education after submission');
+  expect((await HR.del(`${rec(emp.id)}/education/${bba.id}`)).status === 200, 'HR deletes education');
+
+  // References: once by the employee; contact details only for HR / Company Admin (API and everything built on it).
+  const refs = await E.post(`${rec(emp.id)}/references`, { items: [{ name: 'Rana Ref', organisation: 'Acme', relationship: 'Former manager', email: 'rana@acme.test', phone: '0321 1112223', yearsKnown: 3 }] });
+  expect(refs.status === 201, 'employee submits references');
+  expect((await E.post(`${rec(emp.id)}/references`, { items: [{ name: 'Second', organisation: 'Org', relationship: 'Peer' }] })).status === 403, 'employee cannot add references after submitting');
+  const eRefs = (await E.get(rec(emp.id))).data.references;
+  expect(eRefs[0].email === null && eRefs[0].phone === null && eRefs[0].contactHidden, 'employee API does not return reference contact details');
+  expect((await E.del(`${rec(emp.id)}/references/${eRefs[0].id}`)).status === 403, 'employee cannot delete a submitted reference');
+  const tlRefs = (await TL.get(rec(emp.id))).data.references;
+  expect(tlRefs[0].email === null && tlRefs[0].phone === null, 'team lead does not see reference contact details');
+  const hrRefs = (await HR.get(rec(emp.id))).data.references;
+  expect(hrRefs[0].email === 'rana@acme.test' && hrRefs[0].phone === '+92 3211112223', 'HR sees reference contact details');
+  expect((await Z.get(rec(emp.id))).status === 403, 'colleagues cannot open another person\'s records');
+
+  // Certifications with a validated attachment.
+  const notPdf = await upload(E, `/employees/${emp.id}/record-files`, new TextEncoder().encode('just text'), 'cert.pdf', 'application/pdf');
+  expect(notPdf.status === 400, 'attachment content is checked (fake PDF refused)', notPdf.data);
+  const certPdf = await upload(E, `/employees/${emp.id}/record-files`, new TextEncoder().encode('%PDF-1.4\n%test\n'), 'cert.pdf', 'application/pdf');
+  expect(certPdf.status === 201 && certPdf.data.fileId, 'certificate PDF uploaded', certPdf.data);
+  expect((await upload(Z, `/employees/${emp.id}/record-files`, new TextEncoder().encode('%PDF-1.4\n'), 'x.pdf', 'application/pdf')).status === 403, 'colleagues cannot upload to someone else\'s profile');
+  expect((await E.post(`${rec(emp.id)}/certifications`, { items: [{ name: 'CSM', issuer: 'Scrum Alliance', issueDate: '2022-01-10', verificationUrl: 'ftp://bad.example' }] })).status === 400, 'certification link must be http(s)');
+  const cert = await E.post(`${rec(emp.id)}/certifications`, { items: [{ name: 'CSM', issuer: 'Scrum Alliance', issueDate: '2022-01-10', expiryDate: '2025-01-10', verificationUrl: 'https://verify.example/123', fileId: certPdf.data.fileId }, { name: 'Excel Expert', issuer: 'Microsoft', issueDate: '2021-03-01' }] });
+  expect(cert.status === 201 && cert.data.added === 2, '"Add more certifications" saves each one');
+  const certFile = await raw(HR, `/employees/${emp.id}/record-files/${certPdf.data.fileId}`);
+  expect(certFile.status === 200 && certFile.text.startsWith('%PDF'), 'HR downloads the certificate attachment');
+  expect((await raw(Z, `/employees/${emp.id}/record-files/${certPdf.data.fileId}`)).status === 403, 'colleagues cannot download the attachment');
+
+  // Sales revenue: Sales department or an explicitly permitted role only, checked live.
+  expect((await E.get('/sales/overview')).status === 200, 'Sales-department employee sees sales revenue');
+  const salesView = (await E.get('/sales/overview')).data;
+  expect(salesView.totals.achieved === 1200000 && salesView.totals.target === 1000000 && salesView.totals.incentives === 10000, 'sales revenue totals from approved KPI results', salesView.totals);
+  expect((await admin.get('/sales/overview')).status === 200, 'Company Admin sees sales revenue');
+  expect((await HR.get('/sales/overview')).status === 403, 'HR without the permission cannot see sales revenue');
+  expect((await HR.get('/sales/export')).status === 403, 'HR cannot export sales revenue');
+  expect((await Z.get('/sales/overview')).status === 403 && (await raw(Z, '/sales/export')).status === 403, 'other departments cannot see or export sales revenue');
+  expect(!('sales' in (await Z.get('/dashboard')).data) && 'sales' in (await E.get('/dashboard')).data, 'dashboard sales metrics only for permitted users');
+  const salesCsv = await raw(E, '/sales/export');
+  expect(salesCsv.status === 200 && salesCsv.text.includes('Esha Exec') && salesCsv.text.includes('1200000'), 'sales CSV export for permitted users');
+  expect((await Z.get('/sales/access')).data.allowed === false, 'access endpoint says no for other departments');
+  const zSales = await HR.patch(`/employees/${zara.id}`, { departmentId: sales.id, levelId: lvl('L1').id });
+  expect(zSales.status === 200 && (await Z.get('/sales/overview')).status === 200, 'moving into Sales grants access immediately');
+  await HR.patch(`/employees/${zara.id}`, { departmentId: hrDept.id, levelId: lvl('L1', hrLevels).id });
+  expect((await Z.get('/sales/overview')).status === 403, 'moving out of Sales removes access immediately');
+  const hrRole = (await admin.get('/access/roles')).data.roles.find((r) => r.role === 'HR');
+  expect((await admin.put('/access/roles/HR', { permissions: [...hrRole.permissions, 'sales.revenue.read'] })).status === 200, 'Company Admin grants HR "View sales revenue"');
+  expect((await HR.get('/sales/overview')).status === 200, 'role change grants access immediately');
+  await admin.put('/access/roles/HR', { permissions: hrRole.permissions });
+  expect((await HR.get('/sales/overview')).status === 403, 'role change removes access immediately');
+
+  // Survey members: teams of 0, 1 and many eligible members.
+  const yusuf = await mk('Yusuf Two', `yusuf@${ws}.test`, opsDept.id, lvl('L1', opsLevels).id, ['EMPLOYEE']);
+  const waqas = await mk('Waqas Three', `waqas@${ws}.test`, opsDept.id, lvl('L1', opsLevels).id, ['EMPLOYEE']);
+  const emptyTeam = (await admin.post('/teams', { name: 'Empty Team', departmentId: hrDept.id, leadEmployeeId: tl.id })).data;
+  const soloTeam = (await admin.post('/teams', { name: 'Solo Team', departmentId: hrDept.id, leadEmployeeId: tl.id })).data;
+  const duoTeam = (await admin.post('/teams', { name: 'Duo Team', departmentId: opsDept.id, leadEmployeeId: ops.id })).data;
+  await admin.post(`/teams/${soloTeam.id}/members`, { employeeId: zara.id });
+  await admin.post(`/teams/${duoTeam.id}/members`, { employeeId: yusuf.id });
+  await admin.post(`/teams/${duoTeam.id}/members`, { employeeId: waqas.id });
+  const aud = async (teamId) => (await HR.get(`/surveys/audience?audience=TEAM&audienceId=${teamId}`)).data;
+  expect((await aud(emptyTeam.id)).count === 0, 'survey members: team of 0 shows nobody');
+  const solo = await aud(soloTeam.id);
+  expect(solo.count === 1 && solo.members[0].id === zara.id, 'survey members: team of exactly 1 shows that member', solo);
+  const duo = await aud(duoTeam.id);
+  expect(duo.count === 2 && duo.members.map((m) => m.id).sort().join() === [yusuf.id, waqas.id].sort().join(), 'survey members: team of many shows everyone', duo);
+  expect((await TL.get(`/surveys/audience?audience=TEAM&audienceId=${duoTeam.id}`)).status === 403, 'team leads cannot list other teams');
+  const soloSurvey = await HR.post('/surveys', { title: 'Solo pulse', kind: 'TEAM', audience: 'TEAM', audienceId: soloTeam.id, questions: [{ id: 'q1', type: 'RATING', label: 'Rate', required: true }] });
+  await HR.post(`/surveys/${soloSurvey.data.id}/open`);
+  expect((await Z.get('/surveys/available')).data.some((s) => s.id === soloSurvey.data.id), 'the single member receives the team survey');
+  expect((await Z.post(`/surveys/${soloSurvey.data.id}/responses`, { answers: { q1: 5 } })).status === 201, 'the single member can answer it');
+  expect((await HR.get(`/surveys/${soloSurvey.data.id}/results`)).data.audience === 1, 'survey results count an audience of 1');
+
+  // Leave overview for module overviews
+  const lo = await HR.get('/leave/overview');
+  expect(lo.status === 200 && lo.data.scope === 'company' && typeof lo.data.pending === 'number', 'leave overview KPIs for HR');
+  expect((await E.get('/leave/overview')).data.scope === 'self', 'leave overview scoped to the employee');
+
   // ---- Dashboards (A2)
   for (const [name, c] of [['employee', E], ['team lead', TL], ['HR', HR], ['operations', OPS], ['super admin', admin]]) {
     const d = await c.get('/dashboard');

@@ -23,6 +23,7 @@ import { hashPassword } from '../../common/crypto';
 import { DbService } from '../../db/db.service';
 import {
   departments,
+  employeeExperiences,
   employeePositions,
   employees,
   levels,
@@ -82,6 +83,12 @@ export class EmployeesService {
         workScheduleId: employees.workScheduleId,
         onboardingCompletedAt: employees.onboardingCompletedAt,
         medicalEligible: employees.medicalEligible,
+        hidePhone: employees.hidePhone,
+        dependents: employees.dependents,
+        socialLinks: employees.socialLinks,
+        noExperience: employees.noExperience,
+        educationSubmittedAt: employees.educationSubmittedAt,
+        referencesSubmittedAt: employees.referencesSubmittedAt,
         createdAt: employees.createdAt,
       })
       .from(employees)
@@ -91,10 +98,14 @@ export class EmployeesService {
   }
 
   private redact<T extends Record<string, unknown>>(row: T, user: AuthUser): T {
-    if (user.employeeId === row.id || user.permissions.has(P.EMPLOYEES_READ_ALL)) return row;
-    const copy = { ...row };
-    for (const k of CONFIDENTIAL) if (k in copy) (copy as Record<string, unknown>)[k] = null;
-    return copy;
+    const copy: Record<string, unknown> = { ...row };
+    // Number of dependents: HR / Company Admin only (not colleagues, Team Leads or the person themselves).
+    if (!user.permissions.has(P.EMPLOYEES_MANAGE)) copy.dependents = null;
+    if (user.employeeId === row.id || user.permissions.has(P.EMPLOYEES_READ_ALL)) return copy as T;
+    for (const k of CONFIDENTIAL) if (k in copy) copy[k] = null;
+    // The person chose to hide their number: only they and org-wide HR / admins see it.
+    if (row.hidePhone) copy.contactNo = null;
+    return copy as T;
   }
 
   async list(q: { page: number; pageSize: number; search?: string; departmentId?: string; status?: string }) {
@@ -175,6 +186,10 @@ export class EmployeesService {
           basicSalary: salary,
           workScheduleId: input.workScheduleId ?? null,
           medicalEligible: input.medicalEligible ?? false,
+          hidePhone: input.hidePhone ?? false,
+          dependents: input.dependents ?? 0,
+          socialLinks: input.socialLinks ?? {},
+          noExperience: input.noExperience ?? false,
         })
         .returning(),
     );
@@ -235,6 +250,7 @@ export class EmployeesService {
     }
     const { roles: _r, sendInvite: _s, password: _p, mustChangePassword: _m, ...rest } = input as EmployeeUpdateInput & { roles?: unknown; sendInvite?: unknown; password?: unknown; mustChangePassword?: unknown };
     if (input.employmentStatus === 'ACTIVE' && cur.employmentStatus !== 'ACTIVE') await this.assertSeatAvailable();
+    if (input.noExperience && !cur.noExperience) await this.assertNoExperienceRecords(id);
     const updated = one(await tx.update(employees).set(rest).where(eq(employees.id, id)).returning());
     // Level/department/salary changes through edit are recorded as an adjustment in the position history.
     if (input.levelId && input.levelId !== cur.levelId) {
@@ -320,7 +336,16 @@ export class EmployeesService {
       if (cur?.dob && cur.dob !== input.dateOfBirth) throw forbidden('Your date of birth is already on record. Ask HR to change it.');
       if (input.dateOfBirth > todayIn((await tenantInfo(this.db.tx)).timezone)) throw badRequest('Date of birth cannot be in the future');
     }
-    return one(await this.db.tx.update(employees).set(input).where(eq(employees.id, employeeId)).returning());
+    if (input.noExperience) await this.assertNoExperienceRecords(employeeId);
+    if (Object.values(input).some((v) => v !== undefined)) await this.db.tx.update(employees).set(input).where(eq(employees.id, employeeId));
+    // Same view as GET /me/profile, so HR-only fields (dependents) never come back to the employee.
+    return this.get(employeeId);
+  }
+
+  /** "No previous experience" can't be ticked while experience records exist. */
+  private async assertNoExperienceRecords(employeeId: string) {
+    const [{ n }] = (await this.db.tx.select({ n: sql<number>`count(*)::int` }).from(employeeExperiences).where(eq(employeeExperiences.employeeId, employeeId))) as [{ n: number }];
+    if (n > 0) throw badRequest('Remove the previous experience entries first, then tick "No previous experience".', 'HAS_EXPERIENCE');
   }
 
   /* ---------------- B8 promotions ---------------- */
@@ -441,7 +466,13 @@ export class EmployeesService {
     const tx = this.db.tx;
     const t = await tenantInfo(tx);
     const conds: SQL[] = [eq(employees.employmentStatus, 'ACTIVE')];
-    if (q.search) conds.push(or(ilike(employees.fullName, like(q.search)), ilike(employees.designation, like(q.search)), ilike(departments.name, like(q.search)), ilike(employees.email, like(q.search)), ilike(employees.employeeCode, like(q.search)))!);
+    const seesAll = currentUser().permissions.has(P.EMPLOYEES_READ_ALL);
+    if (q.search) {
+      const digits = q.search.replace(/\D/g, '');
+      // Phone search only finds numbers the searcher may see (hidden numbers never match for colleagues).
+      const byPhone = digits.length >= 4 ? and(sql`regexp_replace(coalesce(${employees.contactNo}, ''), '\D', '', 'g') like ${`%${digits}%`}`, seesAll ? undefined : eq(employees.hidePhone, false)) : undefined;
+      conds.push(or(ilike(employees.fullName, like(q.search)), ilike(employees.designation, like(q.search)), ilike(departments.name, like(q.search)), ilike(employees.email, like(q.search)), ilike(employees.employeeCode, like(q.search)), byPhone)!);
+    }
     if (q.departmentId) conds.push(eq(employees.departmentId, q.departmentId));
     const rows = await tx
       .select({
@@ -451,6 +482,7 @@ export class EmployeesService {
         avatarFileId: employees.avatarFileId,
         email: employees.email,
         contactNo: employees.contactNo,
+        hidePhone: employees.hidePhone,
         departmentId: employees.departmentId,
         departmentName: departments.name,
         designation: employees.designation,
@@ -469,8 +501,13 @@ export class EmployeesService {
       .orderBy(asc(employees.fullName))
       .limit(500);
     const today = todayIn(t.timezone);
-    return rows.map(({ joiningDate, ...r }) => ({
+    const user = currentUser();
+    const seesAllPhones = user.permissions.has(P.EMPLOYEES_READ_ALL);
+    return rows.map(({ joiningDate, hidePhone, contactNo, ...r }) => ({
       ...r,
+      // Hidden numbers never leave the server for colleagues; HR / admins and the person still see them.
+      contactNo: hidePhone && !seesAllPhones && r.id !== user.employeeId ? null : contactNo,
+      phoneHidden: hidePhone,
       level: `${r.levelCode} – ${r.levelTitle}`,
       tenure: tenureLabel(joiningDate, today),
       // Joining date in the directory only when the company allows it (B5); the same wording as on profiles.

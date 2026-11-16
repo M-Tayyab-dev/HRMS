@@ -1,3 +1,4 @@
+import { salesAccess, salesSummary } from '../performance/sales.controller';
 import { Controller, Get } from '@nestjs/common';
 import { PERMISSIONS as P, WORKFLOWS, type WorkflowType } from '@hrms/shared';
 import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
@@ -276,6 +277,12 @@ export class DashboardController {
       const recentAudit = (await tx.select({ a: auditLogs, email: users.email }).from(auditLogs).leftJoin(users, eq(users.id, auditLogs.actorUserId)).orderBy(desc(auditLogs.id)).limit(8))
         .map((r) => ({ ...r.a, actorLabel: r.a.actorLabel ?? r.email ?? null }));
       out.system = { users: userStats, departments: deptCount?.n ?? 0, recentAudit };
+    }
+
+    // ---- Sales revenue: Sales department and people given "View sales revenue" only (checked live).
+    if ((await salesAccess(tx, u)).allowed) {
+      const { totals, trend } = await salesSummary(tx, month);
+      out.sales = { totals, trend };
     }
 
     out.pendingApprovals = (await this.inbox()).length;

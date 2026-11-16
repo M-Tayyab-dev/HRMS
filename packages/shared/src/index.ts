@@ -13,3 +13,5 @@ export * from './schemas/invoice';
 export * from './schemas/idcard';
 export * from './audit-labels';
 export * from './tenure';
+export * from './phone';
+export * from './schemas/profile';

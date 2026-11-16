@@ -1,8 +1,9 @@
 'use client';
 
-import { AlertTriangle, CalendarClock, Clock, FileText, HandCoins, Inbox, LifeBuoy, Megaphone, Receipt, Timer, UserCheck, Users, Utensils } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Clock, FileText, HandCoins, Inbox, LifeBuoy, Megaphone, Receipt, Target, Timer, TrendingUp, UserCheck, Users, Utensils } from 'lucide-react';
 import { ATTENDANCE_COLORS as C, auditActionLabel } from '@hrms/shared';
 import Link from 'next/link';
+import { CalendarView } from '@/components/calendar-view';
 import { Bars, Donut } from '@/components/ui/charts';
 import { Badge, BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, Progress, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,11 @@ interface Dash {
     openQueries: number;
     pendingKpi: number;
     employeesWithoutTeam: number;
+  };
+  /** Only for the Sales department and people given "View sales revenue". */
+  sales?: {
+    totals: { target: number; achieved: number; pending: number; progress: number | null; incentives: number; people: number };
+    trend: { period: string; target: number; achieved: number }[];
   };
   system?: {
     users: { total: number; active: number; invited: number; disabled: number };
@@ -213,6 +219,31 @@ export default function DashboardPage() {
                 })}
               </CardBody>
             </Card>
+          </div>
+        </section>
+      )}
+
+      {/* ---------- Calendar: the same calendar as the Calendar page, filtered by the server for this person ---------- */}
+      <section aria-labelledby="cal-heading" className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 id="cal-heading" className="text-lg font-semibold">Calendar</h2>
+          <Link className="text-xs text-primary hover:underline" href="/calendar">Open full calendar</Link>
+        </div>
+        <CalendarView compact />
+      </section>
+
+      {/* ---------- Sales revenue (Sales department / permitted roles only) ---------- */}
+      {d.sales && (
+        <section aria-labelledby="sales-heading" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 id="sales-heading" className="text-lg font-semibold">Sales revenue</h2>
+            <Link className="text-xs text-primary hover:underline" href="/overview/sales">Sales overview</Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label={`Revenue in ${monthLabel(d.month).split(' ')[0]}`} icon={TrendingUp} tone="success" value={money(d.sales.totals.achieved, cur)} hint="Approved KPI results" />
+            <Stat label="Target" icon={Target} value={money(d.sales.totals.target, cur)} hint={`${d.sales.totals.people} people with sales targets`} />
+            <Stat label="Achieved" icon={UserCheck} tone="info" value={d.sales.totals.progress === null ? '—' : `${d.sales.totals.progress}%`} hint={`${money(d.sales.totals.pending, cur)} awaiting approval`} />
+            <Stat label="Incentives earned" icon={HandCoins} tone="warning" value={money(d.sales.totals.incentives, cur)} />
           </div>
         </section>
       )}

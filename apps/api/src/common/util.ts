@@ -1,3 +1,4 @@
+import { StreamableFile } from '@nestjs/common';
 import { PERMISSIONS, type Paginated } from '@hrms/shared';
 import { eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
@@ -77,4 +78,14 @@ export async function deleteSafely(tx: Tx, what: string, fn: () => Promise<unkno
 export async function emailInUse(db: DbService, email: string, exceptUserId?: string): Promise<boolean> {
   const [row] = await db.root.select({ userId: userDirectory.userId }).from(userDirectory).where(eq(userDirectory.email, email.toLowerCase())).limit(1);
   return !!row && row.userId !== exceptUserId;
+}
+
+/** CSV file (UTF-8 with BOM for Excel). Every cell is quoted and spreadsheet formulas are neutralised. */
+export function csvFile(rows: unknown[][], filename: string): StreamableFile {
+  const cell = (v: unknown) => {
+    const s = v == null ? '' : String(v);
+    return `"${(/^[=+\-@\t\r]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`;
+  };
+  const body = rows.map((r) => r.map(cell).join(',')).join('\r\n');
+  return new StreamableFile(Buffer.from(`﻿${body}\r\n`, 'utf8'), { type: 'text/csv; charset=utf-8', disposition: `attachment; filename="${filename}"` });
 }

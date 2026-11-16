@@ -16,7 +16,9 @@ import {
   Inbox,
   KeyRound,
   LayoutDashboard,
+  LayoutGrid,
   LifeBuoy,
+  ChartLine,
   LogOut,
   Megaphone,
   MessageSquareWarning,
@@ -50,6 +52,8 @@ export interface NavItem {
   module?: Module;
   /** Medical claims: only for people the company offers them to (or who manage claims). */
   medical?: boolean;
+  /** Sales revenue: Sales department or "View sales revenue" (checked by the server, GET /sales/access). */
+  sales?: boolean;
 }
 
 /**
@@ -72,6 +76,7 @@ export const NAV: NavGroup[] = [
     icon: Users,
     limited: { label: 'Employee directory', icon: Contact },
     items: [
+      { href: '/overview/employees', label: 'Overview', icon: LayoutGrid, any: [P.EMPLOYEES_READ_ALL, P.EMPLOYEES_READ_TEAM] },
       { href: '/employees', label: 'Profiles', icon: Users, any: [P.EMPLOYEES_READ_ALL, P.EMPLOYEES_READ_TEAM] },
       { href: '/directory', label: 'Directory', icon: Contact },
       { href: '/org-chart', label: 'Org chart', icon: Network },
@@ -86,6 +91,7 @@ export const NAV: NavGroup[] = [
     label: 'Attendance & leave',
     icon: Clock,
     items: [
+      { href: '/overview/leave', label: 'Overview', icon: LayoutGrid, module: 'LEAVE' },
       { href: '/attendance', label: 'Attendance', icon: Clock, module: 'ATTENDANCE' },
       { href: '/overtime', label: 'Overtime & compensation', icon: Timer, module: 'ATTENDANCE' },
       { href: '/leave', label: 'Leave & holidays', icon: CalendarRange, module: 'LEAVE' },
@@ -104,6 +110,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   { label: 'KPI & performance', icon: Target, items: [{ href: '/kpi', label: 'KPI & performance', icon: Target, module: 'PERFORMANCE' }] },
+  { label: 'Sales', icon: ChartLine, items: [{ href: '/overview/sales', label: 'Sales overview', icon: ChartLine, module: 'PERFORMANCE', sales: true }] },
   {
     label: 'Compliance',
     icon: FileText,

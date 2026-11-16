@@ -84,6 +84,8 @@ export const PERMISSIONS = {
 
   // Reports
   REPORTS_READ: 'reports.read',
+  /** Sales revenue, sales reports and exports. Sales-department staff see them too; other roles need this. */
+  SALES_REVENUE_READ: 'sales.revenue.read',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -193,4 +195,5 @@ export const PERMISSION_INFO: Record<Permission, { group: string; label: string;
   'announcements.publish': { group: 'Community', label: 'Publish announcements', description: 'Post official announcements to the feed and dashboards.' },
 
   'reports.read': { group: 'Reports', label: 'View reports', description: 'See company-wide reports and statistics.' },
+  'sales.revenue.read': { group: 'Performance', label: 'View sales revenue', description: 'See sales revenue, sales reports and exports. People in the Sales department see them without this.' },
 };

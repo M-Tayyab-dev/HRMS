@@ -9,7 +9,7 @@ import type { Doc } from '@/components/employee-panels';
 import { DocUploadCard } from '@/components/onboarding-docs';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardBody, CardHeader, PageHeader } from '@/components/ui/display';
-import { Field, FormGrid, Input, Select, CnicInput, PhoneInput } from '@/components/ui/form';
+import { Field, FormGrid, Input, Select, CnicInput, IntlPhoneInput } from '@/components/ui/form';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/hooks';
@@ -108,8 +108,8 @@ export default function OnboardingPage() {
               <Field label={label('Date of birth', 'dateOfBirth')} hint={emp?.dateOfBirth ? 'On record. Ask HR to change it.' : 'You can enter this once.'}>
                 {(a) => <Input {...a} type="date" max={todayLocal()} value={v.dateOfBirth} onChange={set('dateOfBirth')} disabled={!!emp?.dateOfBirth} />}
               </Field>
-              <Field label={label("Father's name", 'fatherName')}>{(a) => <Input {...a} value={v.fatherName} onChange={set('fatherName')} autoComplete="off" />}</Field>
-              <Field label={label("Father's CNIC", 'fatherCnic')}>{(a) => <CnicInput {...a} value={v.fatherCnic} onChange={set('fatherCnic')} />}</Field>
+              <Field label={label('Father/Guardian Name', 'fatherName')}>{(a) => <Input {...a} value={v.fatherName} onChange={set('fatherName')} autoComplete="off" />}</Field>
+              <Field label={label('Father/Guardian CNIC', 'fatherCnic')}>{(a) => <CnicInput {...a} value={v.fatherCnic} onChange={set('fatherCnic')} />}</Field>
               <Field label={label('Blood group', 'bloodGroup')}>
                 {(a) => (
                   <Select {...a} value={v.bloodGroup} onChange={set('bloodGroup')}>
@@ -123,8 +123,8 @@ export default function OnboardingPage() {
           <div className="border-t pt-5">
             <p className="mb-3 text-sm font-semibold">Contact</p>
             <FormGrid>
-              <Field label={label('Your phone number', 'contactNo')} error={phoneErr.contactNo ?? undefined}>{(a) => <PhoneInput {...a} value={v.contactNo} onChange={set('contactNo')} />}</Field>
-              <Field label={label('Emergency contact number', 'emergencyContact')} required error={phoneErr.emergencyContact ?? undefined} hint="Someone we can call if something happens at work">{(a) => <PhoneInput {...a} value={v.emergencyContact} onChange={set('emergencyContact')} />}</Field>
+              <Field label={label('Your phone number', 'contactNo')} error={phoneErr.contactNo ?? undefined}>{(a) => <IntlPhoneInput {...a} value={v.contactNo} onChange={(x) => setV((y) => ({ ...y, contactNo: x }))} />}</Field>
+              <Field label={label('Emergency contact number', 'emergencyContact')} required error={phoneErr.emergencyContact ?? undefined} hint="Someone we can call if something happens at work">{(a) => <IntlPhoneInput {...a} value={v.emergencyContact} onChange={(x) => setV((y) => ({ ...y, emergencyContact: x }))} />}</Field>
             </FormGrid>
           </div>
         </CardBody>
