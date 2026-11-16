@@ -460,6 +460,46 @@ async function main() {
   expect((await Z.post(`/surveys/${soloSurvey.data.id}/responses`, { answers: { q1: 5 } })).status === 201, 'the single member can answer it');
   expect((await HR.get(`/surveys/${soloSurvey.data.id}/results`)).data.audience === 1, 'survey results count an audience of 1');
 
+  // Work from home: applied from Leave, approved Team Lead → HR like leave; approved days count as worked.
+  const wfhFuture = addDays(nextMonday, 7);
+  const wfh = await E.post('/leave/wfh', { startDate: wfhFuture, endDate: addDays(wfhFuture, 1), reason: 'Internet installation at home' });
+  expect(wfh.status === 201 && wfh.data.status === 'PENDING' && wfh.data.currentStep === 'TEAM_LEAD' && wfh.data.days === 2, 'work from home request goes to the team lead first', wfh.data);
+  expect((await E.post('/leave/wfh', { startDate: addDays(wfhFuture, 1), endDate: addDays(wfhFuture, 1), reason: 'Again' })).status === 409, 'overlapping work from home is refused');
+  const sat = (() => { let d = wfhFuture; while (dow(d) !== 6) d = addDays(d, 1); return d; })();
+  expect((await E.post('/leave/wfh', { startDate: sat, endDate: addDays(sat, 1), reason: 'Weekend only' })).status === 400, 'weekend-only work from home is refused');
+  expect((await E.post('/leave/wfh', { startDate: wfhFuture, endDate: addDays(wfhFuture, 40), reason: 'Too long' })).status === 400, 'work from home is limited to 31 days at a time');
+  expect((await HR.post(`/leave/wfh/${wfh.data.id}/decision`, { approve: true })).status === 403, 'HR cannot skip the team lead step for work from home');
+  expect((await E.post(`/leave/wfh/${wfh.data.id}/decision`, { approve: true })).status === 403, 'employees cannot approve their own work from home');
+  expect((await TL.get('/approvals/inbox')).data.some((i) => i.workflow === 'WORK_FROM_HOME' && i.id === wfh.data.id), 'work from home appears in the team lead inbox');
+  expect((await TL.post(`/leave/wfh/${wfh.data.id}/decision`, { approve: true })).data.currentStep === 'HR', 'team lead approval forwards work from home to HR');
+  expect((await HR.get('/approvals/inbox')).data.some((i) => i.workflow === 'WORK_FROM_HOME' && i.id === wfh.data.id), 'work from home then waits in the HR inbox');
+  expect((await HR.post(`/leave/wfh/${wfh.data.id}/decision`, { approve: true })).data.status === 'APPROVED', 'HR gives final approval for work from home');
+  const wfhCal = (await E.get(`/calendar?month=${wfhFuture.slice(0, 7)}`)).data;
+  expect(wfhCal.wfh?.some((w) => w.id === wfh.data.id && w.status === 'APPROVED'), 'approved work from home shows on the calendar');
+  const mineWfh = (await E.get('/leave/wfh?mine=true')).data.find((w) => w.id === wfh.data.id);
+  expect(mineWfh?.canCancel === true, 'upcoming approved work from home can still be cancelled');
+  expect((await TL.post(`/leave/wfh/${wfh.data.id}/cancel`, { reason: 'Not mine to cancel' })).status === 403, 'only the employee cancels their work from home');
+  expect((await E.post(`/leave/wfh/${wfh.data.id}/cancel`, { reason: 'Installation moved' })).data.status === 'CANCELLED', 'employee cancels upcoming work from home');
+
+  const wfhDay = prevWeekday(today, 12); // a day no other flow punches
+  const pastWfh = await E.post('/leave/wfh', { startDate: wfhDay, endDate: wfhDay, reason: 'Worked from home, forgot to apply' });
+  expect(pastWfh.status === 201, 'work from home can be applied for a past day', pastWfh.data);
+  await TL.post(`/leave/wfh/${pastWfh.data.id}/decision`, { approve: true });
+  const rej = await E.post('/leave/wfh', { startDate: addDays(wfhFuture, 14), endDate: addDays(wfhFuture, 14), reason: 'Will be rejected' });
+  expect((await TL.post(`/leave/wfh/${rej.data.id}/decision`, { approve: false, comment: 'Team offsite that day' })).data.status === 'REJECTED', 'team lead can reject work from home');
+  expect((await HR.post(`/leave/wfh/${pastWfh.data.id}/decision`, { approve: true })).data.status === 'APPROVED', 'past work from home approved by HR');
+  const wfhAtt = (await E.get(`/attendance/days?from=${wfhDay}&to=${wfhDay}`)).data.find((d) => d.date === wfhDay);
+  expect(wfhAtt?.status === 'PRESENT' && wfhAtt.workFromHome === true && wfhAtt.workedMinutes > 0, 'approved work from home day counts as present, marked WFH', wfhAtt);
+  expect((await E.post(`/leave/wfh/${pastWfh.data.id}/cancel`, { reason: 'Too late now' })).status === 400, 'started work from home cannot be cancelled by the employee');
+  expect((await Z.get('/leave/wfh')).data.every((w) => w.employeeId === zara.id), 'employees only see their own work from home requests');
+  const hrWfh = (await HR.get('/leave/wfh')).data;
+  expect(hrWfh.some((w) => w.id === pastWfh.data.id && w.employeeName === 'Esha Exec'), 'HR sees work from home requests company-wide');
+
+  // Access & roles overview
+  const ao = (await admin.get('/access/overview')).data;
+  expect(ao.accounts?.total >= 8 && ao.roles?.some((r) => r.role === 'HR' && r.users >= 1) && ao.activity?.recent.length > 0, 'access overview: accounts, roles and recent activity', ao.accounts);
+  expect((await E.get('/access/overview')).status === 403, 'employees cannot open the access overview');
+
   // Leave overview for module overviews
   const lo = await HR.get('/leave/overview');
   expect(lo.status === 200 && lo.data.scope === 'company' && typeof lo.data.pending === 'number', 'leave overview KPIs for HR');

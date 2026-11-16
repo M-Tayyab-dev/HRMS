@@ -32,6 +32,11 @@ export interface DayInput {
   overtimeThresholdMinutes: number;
   /** Date is today or later – no punches yet doesn't mean absent. */
   isFuture: boolean;
+  /**
+   * Approved work-from-home day. The person can't punch at the office, so a past working day
+   * without punches counts as present for the scheduled hours instead of absent.
+   */
+  workFromHome?: boolean;
 }
 
 export interface DayResult {
@@ -88,6 +93,7 @@ export function computeDay(input: DayInput): DayResult {
     if (input.leave === 'FULL') return { ...empty, status: 'ON_LEAVE' };
     if (!workingDay) return { ...empty, status: 'WEEKEND' };
     if (input.isFuture) return { ...empty, status: 'PENDING' };
+    if (input.workFromHome) return { ...empty, workedMinutes: scheduled, status: 'PRESENT' };
     return { ...empty, status: input.leave === 'HALF' ? 'ON_LEAVE' : 'ABSENT' };
   }
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { PERMISSIONS as P, holidaySchema, leaveRequestSchema, leaveTypeSchema } from '@hrms/shared';
-import { CalendarPlus, Plus, Trash2 } from 'lucide-react';
+import { PERMISSIONS as P, holidaySchema, leaveRequestSchema, leaveTypeSchema, wfhRequestSchema } from '@hrms/shared';
+import { CalendarPlus, House, Plus, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { DecisionButtons, DepartmentSelect, EmployeeSelect } from '@/components/domain';
@@ -89,6 +89,79 @@ function Mine({ types }: { types: LeaveType[] }) {
   );
 }
 
+interface Wfh { id: string; employeeId: string; employeeName: string; startDate: string; endDate: string; days: number; reason: string; status: string; currentStep: string | null; cancellationReason: string | null; createdAt: string; canDecide: boolean; canCancel: boolean }
+
+const wfhDates = (r: { startDate: string; endDate: string }) =>
+  `${date(r.startDate, { day: 'numeric', month: 'short' })}${r.endDate !== r.startDate ? ` – ${date(r.endDate, { day: 'numeric', month: 'short' })}` : ''}`;
+
+function WfhApplyDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const form = useZodForm(wfhRequestSchema, { startDate: todayLocal(), endDate: todayLocal(), reason: '' });
+  const apply = useAction('post', '/leave/wfh', { invalidate: ['/leave', '/calendar', '/attendance'], success: 'Work-from-home request sent for approval', onSuccess: () => { onOpenChange(false); form.reset(); } });
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange} title="Apply to work from home" description="Same approval as leave: your Team Lead reviews it first, then HR gives final approval."
+      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button loading={apply.isPending} onClick={form.handleSubmit((v) => apply.mutate(v))}>Submit request</Button></>}>
+      <div className="space-y-4">
+        <FormGrid>
+          <Field label="From" required error={fieldError(form, 'startDate')}>{(a) => <Input {...a} type="date" {...form.register('startDate')} />}</Field>
+          <Field label="To" required error={fieldError(form, 'endDate')}>{(a) => <Input {...a} type="date" {...form.register('endDate')} />}</Field>
+        </FormGrid>
+        <Field label="Reason" required error={fieldError(form, 'reason')}>{(a) => <Textarea {...a} rows={3} {...form.register('reason')} />}</Field>
+        <p className="text-xs text-muted-foreground">Approved days are marked as work from home in your attendance and don&apos;t count as absent. They don&apos;t use your leave balance.</p>
+      </div>
+    </Dialog>
+  );
+}
+
+function WfhCancelDialog({ req, onClose }: { req: Wfh | null; onClose: () => void }) {
+  const [reason, setReason] = useState('');
+  const cancel = useAction<{ reason: string }>('post', () => `/leave/wfh/${req!.id}/cancel`, { invalidate: ['/leave', '/calendar', '/attendance'], success: 'Work-from-home request cancelled', onSuccess: () => { onClose(); setReason(''); } });
+  return (
+    <Dialog open={!!req} onOpenChange={(o) => !o && onClose()} title="Cancel work from home" size="sm"
+      footer={<><Button variant="outline" onClick={onClose}>Keep it</Button><Button variant="danger" disabled={reason.trim().length < 5} loading={cancel.isPending} onClick={() => cancel.mutate({ reason })}>Cancel request</Button></>}>
+      <Field label="Reason" required>{(a) => <Textarea {...a} rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />}</Field>
+    </Dialog>
+  );
+}
+
+function MyWfh() {
+  const { data, isLoading } = useApi<Wfh[]>('/leave/wfh?mine=true');
+  const [open, setOpen] = useState(false);
+  const [cancel, setCancel] = useState<Wfh | null>(null);
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-end"><Button onClick={() => setOpen(true)}><House className="h-4 w-4" /> Apply to work from home</Button></div>
+      <Card>
+        <CardHeader title="My work-from-home requests" description="Approved by your Team Lead, then HR." />
+        <DataTable loading={isLoading} rows={data} rowKey={(r) => r.id} empty="No work-from-home requests yet" columns={[
+          { key: 'd', header: 'Dates', cell: (r) => <span className="whitespace-nowrap">{wfhDates(r)}</span> },
+          { key: 'n', header: 'Working days', cell: (r) => r.days },
+          { key: 'r', header: 'Reason', hideOnMobile: true, cell: (r) => <span className="line-clamp-2 text-muted-foreground">{r.reason}</span> },
+          { key: 's', header: 'Status', cell: (r) => <StatusBadge status={r.status} step={r.currentStep} /> },
+          { key: 'a', header: '', cell: (r) => (r.canCancel ? <Button size="sm" variant="ghost" onClick={() => setCancel(r)}>Cancel</Button> : null) },
+        ]} />
+      </Card>
+      <WfhApplyDialog open={open} onOpenChange={setOpen} />
+      <WfhCancelDialog req={cancel} onClose={() => setCancel(null)} />
+    </div>
+  );
+}
+
+function WfhApprovals() {
+  const { data, isLoading } = useApi<Wfh[]>('/leave/wfh');
+  return (
+    <Card>
+      <CardHeader title="Work from home" description="Requests from your team or the company, Team Lead first, then HR." />
+      <DataTable loading={isLoading} rows={data} rowKey={(r) => r.id} empty="No work-from-home requests" columns={[
+        { key: 'e', header: 'Employee', cell: (r) => <span className="font-medium">{r.employeeName}</span> },
+        { key: 'd', header: 'Dates', cell: (r) => <span className="whitespace-nowrap">{wfhDates(r)} · {r.days}d</span> },
+        { key: 'r', header: 'Reason', hideOnMobile: true, cell: (r) => <span className="line-clamp-2 text-muted-foreground">{r.reason}</span> },
+        { key: 's', header: 'Status', cell: (r) => <StatusBadge status={r.status} step={r.currentStep} /> },
+        { key: 'a', header: '', cell: (r) => (r.canDecide ? <DecisionButtons path={`/leave/wfh/${r.id}/decision`} invalidate={['/leave', '/calendar', '/attendance']} /> : null) },
+      ]} />
+    </Card>
+  );
+}
+
 function Approvals() {
   const { data, isLoading } = useApi<Req[]>('/leave/requests');
   const pendingCancel = data?.filter((r) => r.canDecideCancellation) ?? [];
@@ -115,6 +188,7 @@ function Approvals() {
           { key: 'a', header: '', cell: (r) => (r.canDecide ? <DecisionButtons path={`/leave/requests/${r.id}/decision`} invalidate={['/leave', '/calendar']} /> : null) },
         ]} />
       </Card>
+      <WfhApprovals />
     </div>
   );
 }
@@ -230,6 +304,7 @@ function LeaveInner() {
       <PageHeader title="Leave & holidays" description="Casual 14 days, sick 7 days, plus compensation leave from approved overtime." />
       <Tabs defaultValue={params.get('tab') ?? (me?.employee ? 'mine' : 'approvals')} tabs={[
         { value: 'mine', label: 'My leave', hidden: !me?.employee, content: <Mine types={types ?? []} /> },
+        { value: 'wfh', label: 'Work from home', hidden: !me?.employee, content: <MyWfh /> },
         { value: 'approvals', label: 'Approvals', hidden: !can(P.LEAVE_APPROVE_TL, P.LEAVE_APPROVE_HR), content: <Approvals /> },
         { value: 'holidays', label: 'Holidays', content: <Holidays /> },
         { value: 'policy', label: 'Leave policy', hidden: !can(P.LEAVE_MANAGE), content: <Policy types={types ?? []} /> },

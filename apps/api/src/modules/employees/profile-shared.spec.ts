@@ -15,6 +15,8 @@ import {
   selfProfileUpdateSchema,
   socialLinksSchema,
   toInternationalPhone,
+  wfhRequestSchema,
+  WORKFLOWS,
 } from '@hrms/shared';
 
 describe('phone numbers with country codes', () => {
@@ -149,6 +151,19 @@ describe('profile record schemas', () => {
     expect(batch.safeParse({ items: [exp, exp] }).success).toBe(true);
     expect(batch.safeParse({ items: Array.from({ length: 21 }, () => exp) }).success).toBe(false);
     expect(batch.safeParse({ items: [exp, { ...exp, endDate: '2000-01-01' }] }).success).toBe(false);
+  });
+});
+
+describe('work from home requests', () => {
+  it('needs a reason, dates in order and at most 31 days', () => {
+    expect(wfhRequestSchema.safeParse({ startDate: '2026-11-16', endDate: '2026-11-18', reason: 'Plumber visit' }).success).toBe(true);
+    expect(wfhRequestSchema.safeParse({ startDate: '2026-11-18', endDate: '2026-11-16', reason: 'Plumber visit' }).success).toBe(false);
+    expect(wfhRequestSchema.safeParse({ startDate: '2026-11-01', endDate: '2026-12-15', reason: 'Long stay' }).success).toBe(false);
+    expect(wfhRequestSchema.safeParse({ startDate: '2026-11-16', endDate: '2026-11-16', reason: '' }).success).toBe(false);
+  });
+
+  it('uses the same approvers as leave: Team Lead, then HR', () => {
+    expect(WORKFLOWS.WORK_FROM_HOME.map((s) => [s.key, s.permission])).toEqual(WORKFLOWS.LEAVE.map((s) => [s.key, s.permission]));
   });
 });
 

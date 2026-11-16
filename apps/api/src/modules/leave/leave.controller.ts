@@ -10,14 +10,16 @@ import {
   leaveCancelSchema,
   leaveRequestSchema,
   leaveTypeSchema,
+  wfhRequestSchema,
   type DecisionInput,
   type LeaveRequestInput,
+  type WfhRequestInput,
 } from '@hrms/shared';
-import { and, asc, desc, eq, gte, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { currentUser } from '../../common/context';
 import { Audit, RequireAny, RequireModule } from '../../common/decorators';
-import { badRequest, forbidden } from '../../common/errors';
+import { badRequest, conflict, forbidden } from '../../common/errors';
 import { monthRange, todayIn } from '../../common/tz';
 import { one, scoped, requireDelete, assertUnused, countWhere } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
@@ -35,6 +37,7 @@ import {
   leaveRequests,
   leaveTypes,
   overtimeRecords,
+  wfhRequests,
 } from '../../db/schema';
 import { AttendanceService } from '../attendance/attendance.service';
 import { LeaveService } from './leave.service';
@@ -265,6 +268,98 @@ export class LeaveController {
     return this.approvals.history('LEAVE', id);
   }
 
+  /* ---------------- Work from home (Team Lead → HR, like leave) ---------------- */
+
+  @Get('leave/wfh')
+  async wfhList(@Query(zp(listQuery)) q: z.infer<typeof listQuery>) {
+    const user = currentUser();
+    let visible: string[] | null;
+    if (q.mine) visible = [this.scope.requireEmployee()];
+    else visible = await this.scope.visibleEmployeeIds(P.LEAVE_APPROVE_HR, P.LEAVE_APPROVE_TL);
+    if (q.employeeId) {
+      if (visible && !visible.includes(q.employeeId)) throw forbidden();
+      visible = [q.employeeId];
+    }
+    const conds: SQL[] = [];
+    const s = scoped(wfhRequests.employeeId, visible);
+    if (s) conds.push(s);
+    if (q.status) conds.push(eq(wfhRequests.status, q.status));
+    if (q.year) conds.push(sql`extract(year from ${wfhRequests.startDate}) = ${q.year}`);
+    const rows = await this.db.tx
+      .select({ r: wfhRequests, employeeName: employees.fullName })
+      .from(wfhRequests)
+      .innerJoin(employees, eq(employees.id, wfhRequests.employeeId))
+      .where(conds.length ? and(...conds) : undefined)
+      .orderBy(desc(wfhRequests.createdAt))
+      .limit(500);
+    const t = await this.attendance.tenant();
+    const today = todayIn(t.timezone);
+    return Promise.all(
+      rows.map(async (r) => ({
+        ...r.r,
+        employeeName: r.employeeName,
+        days: await this.svc.countDays(r.r.employeeId, r.r.startDate, r.r.endDate, false),
+        canDecide: r.r.employeeId !== user.employeeId && (await this.approvals.canDecide('WORK_FROM_HOME', r.r)),
+        canCancel: r.r.employeeId === user.employeeId && (r.r.status === 'PENDING' || (r.r.status === 'APPROVED' && r.r.startDate > today)),
+      })),
+    );
+  }
+
+  @Post('leave/wfh')
+  @Audit('wfh.requested', 'wfh_request')
+  async wfhApply(@Body(zp(wfhRequestSchema)) body: WfhRequestInput) {
+    const employeeId = this.scope.requireEmployee();
+    const tx = this.db.tx;
+    const days = await this.svc.countDays(employeeId, body.startDate, body.endDate, false);
+    if (days === 0) throw badRequest('Those dates are weekends or holidays. Pick working days.', 'NO_WORKING_DAYS');
+    const overlapping = (table: typeof wfhRequests | typeof leaveRequests) =>
+      tx
+        .select({ id: table.id })
+        .from(table)
+        .where(and(eq(table.employeeId, employeeId), inArray(table.status, ['PENDING', 'APPROVED']), lte(table.startDate, body.endDate), gte(table.endDate, body.startDate)))
+        .limit(1);
+    if ((await overlapping(wfhRequests)).length) throw conflict('You already asked to work from home on some of these days.', 'WFH_OVERLAP');
+    if ((await overlapping(leaveRequests)).length) throw conflict('You have leave on some of these days.', 'LEAVE_OVERLAP');
+    const row = one(await tx.insert(wfhRequests).values({ tenantId: currentUser().tenantId, employeeId, ...body }).returning());
+    const wf = await this.approvals.submit('WORK_FROM_HOME', row.id, employeeId, { title: `Work from home (${days} day${days === 1 ? '' : 's'})`, link: '/leave?tab=wfh' });
+    await tx.update(wfhRequests).set({ status: wf.status, currentStep: wf.currentStep }).where(eq(wfhRequests.id, row.id));
+    if (wf.status === 'APPROVED') await this.attendance.recompute(employeeId, row.startDate, row.endDate);
+    return { ...row, days, status: wf.status, currentStep: wf.currentStep };
+  }
+
+  @Post('leave/wfh/:id/decision')
+  @Audit('wfh.decided', 'wfh_request')
+  async wfhDecide(@Param('id', ParseUUIDPipe) id: string, @Body(zp(decision)) body: DecisionInput) {
+    const tx = this.db.tx;
+    const r = one(await tx.select().from(wfhRequests).where(eq(wfhRequests.id, id)), 'Work from home request');
+    const wf = await this.approvals.decide('WORK_FROM_HOME', r, body.approve, body.comment, { title: `Work from home (${r.startDate}${r.endDate !== r.startDate ? ` – ${r.endDate}` : ''})`, link: '/leave?tab=wfh' });
+    await tx.update(wfhRequests).set({ status: wf.status, currentStep: wf.currentStep }).where(eq(wfhRequests.id, id));
+    if (wf.status === 'APPROVED') await this.attendance.recompute(r.employeeId, r.startDate, r.endDate);
+    return { id, status: wf.status, currentStep: wf.currentStep };
+  }
+
+  /** The employee withdraws a pending request, or an approved one that hasn't started yet. */
+  @Post('leave/wfh/:id/cancel')
+  @Audit('wfh.cancelled', 'wfh_request')
+  async wfhCancel(@Param('id', ParseUUIDPipe) id: string, @Body(zp(leaveCancelSchema)) body: z.infer<typeof leaveCancelSchema>) {
+    const tx = this.db.tx;
+    const r = one(await tx.select().from(wfhRequests).where(eq(wfhRequests.id, id)), 'Work from home request');
+    if (r.employeeId !== currentUser().employeeId) throw forbidden();
+    const today = todayIn((await this.attendance.tenant()).timezone);
+    if (r.status === 'APPROVED' && r.startDate <= today) throw badRequest('This work-from-home period has started. Ask HR to change your attendance.', 'WFH_STARTED');
+    if (r.status !== 'PENDING' && r.status !== 'APPROVED') throw badRequest('Only pending or upcoming work from home can be cancelled');
+    await tx.update(wfhRequests).set({ status: 'CANCELLED', currentStep: null, cancellationReason: body.reason }).where(eq(wfhRequests.id, id));
+    await this.approvals.recordCancel('WORK_FROM_HOME', id, body.reason);
+    return { id, status: 'CANCELLED' };
+  }
+
+  @Get('leave/wfh/:id/history')
+  async wfhHistory(@Param('id', ParseUUIDPipe) id: string) {
+    const r = one(await this.db.tx.select().from(wfhRequests).where(eq(wfhRequests.id, id)), 'Work from home request');
+    await this.scope.assertCanView(r.employeeId, P.LEAVE_APPROVE_HR, P.LEAVE_APPROVE_TL);
+    return this.approvals.history('WORK_FROM_HOME', id);
+  }
+
   /* ---------------- Holidays (C4) ---------------- */
 
   @RequireModule('CORE')
@@ -368,6 +463,14 @@ export class LeaveController {
       leaves: leaves.map((l) => ({ id: l.r.id, startDate: l.r.startDate, endDate: l.r.endDate, status: l.r.status, currentStep: l.r.currentStep, cancellationStatus: l.r.cancellationStatus, typeName: l.typeName, color: l.color, halfDay: l.r.halfDay })),
       overtime: overtime.map((o) => ({ date: o.date, minutes: o.approvedMinutes ?? o.minutes, status: o.status })),
       birthdays: birthdays.map((b) => ({ id: b.id, fullName: b.fullName, day: Number(b.dateOfBirth!.slice(8, 10)), avatarFileId: b.avatarFileId })),
+      wfh: employeeId
+        ? (
+            await tx
+              .select({ id: wfhRequests.id, startDate: wfhRequests.startDate, endDate: wfhRequests.endDate, status: wfhRequests.status, currentStep: wfhRequests.currentStep })
+              .from(wfhRequests)
+              .where(and(eq(wfhRequests.employeeId, employeeId), inArray(wfhRequests.status, ['PENDING', 'APPROVED']), lte(wfhRequests.startDate, to), gte(wfhRequests.endDate, from)))
+          )
+        : [],
     };
   }
 }

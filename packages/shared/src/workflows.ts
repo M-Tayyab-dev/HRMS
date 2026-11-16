@@ -18,6 +18,11 @@ export const WORKFLOWS = {
     { key: 'TEAM_LEAD', label: 'Team Lead', permission: PERMISSIONS.LEAVE_APPROVE_TL },
     { key: 'HR', label: 'HR', permission: PERMISSIONS.LEAVE_APPROVE_HR },
   ],
+  /** Work from home: same approvers as leave (Team Lead, then HR). */
+  WORK_FROM_HOME: [
+    { key: 'TEAM_LEAD', label: 'Team Lead', permission: PERMISSIONS.LEAVE_APPROVE_TL },
+    { key: 'HR', label: 'HR', permission: PERMISSIONS.LEAVE_APPROVE_HR },
+  ],
   ATTENDANCE_CORRECTION: [
     { key: 'TEAM_LEAD', label: 'Team Lead', permission: PERMISSIONS.ATTENDANCE_CORRECTION_APPROVE_TL },
     { key: 'HR', label: 'HR', permission: PERMISSIONS.ATTENDANCE_CORRECTION_APPROVE_HR },

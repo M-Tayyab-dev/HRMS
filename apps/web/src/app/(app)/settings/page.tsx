@@ -277,10 +277,12 @@ function Schedules() {
 
 export default function SettingsPage() {
   const { can, hasModule } = useAuth();
+  // Quick actions on the Settings overview open a specific tab (?tab=schedules…).
+  const [tab] = useState(() => (typeof window === 'undefined' ? undefined : new URLSearchParams(window.location.search).get('tab') ?? undefined));
   return (
     <>
       <PageHeader title="Settings" />
-      <Tabs tabs={[
+      <Tabs defaultValue={tab} tabs={[
         { value: 'company', label: 'Company', hidden: !can(P.TENANT_SETTINGS, P.DIRECTORY_SETTINGS), content: <div className="space-y-6">{can(P.TENANT_SETTINGS) && <CompanyLogoCard />}<Company /></div> },
         { value: 'schedules', label: 'Working hours', hidden: !can(P.ATTENDANCE_MANAGE), content: <Schedules /> },
         { value: 'id-card', label: 'ID card', hidden: !can(P.TENANT_SETTINGS), content: <IdCardSettings /> },

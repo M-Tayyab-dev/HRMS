@@ -15,6 +15,7 @@ import {
   heldPunches,
   holidays,
   leaveRequests,
+  wfhRequests,
   leaveTypes,
   overtimeRecords,
   tenants,
@@ -97,6 +98,10 @@ export class AttendanceService {
       .select({ date: compensationRequests.date, type: compensationRequests.type, minutes: compensationRequests.minutes })
       .from(compensationRequests)
       .where(and(eq(compensationRequests.employeeId, employeeId), inArray(compensationRequests.type, ['HALF_DAY', 'REDUCED_HOURS']), eq(compensationRequests.status, 'APPROVED')));
+    const wfh = await tx
+      .select({ startDate: wfhRequests.startDate, endDate: wfhRequests.endDate })
+      .from(wfhRequests)
+      .where(and(eq(wfhRequests.employeeId, employeeId), eq(wfhRequests.status, 'APPROVED'), lte(wfhRequests.startDate, end), gte(wfhRequests.endDate, from)));
     const halfDays = approvedComp.filter((c) => c.type === 'HALF_DAY');
     const reducedOn = (date: string) => approvedComp.filter((c) => c.type === 'REDUCED_HOURS' && c.date === date).reduce((a, c) => a + c.minutes, 0);
 
@@ -104,7 +109,9 @@ export class AttendanceService {
       if (date < emp.joiningDate || (emp.exitDate && date > emp.exitDate)) continue;
       const dayPunches = punches.filter((p) => localDate(p.punchedAt, t.timezone) === date);
       const leave = leaves.find((l) => l.startDate <= date && l.endDate >= date);
+      const workFromHome = wfh.some((w) => w.startDate <= date && w.endDate >= date);
       const r = computeDay({
+        workFromHome,
         date,
         tz: t.timezone,
         schedule,
@@ -133,6 +140,8 @@ export class AttendanceService {
         status,
         skippedBreak: r.skippedBreak,
         earlyLeave: r.earlyLeave,
+        // Approved WFH marks the day; otherwise HR's manual WFH flag on the day is left as it is.
+        ...(workFromHome ? { workFromHome: true } : {}),
       };
       await tx
         .insert(attendanceDays)
