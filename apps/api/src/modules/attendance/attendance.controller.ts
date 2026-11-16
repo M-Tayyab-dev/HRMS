@@ -271,7 +271,11 @@ export class AttendanceController {
       throw badRequest(why[before.state] ?? 'Not possible right now', 'CLOCK_STATE');
     }
     const last = before.punches[before.punches.length - 1];
-    if (last && Date.now() - new Date(last.at).getTime() < 30_000) throw badRequest('Please wait a moment before the next action.', 'CLOCK_TOO_SOON');
+    const sinceLast = last ? Date.now() - new Date(last.at).getTime() : Infinity;
+    if (sinceLast < 30_000) {
+      const left = Math.max(1, Math.ceil((30_000 - sinceLast) / 1000));
+      throw badRequest(`Please wait 30 seconds between actions. Try again in ${left} second${left === 1 ? '' : 's'}.`, 'CLOCK_TOO_SOON');
+    }
     const note = body.type === 'IN' && body.workFromHome ? 'Signed in from home' : undefined;
     await this.svc.ingest([{ employeeId, at: new Date(), type: body.type, note }], 'WEB');
     if (body.type === 'IN' && body.workFromHome && !before.workFromHome) {
