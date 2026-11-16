@@ -12,6 +12,7 @@ import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
 import { Donut, HoursChart, Line } from '@/components/ui/charts';
 import { api, qs, downloadCsv } from '@/lib/api';
+import { PunchClock } from '@/components/punch-clock';
 import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { date, dateTime, hours, monthLabel, time, todayLocal } from '@/lib/format';
@@ -459,6 +460,12 @@ export default function AttendancePage() {
   return (
     <>
       <PageHeader title="Attendance" description="Biometric check-ins, working hours, late arrivals and corrections." />
+      {me?.employee && (
+        <Card className="mb-5">
+          <CardHeader title="Today" description="Sign in from the app (or from home), take breaks and sign out. Biometric punches count too." />
+          <CardBody className="p-4"><PunchClock /></CardBody>
+        </Card>
+      )}
       <Tabs tabs={[
         { value: 'me', label: 'My attendance', hidden: !me?.employee, content: <MyAttendance /> },
         { value: 'reports', label: 'Reports', hidden: !can(P.ATTENDANCE_READ_ALL, P.ATTENDANCE_READ_TEAM), content: <Reports /> },

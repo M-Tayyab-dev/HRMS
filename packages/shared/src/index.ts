@@ -15,3 +15,4 @@ export * from './audit-labels';
 export * from './tenure';
 export * from './phone';
 export * from './schemas/profile';
+export * from './clock';

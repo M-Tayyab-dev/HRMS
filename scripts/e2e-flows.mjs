@@ -505,6 +505,21 @@ async function main() {
   const hrWfh = (await HR.get('/leave/wfh')).data;
   expect(hrWfh.some((w) => w.id === pastWfh.data.id && w.employeeName === 'Esha Exec'), 'HR sees work from home requests company-wide');
 
+  // Punch clock: sign in from home with the app, then only valid next actions
+  expect((await Z.get('/attendance/me/clock')).data.state === 'NOT_STARTED', 'punch clock starts not signed in');
+  expect((await Z.post('/attendance/me/clock', { type: 'BREAK_START' })).status === 400, 'cannot take a break before signing in');
+  const zin = await Z.post('/attendance/me/clock', { type: 'IN', workFromHome: true });
+  expect(zin.status === 201 && zin.data.state === 'WORKING' && zin.data.allowed.includes('BREAK_START') && zin.data.allowed.includes('OUT'), 'signed in from the app: Take break and Sign out offered', zin.data);
+  expect(zin.data.workFromHome?.status === 'PENDING' && zin.data.workFromHome.currentStep === 'TEAM_LEAD', 'signing in from home asks the Team Lead for work-from-home approval', zin.data.workFromHome);
+  expect((await TL.get('/approvals/inbox')).data.some((i) => i.workflow === 'WORK_FROM_HOME' && i.employeeName === 'Zara Colleague'), 'the home sign-in request reaches the team lead');
+  const zAgain = await Z.post('/attendance/me/clock', { type: 'IN' });
+  expect(zAgain.status === 400 && zAgain.data.code === 'CLOCK_STATE', 'cannot sign in twice', zAgain.data);
+  expect((await Z.post('/attendance/me/clock', { type: 'BREAK_END' })).data.code === 'CLOCK_STATE', 'cannot end a break that was not started');
+  expect((await Z.post('/attendance/me/clock', { type: 'BREAK_START' })).data.code === 'CLOCK_TOO_SOON', 'actions are spaced out (no double clicks)');
+  const zDash = (await Z.get('/dashboard')).data.employee.signIn;
+  expect(zDash.source === 'HOME' && zDash.checkIn && !zDash.checkOut, 'dashboard shows signed in from home, still at work', zDash);
+  expect((await E.get('/attendance/me/clock')).data.state !== undefined && (await OPS.post('/attendance/me/clock', { type: 'FLY' })).status === 400, 'only the four actions are accepted');
+
   // Dashboard "my day": how I signed in today and my shift (for time passed / remaining)
   const myDay = (await E.get('/dashboard')).data.employee?.signIn;
   expect(myDay && typeof myDay.workingDay === 'boolean' && /^\d\d:\d\d$/.test(myDay.shift.startTime) && myDay.shift.netMinutes >= 0, 'dashboard returns my sign-in source and shift', myDay);

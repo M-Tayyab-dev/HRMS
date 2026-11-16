@@ -5,6 +5,7 @@ import { ATTENDANCE_COLORS as C, auditActionLabel } from '@hrms/shared';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { CalendarView } from '@/components/calendar-view';
+import { PunchClock } from '@/components/punch-clock';
 import { Bars, Donut } from '@/components/ui/charts';
 import { Avatar, Badge, BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, Progress, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
 import { Button } from '@/components/ui/button';
@@ -82,6 +83,7 @@ const SIGN_IN_LABEL: Record<string, string> = {
   IMPORT: 'Signed in (imported attendance)',
   MANUAL: 'Signed in (added by HR)',
   CORRECTION: 'Signed in (corrected attendance)',
+  WEB: 'Signed in from the app',
 };
 const hm = (mins: number) => `${Math.floor(mins / 60)}h ${String(Math.max(0, Math.round(mins % 60))).padStart(2, '0')}m`;
 
@@ -132,6 +134,12 @@ function MyDayCard({ signIn, status, showAttendance }: { signIn: SignIn; status:
                 <p className="mt-1 text-xs text-muted-foreground">Shift {signIn.shift.startTime}–{signIn.shift.endTime} · {hm(signIn.shift.breakMinutes)} break</p>
               </>
             ) : <p className="text-sm text-muted-foreground">Shift {signIn.shift.startTime}–{signIn.shift.endTime}. The timer starts when you sign in.</p>}
+          </div>
+        )}
+        {showAttendance && (
+          <div className="w-full border-t pt-3">
+            {/* Sign in (or from home), take a break and sign out right here. */}
+            <PunchClock />
           </div>
         )}
       </CardBody>

@@ -65,6 +65,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'employee.record_file_uploaded': 'Uploaded a supporting document',
   'sales.exported': 'Exported the sales revenue report',
   'wfh.requested': 'Asked to work from home',
+  'attendance.self_punch': 'Signed in, out or took a break in the app',
   'wfh.decided': 'Decided a work-from-home request',
   'wfh.cancelled': 'Cancelled a work-from-home request',
   'employee.terminated': 'Terminated an employee',
