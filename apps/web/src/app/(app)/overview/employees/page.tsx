@@ -1,13 +1,12 @@
 'use client';
 
-import { PERMISSIONS as P, type Paginated } from '@hrms/shared';
-import { Building2, Contact, Network, TrendingUp, UserMinus, UserPlus, UserRound, Users, UsersRound, UserCheck } from 'lucide-react';
+import { PERMISSIONS as P, formatPhoneDisplay, joinedLabel, type Paginated } from '@hrms/shared';
+import { BadgeCheck, Building2, Contact, FileText, IdCard, Network, TrendingUp, UserMinus, UserPlus, UserRound, Users, UsersRound, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
-import { useDirectory } from '@/components/domain';
 import { QuickActions, type QuickAction } from '@/components/overview';
 import { Bars } from '@/components/ui/charts';
-import { BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Stat } from '@/components/ui/display';
+import { BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, KeyValue, PageHeader, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
 import { useAuth } from '@/lib/auth';
 import { date, monthLabel, todayLocal } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
@@ -23,58 +22,56 @@ interface Headcount {
 }
 
 /**
- * Employees overview for staff without access to employee records: only what everyone may see
- * (the company directory and their own profile).
+ * Employees overview for staff without access to employee records: only their own details.
+ * Company-wide numbers (headcount, departments) are for HR / Company Admin.
  */
 function StaffEmployeesOverview() {
   const { me } = useAuth();
-  const { data: people, isLoading, error } = useDirectory();
-  const myDept = me?.employee?.departmentName;
-  const stats = useMemo(() => {
-    const rows = people ?? [];
-    const byDept = new Map<string, number>();
-    for (const p of rows) byDept.set(p.departmentName, (byDept.get(p.departmentName) ?? 0) + 1);
-    const mine = rows.find((p) => p.id === me?.employee?.id);
-    return {
-      total: rows.length,
-      departments: byDept.size,
-      byDepartment: [...byDept.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n),
-      sameDept: rows.filter((p) => p.departmentName === myDept && p.id !== me?.employee?.id),
-      manager: mine?.reportingManagerName ?? null,
-    };
-  }, [people, me, myDept]);
+  const { data: emp, isLoading, error } = useApi<EmployeeDetail>(me?.employee ? '/me/profile' : null);
 
+  if (!me?.employee) {
+    return <><PageHeader title="My employment" /><EmptyState icon={UserRound} title="No employee profile" description="Your account isn't linked to an employee profile." /></>;
+  }
   return (
     <>
-      <PageHeader title="Employees overview" description="Your colleagues across the company." />
-      {error ? <ErrorState message={error.message} /> : isLoading ? <Skeleton className="h-64" /> : (
+      <PageHeader title="My employment" description="Your own details. Ask HR if anything is wrong." />
+      {error ? <ErrorState message={error.message} /> : isLoading || !emp ? <Skeleton className="h-64" /> : (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="People in the company" icon={Users} value={stats.total} hint="Active employees" />
-            <Stat label="Departments" icon={Building2} tone="warning" value={stats.departments} />
-            <Stat label={`In ${myDept ?? 'my department'}`} icon={UsersRound} tone="info" value={stats.sameDept.length + (myDept ? 1 : 0)} hint="Including you" />
-            <Stat label="Reports to" icon={UserCheck} tone="success" value={<span className="text-base">{stats.manager ?? '—'}</span>} />
+            <Stat label="Employee ID" icon={IdCard} value={<span className="text-xl">{emp.employeeCode}</span>} hint={joinedLabel(emp.joiningDate)} />
+            <Stat label="Department" icon={Building2} tone="warning" value={<span className="text-base">{emp.departmentName}</span>} hint={emp.team ? `Team: ${emp.team.teamName}` : 'No team yet'} />
+            <Stat label="Designation" icon={BadgeCheck} tone="info" value={<span className="text-base">{emp.designation}</span>} hint={`${emp.levelCode} – ${emp.levelTitle}`} />
+            <Stat label="Reports to" icon={UserCheck} tone="success" value={<span className="text-base">{emp.reportingManagerName ?? '—'}</span>} />
           </div>
           <QuickActions actions={[
-            { href: '/directory', label: 'Directory', description: 'Find people and contacts', icon: Contact },
-            { href: '/org-chart', label: 'Org chart', description: 'Who reports to whom', icon: Network },
             { href: '/profile', label: 'My profile', description: 'Details, documents, career', icon: UserRound },
+            { href: '/profile?tab=documents', label: 'My documents', description: 'Uploaded and HR documents', icon: FileText },
+            { href: '/directory', label: 'Directory', description: 'Find colleagues and contacts', icon: Contact },
             { href: '/resignations', label: 'Resignation', description: 'Submit or track yours', icon: UserMinus },
           ]} />
-          <div className="grid gap-3 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader title="People by department" />
-              <CardBody>{stats.byDepartment.length ? <BarList items={stats.byDepartment.map((d) => ({ label: d.name, value: d.n }))} /> : <p className="text-sm text-muted-foreground">No departments yet.</p>}</CardBody>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="Employment" action={<Link className="text-xs text-primary hover:underline" href="/profile?tab=career">Career</Link>} />
+              <CardBody>
+                <KeyValue items={[
+                  ['Joining date', date(emp.joiningDate)],
+                  ['Time with the company', emp.tenure],
+                  ['Level', `${emp.levelCode} – ${emp.levelTitle}`],
+                  ['Team', emp.team?.teamName],
+                  ['Status', <StatusBadge key="s" status={emp.employmentStatus} />],
+                ]} />
+              </CardBody>
             </Card>
             <Card>
-              <CardHeader title={`My department${myDept ? ` · ${myDept}` : ''}`} action={<Link className="text-xs text-primary hover:underline" href="/directory">Directory</Link>} />
-              {stats.sameDept.length ? (
-                <ul className="divide-y">
-                  {stats.sameDept.slice(0, 8).map((p) => (
-                    <li key={p.id} className="px-5 py-2.5 text-sm"><span className="block truncate font-medium">{p.fullName}</span><span className="block truncate text-xs text-muted-foreground">{p.designation}</span></li>
-                  ))}
-                </ul>
-              ) : <EmptyState icon={Users} title="No colleagues listed yet" />}
+              <CardHeader title="Contact" action={<Link className="text-xs text-primary hover:underline" href="/profile">Edit</Link>} />
+              <CardBody>
+                <KeyValue items={[
+                  ['Company email', emp.email],
+                  ['Phone', emp.contactNo ? formatPhoneDisplay(emp.contactNo) : null],
+                  ['Phone in directory', emp.hidePhone ? 'Hidden' : 'Shown'],
+                  ['Emergency contact', emp.emergencyContact ? formatPhoneDisplay(emp.emergencyContact) : null],
+                ]} />
+              </CardBody>
             </Card>
           </div>
         </div>

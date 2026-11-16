@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { currentUser } from '../../common/context';
 import { Audit, RequireAny, RequireModule } from '../../common/decorators';
 import { badRequest, conflict, forbidden } from '../../common/errors';
-import { addDays, eachDay, monthRange, todayIn } from '../../common/tz';
+import { monthRange, todayIn } from '../../common/tz';
 import { one, scoped, requireDelete, assertUnused, countWhere } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
 import { ApprovalsService } from '../../core/approvals.service';
@@ -143,7 +143,7 @@ export class LeaveController {
       .orderBy(desc(leaveRequests.createdAt))
       .limit(8);
     const balances = u.employeeId ? await this.svc.balances(u.employeeId, Number(today.slice(0, 4))) : [];
-    return { scope: visible === null ? 'company' : visible.length > 1 ? 'team' : 'self', ...k, balances, recent, last7: await this.lastSevenDays(today, visible), me: await this.myDay(today, balances) };
+    return { scope: visible === null ? 'company' : visible.length > 1 ? 'team' : 'self', ...k, balances, recent, me: await this.myDay(today, balances) };
   }
 
   /** The signed-in person's own numbers: today's check-in/out, leave totals and pending requests. */
@@ -204,37 +204,6 @@ export class LeaveController {
       leavePendingDays: sum('pending'),
       wfhPending,
     };
-  }
-
-  /** Mini calendar for the overview: who was on leave or working from home on each of the last 7 days, and holidays. */
-  private async lastSevenDays(today: string, visible: string[] | null) {
-    const tx = this.db.tx;
-    const from = addDays(today, -6);
-    const overlaps = <T extends typeof leaveRequests | typeof wfhRequests>(t: T) =>
-      and(eq(t.status, 'APPROVED'), lte(t.startDate, today), gte(t.endDate, from), scoped(t.employeeId, visible));
-    const [leaves, wfh, hols] = await Promise.all([
-      tx
-        .select({ employeeId: leaveRequests.employeeId, name: employees.fullName, startDate: leaveRequests.startDate, endDate: leaveRequests.endDate, typeName: leaveTypes.name, color: leaveTypes.color })
-        .from(leaveRequests)
-        .innerJoin(employees, eq(employees.id, leaveRequests.employeeId))
-        .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
-        .where(overlaps(leaveRequests)),
-      tx
-        .select({ employeeId: wfhRequests.employeeId, name: employees.fullName, startDate: wfhRequests.startDate, endDate: wfhRequests.endDate })
-        .from(wfhRequests)
-        .innerJoin(employees, eq(employees.id, wfhRequests.employeeId))
-        .where(overlaps(wfhRequests)),
-      tx.select({ date: holidays.date, name: holidays.name }).from(holidays).where(and(gte(holidays.date, from), lte(holidays.date, today), isNull(holidays.departmentId))),
-    ]);
-    return eachDay(from, today).map((date) => {
-      const on = <R extends { startDate: string; endDate: string }>(rows: R[]) => rows.filter((r) => r.startDate <= date && r.endDate >= date);
-      return {
-        date,
-        holiday: hols.find((h) => h.date === date)?.name ?? null,
-        onLeave: on(leaves).map((l) => ({ name: l.name, typeName: l.typeName, color: l.color })),
-        workFromHome: on(wfh).map((w) => ({ name: w.name })),
-      };
-    });
   }
 
   /* ---------------- Requests (Team Lead → HR, C3) ---------------- */
