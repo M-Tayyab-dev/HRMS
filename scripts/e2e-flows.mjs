@@ -503,7 +503,6 @@ async function main() {
   // Leave overview for module overviews
   const lo = await HR.get('/leave/overview');
   expect(lo.status === 200 && lo.data.scope === 'company' && typeof lo.data.pending === 'number', 'leave overview KPIs for HR');
-  expect(lo.data.last7?.length === 7 && lo.data.last7[6].date === today && lo.data.last7.every((d) => Array.isArray(d.onLeave) && Array.isArray(d.workFromHome)), 'leave overview has a 7-day mini calendar ending today', lo.data.last7);
   const eo = (await E.get('/leave/overview')).data;
   expect(eo.scope === 'self', 'leave overview scoped to the employee');
   expect(eo.me && typeof eo.me.leaveAvailable === 'number' && eo.me.requests.some((r) => r.kind === 'WORK_FROM_HOME') && eo.me.requests.some((r) => r.kind === 'LEAVE'), 'leave overview lists my own leave and work-from-home requests', eo.me);

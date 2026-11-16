@@ -3,7 +3,7 @@
 import { PERMISSIONS as P } from '@hrms/shared';
 import { AlarmClock, CalendarCheck, CalendarDays, CalendarPlus, CalendarRange, Clock, Coffee, Hourglass, House, Inbox, LogIn, LogOut, Plane, Timer } from 'lucide-react';
 import Link from 'next/link';
-import { LastSevenDays, type DaySummary } from '@/components/last-seven-days';
+import { CalendarView } from '@/components/calendar-view';
 import { QuickActions, type QuickAction } from '@/components/overview';
 import { Card, CardBody, CardHeader, EmptyState, ErrorState, PageHeader, Progress, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
 import { useAuth } from '@/lib/auth';
@@ -20,7 +20,6 @@ interface LeaveOverview {
   upcoming: number;
   balances: { leaveTypeId: string; name: string; color: string; available: number; allocated: number; used: number; pending: number }[];
   recent: { id: string; employeeName: string; typeName: string; typeColor: string; startDate: string; endDate: string; status: string; currentStep: string | null }[];
-  last7?: DaySummary[];
   /** The signed-in person's own numbers (null without an employee profile). */
   me?: {
     today: { status: string; checkIn: string | null; checkOut: string | null; workedMinutes: number; scheduledMinutes: number; breakMinutes: number; lateMinutes: number; workFromHome: boolean } | null;
@@ -40,7 +39,7 @@ const range = (r: { startDate: string; endDate: string }) => `${date(r.startDate
 const LEAVE_FLOWS = ['LEAVE', 'WORK_FROM_HOME'];
 
 /**
- * Attendance & leave overview, in this order: the last 7 days, my own stats (leave and today's attendance),
+ * Attendance & leave overview, in this order: the full month calendar, my own stats (leave and today's attendance),
  * my submitted requests and anything waiting for my approval, quick actions, then team / company numbers.
  */
 export default function LeaveOverviewPage() {
@@ -66,14 +65,14 @@ export default function LeaveOverviewPage() {
     <>
       <PageHeader title="Attendance & leave" description={SCOPE[data.scope]} />
       <div className="space-y-4">
-        {/* 1. Calendar first */}
-        {data.last7 && <LastSevenDays days={data.last7} description={`${SCOPE[data.scope]}: approved leave, work from home and holidays`} />}
+        {/* 1. Full calendar first: my attendance, leave, work from home, holidays, events and birthdays. */}
+        <CalendarView />
 
         {/* 2. My stats */}
         {data.me && (
           <section aria-labelledby="my-stats" className="space-y-2">
             <h2 id="my-stats" className="text-sm font-semibold text-muted-foreground">My stats</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Stat label="Leave available" icon={CalendarCheck} tone="success" value={`${data.me.leaveAvailable}`} hint={`days · ${data.me.leaveUsed} used this year`} />
               <Stat label="Pending" icon={Hourglass} tone="warning" value={`${data.me.leavePendingDays}`} hint={`leave days · ${data.me.wfhPending} WFH request${data.me.wfhPending === 1 ? '' : 's'}`} />
               {attendance && <>
