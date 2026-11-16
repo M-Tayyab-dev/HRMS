@@ -16,7 +16,7 @@ import { departments, employees, kpiTargets } from '../../db/schema';
 const REVENUE_METRIC = or(ilike(kpiTargets.metric, '%revenue%'), ilike(kpiTargets.metric, '%sales%'))!;
 
 /** A department is the sales department by its code (SALES) or name. */
-const isSalesDept = (code: string | null | undefined, name: string | null | undefined) => code?.toUpperCase() === 'SALES' || /\bsales\b/i.test(name ?? '');
+export const isSalesDept = (code: string | null | undefined, name: string | null | undefined) => code?.toUpperCase() === 'SALES' || /\bsales\b/i.test(name ?? '');
 
 /**
  * Who may see sales revenue, sales reports, dashboard sales metrics and exports:
