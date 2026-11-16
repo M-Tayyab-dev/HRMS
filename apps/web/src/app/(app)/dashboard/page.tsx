@@ -210,10 +210,13 @@ export default function DashboardPage() {
             {has('PAYROLL') && <Stat label="Last salary" icon={Receipt} tone="info" value={e.lastPayslip ? money(e.lastPayslip.net, cur) : '—'} hint={e.lastPayslip ? monthLabel(e.lastPayslip.period) : 'No slips yet'} />}
           </div>
 
+          {/* Stats, then the calendar, then quick links. */}
+          <DashboardCalendar />
+
           {/* Quick links: their own full-width row. Links every plan has, plus module links when the plan includes them. */}
           <Card>
             <CardHeader title="Quick links" />
-            <CardBody className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-10">
+            <CardBody className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-5">
               {([
                 ['/profile', 'My profile', UserRound, null, null],
                 ['/profile?tab=documents', 'HR documents', FileText, `${e.hrDocuments} shared`, null],
@@ -228,18 +231,17 @@ export default function DashboardPage() {
               ] as const).filter((x) => !x[4] || has(x[4])).map(([href, label, Icon, note]) => {
                 const I = Icon as typeof FileText;
                 return (
-                  <Link key={href as string} href={href as string} className="flex flex-col gap-1 rounded-md border p-2.5 text-sm hover:bg-muted">
-                    <I className="h-4 w-4 text-primary" aria-hidden />
-                    <span className="leading-tight">{label as string}</span>
-                    {note !== null && <span className="text-xs text-muted-foreground">{note as string}</span>}
+                  <Link key={href as string} href={href as string} className="flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-sm hover:bg-muted">
+                    <I className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                    <span className="min-w-0">
+                      <span className="block truncate">{label as string}</span>
+                      {note !== null && <span className="block text-xs text-muted-foreground">{note as string}</span>}
+                    </span>
                   </Link>
                 );
               })}
             </CardBody>
           </Card>
-
-          {/* Stats first, then the calendar. */}
-          <DashboardCalendar />
 
           <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
             {has('ATTENDANCE') && <Card className="lg:col-span-2">
