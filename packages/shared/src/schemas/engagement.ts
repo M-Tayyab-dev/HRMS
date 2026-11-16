@@ -150,6 +150,8 @@ export const tenantSettingsSchema = z.object({
   timezone: timeZone.optional(),
   currency: currencyCode.optional(),
   directoryShowJoinDate: z.boolean().optional(),
+  /** Show phone numbers to colleagues in the directory and on profiles (HR / admins always see them). */
+  directoryShowPhone: z.boolean().optional(),
   /** SEC-03: inactivity timeout (minutes), managed by Operations. */
   sessionIdleMinutes: z.coerce.number().int().min(5).max(480).optional(),
   medicalAnnualLimit: money.optional(),

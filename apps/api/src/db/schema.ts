@@ -50,6 +50,8 @@ const tenantId = () =>
 
 export interface TenantSettings {
   directoryShowJoinDate: boolean;
+  /** Colleagues see each other's phone numbers (directory, profiles). Off: only HR / admins and the person. Missing = on. */
+  directoryShowPhone?: boolean;
   /** SEC-03: inactivity timeout in minutes, set by Operations. */
   sessionIdleMinutes?: number;
   communityPostingMode: 'EVERYONE' | 'GRANTED_ONLY' | 'STAFF_ONLY';
@@ -66,6 +68,7 @@ export interface TenantSettings {
 
 export const DEFAULT_TENANT_SETTINGS: TenantSettings = {
   directoryShowJoinDate: false,
+  directoryShowPhone: true,
   sessionIdleMinutes: 30,
   communityPostingMode: 'GRANTED_ONLY',
   communityEngagementEnabled: true,
