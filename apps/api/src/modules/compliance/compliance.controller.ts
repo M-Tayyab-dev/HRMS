@@ -47,6 +47,42 @@ export class ComplianceController {
     private readonly scope: ScopeService,
   ) {}
 
+  /**
+   * Compliance overview: everyone gets their own numbers (published policies, their queries); people who
+   * manage policies, complaints or all queries also get those counts. Nothing beyond the person's access.
+   */
+  @Get('compliance/overview')
+  async overview() {
+    const u = currentUser();
+    const tx = this.db.tx;
+    const n = async (table: typeof policies | typeof complaints | typeof queries, where: SQL | undefined) =>
+      ((await tx.select({ n: sql<number>`count(*)::int` }).from(table).where(where)) as [{ n: number }])[0].n;
+    const open = sql`${queries.status} in ('PENDING', 'IN_PROGRESS')`;
+    const out: Record<string, unknown> = {
+      publishedPolicies: await n(policies, eq(policies.status, 'PUBLISHED')),
+      recentPolicies: await tx
+        .select({ id: policies.id, title: policies.title, category: policies.category, updatedAt: policies.updatedAt })
+        .from(policies)
+        .where(eq(policies.status, 'PUBLISHED'))
+        .orderBy(desc(policies.updatedAt))
+        .limit(5),
+    };
+    if (u.employeeId) {
+      out.myOpenQueries = await n(queries, and(eq(queries.employeeId, u.employeeId), open));
+      out.assignedOpenQueries = await n(queries, and(eq(queries.assignedToEmployeeId, u.employeeId), open));
+      out.myQueries = await tx
+        .select({ id: queries.id, subject: queries.subject, status: queries.status, updatedAt: queries.updatedAt })
+        .from(queries)
+        .where(eq(queries.employeeId, u.employeeId))
+        .orderBy(desc(queries.updatedAt))
+        .limit(5);
+    }
+    if (u.permissions.has(P.POLICIES_MANAGE)) out.draftPolicies = await n(policies, eq(policies.status, 'DRAFT'));
+    if (u.permissions.has(P.COMPLAINTS_MANAGE)) out.openComplaints = await n(complaints, sql`${complaints.status} in ('SUBMITTED', 'UNDER_REVIEW')`);
+    if (u.permissions.has(P.QUERIES_READ_ALL)) out.openQueriesAll = await n(queries, open);
+    return out;
+  }
+
   /* ---------------- F1 Policies & documents ---------------- */
 
   @Get('policies')

@@ -128,8 +128,23 @@ export default function LeaveOverviewPage() {
           </div>
         )}
 
-        {/* 4. Quick actions */}
-        <QuickActions actions={actions} />
+        {/* 4. Quick actions and my balances side by side */}
+        <div className="grid items-start gap-3 lg:grid-cols-2">
+          <QuickActions actions={actions} columns={2} />
+          {data.balances.length > 0 && (
+            <Card>
+              <CardHeader title="My balances" action={<Link className="text-xs text-primary hover:underline" href="/leave">Apply</Link>} />
+              <CardBody className="space-y-3">
+                {data.balances.map((b) => (
+                  <div key={b.leaveTypeId}>
+                    <div className="mb-1 flex justify-between text-sm"><span>{b.name}</span><span className="font-medium tabular-nums">{b.available} <span className="text-muted-foreground">/ {b.allocated}</span></span></div>
+                    <Progress value={b.allocated ? (b.available / b.allocated) * 100 : 0} />
+                  </div>
+                ))}
+              </CardBody>
+            </Card>
+          )}
+        </div>
 
         {/* 5. Team / company numbers for approvers */}
         {data.scope !== 'self' && (
@@ -144,21 +159,8 @@ export default function LeaveOverviewPage() {
           </section>
         )}
 
-        {/* 6. Balances and the latest leave in my scope */}
-        <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
-          {data.balances.length > 0 && (
-            <Card>
-              <CardHeader title="My balances" action={<Link className="text-xs text-primary hover:underline" href="/leave">Apply</Link>} />
-              <CardBody className="space-y-3">
-                {data.balances.map((b) => (
-                  <div key={b.leaveTypeId}>
-                    <div className="mb-1 flex justify-between text-sm"><span>{b.name}</span><span className="font-medium tabular-nums">{b.available} <span className="text-muted-foreground">/ {b.allocated}</span></span></div>
-                    <Progress value={b.allocated ? (b.available / b.allocated) * 100 : 0} />
-                  </div>
-                ))}
-              </CardBody>
-            </Card>
-          )}
+        {/* 6. The latest leave in my scope (Team Leads / HR) */}
+        <div className="grid gap-3">
           {data.scope !== 'self' && (
             <Card>
               <CardHeader title={data.scope === 'company' ? 'Latest leave requests' : 'Latest from my team'} action={<Link className="text-xs text-primary hover:underline" href="/leave?tab=approvals">All requests</Link>} />

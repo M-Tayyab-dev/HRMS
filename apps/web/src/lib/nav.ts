@@ -116,6 +116,7 @@ export const NAV: NavGroup[] = [
     label: 'Compliance',
     icon: FileText,
     items: [
+      { href: '/overview/compliance', label: 'Overview', icon: LayoutGrid, module: 'COMPLIANCE' },
       { href: '/policies', label: 'Policies & documents', icon: FileText, module: 'COMPLIANCE' },
       { href: '/guidelines', label: 'Community guidelines', icon: ScrollText, module: 'COMMUNITY' },
       { href: '/complaints', label: 'Complaints', icon: MessageSquareWarning, module: 'COMPLIANCE' },

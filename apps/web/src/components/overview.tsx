@@ -13,13 +13,13 @@ export interface QuickAction {
 }
 
 /** Module overview "Quick actions": links (or buttons) to the module's existing pages. */
-export function QuickActions({ actions }: { actions: QuickAction[] }) {
+export function QuickActions({ actions, columns = 4, title = 'Quick actions' }: { actions: QuickAction[]; /** 2 when the card sits in half the page width. */ columns?: 2 | 4; title?: string }) {
   if (!actions.length) return null;
   const cls = 'flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-muted/50';
   return (
     <Card>
-      <CardHeader title="Quick actions" />
-      <CardBody className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <CardHeader title={title} />
+      <CardBody className={columns === 2 ? 'grid gap-2 sm:grid-cols-2' : 'grid gap-2 sm:grid-cols-2 lg:grid-cols-4'}>
         {actions.map(({ href, onClick, label, description, icon: Icon }) => {
           const inner = (
             <>

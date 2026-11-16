@@ -495,6 +495,15 @@ async function main() {
   const hrWfh = (await HR.get('/leave/wfh')).data;
   expect(hrWfh.some((w) => w.id === pastWfh.data.id && w.employeeName === 'Esha Exec'), 'HR sees work from home requests company-wide');
 
+  // Dashboard "my day": how I signed in today and my shift (for time passed / remaining)
+  const myDay = (await E.get('/dashboard')).data.employee?.signIn;
+  expect(myDay && typeof myDay.workingDay === 'boolean' && /^\d\d:\d\d$/.test(myDay.shift.startTime) && myDay.shift.netMinutes >= 0, 'dashboard returns my sign-in source and shift', myDay);
+  // Compliance overview: own numbers for everyone, management counts only with the permission
+  const eComp = (await E.get('/compliance/overview')).data;
+  expect(typeof eComp.publishedPolicies === 'number' && typeof eComp.myOpenQueries === 'number' && !('openComplaints' in eComp) && !('openQueriesAll' in eComp), 'compliance overview shows an employee only their own numbers', eComp);
+  const hrComp = (await HR.get('/compliance/overview')).data;
+  expect(typeof hrComp.openComplaints === 'number' && typeof hrComp.openQueriesAll === 'number' && typeof hrComp.draftPolicies === 'number', 'compliance overview adds management counts for HR', hrComp);
+
   // Access & roles overview
   const ao = (await admin.get('/access/overview')).data;
   expect(ao.accounts?.total >= 8 && ao.roles?.some((r) => r.role === 'HR' && r.users >= 1) && ao.activity?.recent.length > 0, 'access overview: accounts, roles and recent activity', ao.accounts);

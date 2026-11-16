@@ -1,18 +1,89 @@
 'use client';
 
-import { ChevronRight, Plus, Search, Settings } from 'lucide-react';
+import { Building2, CheckCircle2, CreditCard, Plus, Search, Settings, TrendingUp, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CompanyLogo } from '@/components/brand';
+import { QuickActions } from '@/components/overview';
 import { Button } from '@/components/ui/button';
-import { Badge, Card, EmptyState, PageHeader, Skeleton } from '@/components/ui/display';
+import { Badge, Card, CardHeader, EmptyState, PageHeader, Skeleton, Stat } from '@/components/ui/display';
 import { Input } from '@/components/ui/form';
+import { date, money } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import { NewCompanyDialog, PlatformNav, usePlatformMe, type CompanyRow } from './shared';
 import { RecentLeads } from './billing';
 import { BillingStatusBadge } from '@/components/billing-status';
 
-/** Landing page after a platform owner signs in: pick a company, or open platform-wide settings. */
+interface Plan { id: string; name: string; priceMonthly: number; priceAnnual: number | null; currency: string }
+
+/** Platform-wide KPIs, what needs attention, newest companies and shortcuts. */
+function PlatformOverview({ companies, onNewCompany }: { companies: CompanyRow[]; onNewCompany: () => void }) {
+  const { data: plans } = useApi<Plan[]>('/platform/plans');
+  const real = companies.filter((c) => !c.isDemo);
+  const monthStart = new Date().toISOString().slice(0, 7);
+  // Recurring revenue from paying companies' plans (yearly prices spread over 12 months), per currency.
+  const mrr = new Map<string, number>();
+  for (const c of real) {
+    const p = plans?.find((x) => x.id === c.planId);
+    if (!p || c.status !== 'ACTIVE') continue;
+    const monthly = c.billingCycle === 'ANNUAL' && p.priceAnnual ? p.priceAnnual / 12 : p.priceMonthly;
+    mrr.set(p.currency, (mrr.get(p.currency) ?? 0) + monthly);
+  }
+  const attention = real.filter((c) => c.billingStatus !== 'PAID' || c.status !== 'ACTIVE' || (c.maxEmployees && c.activeEmployees >= c.maxEmployees));
+  const newest = [...real].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
+  const reason = (c: CompanyRow) =>
+    c.status !== 'ACTIVE' ? 'Suspended' : c.billingStatus === 'UNPAID' ? 'Unpaid: locked to Billing' : c.billingStatus === 'DUE' ? 'Payment due' : 'At its employee limit';
+
+  return (
+    <div className="mb-6 space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label="Companies" icon={Building2} value={real.length} hint={`${real.filter((c) => c.status === 'ACTIVE').length} active · ${real.filter((c) => c.createdAt.slice(0, 7) === monthStart).length} new this month`} />
+        <Stat label="Active staff" icon={Users} tone="info" value={real.reduce((a, c) => a + c.activeEmployees, 0)} hint="Across all companies" />
+        <Stat label="Payments" icon={CreditCard} tone={real.some((c) => c.billingStatus !== 'PAID') ? 'warning' : 'success'} value={`${real.filter((c) => c.billingStatus === 'PAID').length} paid`} hint={`${real.filter((c) => c.billingStatus === 'DUE').length} due · ${real.filter((c) => c.billingStatus === 'UNPAID').length} unpaid`} />
+        <Stat label="Monthly recurring revenue" icon={TrendingUp} tone="success" value={<span className="text-xl">{mrr.size ? [...mrr].map(([cur, v]) => money(Math.round(v), cur)).join(' + ') : '—'}</span>} hint={`${real.filter((c) => c.signupSource === 'SELF').length} signed up from the website`} />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title="Needs attention" description="Unpaid, due, suspended or at their employee limit" />
+          {attention.length ? (
+            <ul className="divide-y">
+              {attention.slice(0, 6).map((c) => (
+                <li key={c.id}>
+                  <Link href={`/platform/companies/${c.id}`} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm hover:bg-muted/50">
+                    <span className="min-w-0"><span className="block truncate font-medium">{c.name}</span><span className="block text-xs text-muted-foreground">{reason(c)}</span></span>
+                    <BillingStatusBadge status={c.billingStatus} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : <EmptyState icon={CheckCircle2} title="All companies are in good standing" />}
+        </Card>
+        <Card>
+          <CardHeader title="Newest companies" />
+          {newest.length ? (
+            <ul className="divide-y">
+              {newest.map((c) => (
+                <li key={c.id}>
+                  <Link href={`/platform/companies/${c.id}`} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm hover:bg-muted/50">
+                    <span className="min-w-0 truncate font-medium">{c.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{date(c.createdAt)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : <EmptyState title="No companies yet" />}
+        </Card>
+      </div>
+      <QuickActions actions={[
+        { onClick: onNewCompany, label: 'New company', description: 'Workspace and Company Admin', icon: Plus },
+        { href: '/platform/leads', label: 'Leads', description: 'Demo visitors and sign-ups', icon: UserPlus },
+        { href: '/platform/settings', label: 'Plans & settings', description: 'Pricing, Super Admins, email', icon: Settings },
+      ]} />
+    </div>
+  );
+}
+
+/** Landing page after a platform owner signs in: platform dashboard, then pick a company. */
 export default function PlatformPage() {
   const { data: me, isLoading } = usePlatformMe();
   const { data: companies, isLoading: cl } = useApi<CompanyRow[]>(me ? '/platform/companies' : null, { fresh: true });
@@ -27,20 +98,14 @@ export default function PlatformPage() {
   return (
     <>
       <PlatformNav me={me} />
-      <PageHeader title="Choose a company" description="Open a company to manage its plan, modules and Company Admins, or change settings that apply to all companies."
+      <PageHeader title="Platform dashboard" description="All client companies at a glance. Open a company to manage its plan, modules and Company Admins."
         actions={<Button onClick={() => setNewCompany(true)}><Plus className="h-4 w-4" /> New company</Button>} />
+
+      {cl ? <Skeleton className="mb-6 h-32" /> : <PlatformOverview companies={companies ?? []} onNewCompany={() => setNewCompany(true)} />}
 
       <RecentLeads />
 
-      <Link href="/platform/settings" className="mb-6 flex items-center gap-4 rounded-xl border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-primary-soft/40">
-        <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-primary-soft text-primary"><Settings className="h-5 w-5" aria-hidden /></span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-medium">General settings for all companies</span>
-          <span className="block text-sm text-muted-foreground">Plans and pricing, Super Admins and outgoing email.</span>
-        </span>
-        <ChevronRight className="h-5 w-5 text-muted-foreground" aria-hidden />
-      </Link>
-
+      <h2 className="mb-3 text-lg font-semibold">Companies</h2>
       <div className="relative mb-4 max-w-sm">
         <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" aria-hidden />
         <Input className="pl-9" placeholder="Search companies…" aria-label="Search companies" value={q} onChange={(e) => setQ(e.target.value)} />

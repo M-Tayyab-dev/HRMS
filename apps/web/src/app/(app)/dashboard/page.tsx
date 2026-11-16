@@ -1,14 +1,15 @@
 'use client';
 
-import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, Clock, Contact, FileText, HandCoins, House, Inbox, LifeBuoy, Megaphone, Receipt, Target, Timer, TrendingUp, UserCheck, UserRound, Users, Utensils } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, Clock, Contact, FileText, Fingerprint, HandCoins, House, Inbox, LifeBuoy, Megaphone, Receipt, Target, Timer, TrendingUp, UserCheck, UserRound, Users, Utensils } from 'lucide-react';
 import { ATTENDANCE_COLORS as C, auditActionLabel } from '@hrms/shared';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { CalendarView } from '@/components/calendar-view';
 import { Bars, Donut } from '@/components/ui/charts';
-import { Badge, BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, Progress, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
+import { Avatar, Badge, BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, Progress, Skeleton, Stat, StatusBadge } from '@/components/ui/display';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth';
-import { date, dateTime, hours, money, monthLabel, relative, time } from '@/lib/format';
+import { cn, date, dateTime, hours, money, monthLabel, relative, time } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 
 interface Dash {
@@ -19,6 +20,7 @@ interface Dash {
   announcements: { id: string; title: string; body: string; createdAt: string; pinned: boolean }[];
   community: { id: string; type: string; title: string | null; body: string; createdAt: string }[];
   employee?: {
+    signIn: SignIn;
     attendance: { present: number; late: number; absent: number; leave: number; worked: number; scheduled: number; overtime: number; foodDays: number };
     today: { status: string; checkIn: string | null; checkOut: string | null; workedMinutes: number } | null;
     overtime: { availableMinutes: number; earnedMinutes: number };
@@ -62,6 +64,79 @@ interface Dash {
     departments: number;
     recentAudit: { id: number; action: string; actorLabel: string | null; createdAt: string }[];
   };
+}
+
+interface SignIn {
+  /** DEVICE (biometric), IMPORT, MANUAL, CORRECTION, HOME (approved work from home) or null (not signed in). */
+  source: string | null;
+  workFromHome: boolean;
+  checkIn: string | null;
+  checkOut: string | null;
+  workingDay: boolean;
+  shift: { startTime: string; endTime: string; breakMinutes: number; netMinutes: number };
+}
+
+const SIGN_IN_LABEL: Record<string, string> = {
+  DEVICE: 'Signed in from biometric device',
+  HOME: 'Signed in from home',
+  IMPORT: 'Signed in (imported attendance)',
+  MANUAL: 'Signed in (added by HR)',
+  CORRECTION: 'Signed in (corrected attendance)',
+};
+const hm = (mins: number) => `${Math.floor(mins / 60)}h ${String(Math.max(0, Math.round(mins % 60))).padStart(2, '0')}m`;
+
+/** Photo, name and designation, how I signed in today, and a live time passed / remaining bar. */
+function MyDayCard({ signIn, status, showAttendance }: { signIn: SignIn; status: string | null; showAttendance: boolean }) {
+  const { me } = useAuth();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const emp = me?.employee;
+  // Without a punch, an approved work-from-home day counts from the shift start.
+  const start = signIn.checkIn ? new Date(signIn.checkIn).getTime() : signIn.workFromHome && signIn.workingDay ? (() => { const d = new Date(); const [h, m] = signIn.shift.startTime.split(':').map(Number) as [number, number]; d.setHours(h, m, 0, 0); return d.getTime(); })() : null;
+  const end = signIn.checkOut ? new Date(signIn.checkOut).getTime() : now;
+  const target = signIn.shift.netMinutes + signIn.shift.breakMinutes; // time at work including the break
+  const passed = start && end > start ? (end - start) / 60_000 : 0;
+  const remaining = Math.max(0, target - passed);
+  const label = signIn.source ? SIGN_IN_LABEL[signIn.source] ?? 'Signed in' : signIn.workingDay ? 'Not signed in yet' : 'Day off today';
+
+  return (
+    <Card>
+      <CardBody className="flex flex-wrap items-center gap-4 p-4">
+        <Avatar name={emp?.fullName} fileId={emp?.avatarFileId} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-semibold">{emp?.fullName}</p>
+          <p className="truncate text-sm text-muted-foreground">{emp?.designation}{emp?.departmentName ? ` · ${emp.departmentName}` : ''}</p>
+          {showAttendance && (
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+              <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium', signIn.source === 'HOME' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200' : signIn.source ? 'bg-success-soft text-success' : 'bg-muted text-muted-foreground')}>
+                {signIn.source === 'HOME' ? <House className="h-3.5 w-3.5" aria-hidden /> : signIn.source ? <Fingerprint className="h-3.5 w-3.5" aria-hidden /> : <Clock className="h-3.5 w-3.5" aria-hidden />}
+                {label}{signIn.checkIn ? ` at ${time(signIn.checkIn)}` : ''}
+              </span>
+              {status && <StatusBadge status={status} />}
+              {signIn.checkOut && <span className="text-xs text-muted-foreground">Signed out at {time(signIn.checkOut)}</span>}
+            </p>
+          )}
+        </div>
+        {showAttendance && signIn.workingDay && (
+          <div className="w-full sm:w-72">
+            {start ? (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span><span className="text-muted-foreground">Time passed</span> <strong className="tabular-nums">{hm(passed)}</strong></span>
+                  <span>{signIn.checkOut ? <span className="text-muted-foreground">Day complete</span> : remaining > 0 ? <><span className="text-muted-foreground">Remaining</span> <strong className="tabular-nums">{hm(remaining)}</strong></> : <span className="text-success">Shift complete</span>}</span>
+                </div>
+                <Progress className="mt-1.5" value={target ? Math.min(100, (passed / target) * 100) : 0} />
+                <p className="mt-1 text-xs text-muted-foreground">Shift {signIn.shift.startTime}–{signIn.shift.endTime} · {hm(signIn.shift.breakMinutes)} break</p>
+              </>
+            ) : <p className="text-sm text-muted-foreground">Shift {signIn.shift.startTime}–{signIn.shift.endTime}. The timer starts when you sign in.</p>}
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
 }
 
 /** The same calendar as the Calendar page (filtered by the server for this person), in its short form. */
@@ -127,17 +202,41 @@ export default function DashboardPage() {
           <h2 id="my-heading" className="sr-only">
             My overview
           </h2>
+          {/* Who I am and how today is going: sign-in source, time passed and time remaining. */}
+          <MyDayCard signIn={e.signIn} status={e.today?.status ?? null} showAttendance={has('ATTENDANCE')} />
           <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
-            {has('ATTENDANCE') && <><Stat
-              label="Today"
-              icon={Clock}
-              value={e.today ? <StatusBadge status={e.today.status} /> : <span className="text-base text-muted-foreground">Not checked in</span>}
-              hint={e.today?.checkIn ? `In ${time(e.today.checkIn)}${e.today.checkOut ? ` · Out ${time(e.today.checkOut)}` : ''}` : 'Attendance from biometric device'}
-            />
-            <Stat label={`Hours in ${monthLabel(d.month).split(' ')[0]}`} icon={Timer} value={hours(e.attendance.worked)} hint={`of ${hours(e.attendance.scheduled)} scheduled · ${hours(e.attendance.overtime)} overtime`} />
+            {has('ATTENDANCE') && <><Stat label={`Hours in ${monthLabel(d.month).split(' ')[0]}`} icon={Timer} value={hours(e.attendance.worked)} hint={`of ${hours(e.attendance.scheduled)} scheduled · ${hours(e.attendance.overtime)} overtime`} />
             <Stat label="Overtime balance" icon={HandCoins} tone="success" value={hours(e.overtime.availableMinutes)} hint="Available for compensation" /></>}
             {has('PAYROLL') && <Stat label="Last salary" icon={Receipt} tone="info" value={e.lastPayslip ? money(e.lastPayslip.net, cur) : '—'} hint={e.lastPayslip ? monthLabel(e.lastPayslip.period) : 'No slips yet'} />}
           </div>
+
+          {/* Quick links: their own full-width row. Links every plan has, plus module links when the plan includes them. */}
+          <Card>
+            <CardHeader title="Quick links" />
+            <CardBody className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-10">
+              {([
+                ['/profile', 'My profile', UserRound, null, null],
+                ['/profile?tab=documents', 'HR documents', FileText, `${e.hrDocuments} shared`, null],
+                ['/leave', 'Apply for leave', CalendarRange, null, 'LEAVE'],
+                ['/leave?tab=wfh', 'Work from home', House, null, 'LEAVE'],
+                ['/attendance', 'My attendance', Clock, null, 'ATTENDANCE'],
+                ['/payslips', 'Salary slips', Receipt, null, 'PAYROLL'],
+                ['/queries', 'My queries', LifeBuoy, `${e.openQueries} open`, 'COMPLIANCE'],
+                ['/complaints', 'Report concern', AlertTriangle, null, 'COMPLIANCE'],
+                ['/calendar', 'Calendar', CalendarDays, null, null],
+                ['/directory', 'Directory', Contact, null, null],
+              ] as const).filter((x) => !x[4] || has(x[4])).map(([href, label, Icon, note]) => {
+                const I = Icon as typeof FileText;
+                return (
+                  <Link key={href as string} href={href as string} className="flex flex-col gap-1 rounded-md border p-2.5 text-sm hover:bg-muted">
+                    <I className="h-4 w-4 text-primary" aria-hidden />
+                    <span className="leading-tight">{label as string}</span>
+                    {note !== null && <span className="text-xs text-muted-foreground">{note as string}</span>}
+                  </Link>
+                );
+              })}
+            </CardBody>
+          </Card>
 
           {/* Stats first, then the calendar. */}
           <DashboardCalendar />
@@ -213,33 +312,6 @@ export default function DashboardPage() {
                     <span className="text-muted-foreground">{date(ev.startDate, { day: 'numeric', month: 'short' })}</span>
                   </div>
                 ))}
-              </CardBody>
-            </Card>
-            <Card>
-              <CardHeader title="Quick links" />
-              <CardBody className="grid grid-cols-2 gap-2">
-                {/* Links every plan has come first; module links only when the company's plan includes them. */}
-                {([
-                  ['/profile', 'My profile', UserRound, null, null],
-                  ['/profile?tab=documents', 'HR documents', FileText, e.hrDocuments === null ? null : `${e.hrDocuments} shared`, null],
-                  ['/leave', 'Apply for leave', CalendarRange, null, 'LEAVE'],
-                  ['/leave?tab=wfh', 'Work from home', House, null, 'LEAVE'],
-                  ['/attendance', 'My attendance', Clock, null, 'ATTENDANCE'],
-                  ['/payslips', 'Salary slips', Receipt, null, 'PAYROLL'],
-                  ['/queries', 'My queries', LifeBuoy, `${e.openQueries} open`, 'COMPLIANCE'],
-                  ['/complaints', 'Report concern', AlertTriangle, null, 'COMPLIANCE'],
-                  ['/calendar', 'Calendar', CalendarDays, null, null],
-                  ['/directory', 'Directory', Contact, null, null],
-                ] as const).filter((x) => !x[4] || has(x[4])).slice(0, 8).map(([href, label, Icon, note]) => {
-                  const I = Icon as typeof FileText;
-                  return (
-                    <Link key={href as string} href={href as string} className="flex flex-col gap-1 rounded-md border p-3 text-sm hover:bg-muted">
-                      <I className="h-4 w-4 text-primary" aria-hidden />
-                      <span>{label as string}</span>
-                      {note !== null && <span className="text-xs text-muted-foreground">{note as string}</span>}
-                    </Link>
-                  );
-                })}
               </CardBody>
             </Card>
           </div>
