@@ -1,15 +1,16 @@
 import { salesAccess, salesSummary } from '../performance/sales.controller';
 import { Controller, Get } from '@nestjs/common';
 import { PERMISSIONS as P, WORKFLOWS, type WorkflowType } from '@hrms/shared';
-import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { currentUser } from '../../common/context';
-import { addDays, todayIn } from '../../common/tz';
+import { addDays, dayOfWeek, todayIn, zonedInstant } from '../../common/tz';
 import { tenantInfo } from '../../common/util';
 import { ApprovalsService } from '../../core/approvals.service';
 import { ScopeService } from '../../core/scope.service';
 import { DbService } from '../../db/db.service';
 import {
   attendanceDays,
+  attendancePunches,
   auditLogs,
   calendarEvents,
   complaints,
@@ -27,9 +28,11 @@ import {
   surveys,
   teamMembers,
   users,
+  wfhRequests,
 } from '../../db/schema';
 import { AttendanceService } from '../attendance/attendance.service';
 import { LeaveService } from '../leave/leave.service';
+import { scheduledNetMinutes } from '../attendance/attendance.logic';
 
 const TABLES: Record<Exclude<WorkflowType, 'PAYROLL'>, { table: string; label: string; link: string }> = {
   LEAVE: { table: 'leave_requests', label: 'Leave request', link: '/leave/approvals' },
@@ -143,7 +146,30 @@ export class DashboardController {
         .limit(5);
       const [docs] = await tx.select({ n: sql<number>`count(*)::int` }).from(employeeDocuments).where(and(eq(employeeDocuments.employeeId, id), eq(employeeDocuments.source, 'HR')));
       const [openQueries] = await tx.select({ n: sql<number>`count(*)::int` }).from(queries).where(and(eq(queries.employeeId, id), inArray(queries.status, ['PENDING', 'IN_PROGRESS'])));
+      // Today's sign-in: how it happened (biometric device, import, manual, correction or work from home) and the shift,
+      // so the dashboard can show time passed and time remaining.
+      const [firstPunch] = await tx
+        .select({ source: attendancePunches.source, at: attendancePunches.punchedAt })
+        .from(attendancePunches)
+        .where(and(eq(attendancePunches.employeeId, id), gte(attendancePunches.punchedAt, zonedInstant(today, '00:00', t.timezone)), lte(attendancePunches.punchedAt, zonedInstant(addDays(today, 1), '00:00', t.timezone))))
+        .orderBy(asc(attendancePunches.punchedAt))
+        .limit(1);
+      const [wfhToday] = await tx
+        .select({ id: wfhRequests.id })
+        .from(wfhRequests)
+        .where(and(eq(wfhRequests.employeeId, id), eq(wfhRequests.status, 'APPROVED'), lte(wfhRequests.startDate, today), gte(wfhRequests.endDate, today)))
+        .limit(1);
+      const schedule = await this.attendance.scheduleFor(id);
+      const workingDay = schedule.workingDays.includes(dayOfWeek(today));
       out.employee = {
+        signIn: {
+          source: wfhToday || todayRec?.workFromHome ? 'HOME' : (firstPunch?.source ?? null),
+          workFromHome: !!wfhToday || !!todayRec?.workFromHome,
+          checkIn: todayRec?.checkIn ?? firstPunch?.at ?? null,
+          checkOut: todayRec?.checkOut ?? null,
+          workingDay,
+          shift: { startTime: schedule.startTime.slice(0, 5), endTime: schedule.endTime.slice(0, 5), breakMinutes: schedule.breakMinutes, netMinutes: workingDay ? scheduledNetMinutes(schedule) : 0 },
+        },
         attendance: att,
         today: todayRec ?? null,
         overtime: await this.attendance.overtimeBalance(id),
