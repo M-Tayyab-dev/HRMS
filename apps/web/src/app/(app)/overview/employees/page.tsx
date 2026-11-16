@@ -1,9 +1,10 @@
 'use client';
 
 import { PERMISSIONS as P, type Paginated } from '@hrms/shared';
-import { Building2, Contact, Network, TrendingUp, UserPlus, Users, UsersRound, UserCheck } from 'lucide-react';
+import { Building2, Contact, Network, TrendingUp, UserMinus, UserPlus, UserRound, Users, UsersRound, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
+import { useDirectory } from '@/components/domain';
 import { QuickActions, type QuickAction } from '@/components/overview';
 import { Bars } from '@/components/ui/charts';
 import { BarList, Card, CardBody, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Stat } from '@/components/ui/display';
@@ -21,8 +22,76 @@ interface Headcount {
   recentJoiners: { id: string; fullName: string; designation: string; departmentName: string; date: string }[];
 }
 
+/**
+ * Employees overview for staff without access to employee records: only what everyone may see
+ * (the company directory and their own profile).
+ */
+function StaffEmployeesOverview() {
+  const { me } = useAuth();
+  const { data: people, isLoading, error } = useDirectory();
+  const myDept = me?.employee?.departmentName;
+  const stats = useMemo(() => {
+    const rows = people ?? [];
+    const byDept = new Map<string, number>();
+    for (const p of rows) byDept.set(p.departmentName, (byDept.get(p.departmentName) ?? 0) + 1);
+    const mine = rows.find((p) => p.id === me?.employee?.id);
+    return {
+      total: rows.length,
+      departments: byDept.size,
+      byDepartment: [...byDept.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n),
+      sameDept: rows.filter((p) => p.departmentName === myDept && p.id !== me?.employee?.id),
+      manager: mine?.reportingManagerName ?? null,
+    };
+  }, [people, me, myDept]);
+
+  return (
+    <>
+      <PageHeader title="Employees overview" description="Your colleagues across the company." />
+      {error ? <ErrorState message={error.message} /> : isLoading ? <Skeleton className="h-64" /> : (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="People in the company" icon={Users} value={stats.total} hint="Active employees" />
+            <Stat label="Departments" icon={Building2} tone="warning" value={stats.departments} />
+            <Stat label={`In ${myDept ?? 'my department'}`} icon={UsersRound} tone="info" value={stats.sameDept.length + (myDept ? 1 : 0)} hint="Including you" />
+            <Stat label="Reports to" icon={UserCheck} tone="success" value={<span className="text-base">{stats.manager ?? '—'}</span>} />
+          </div>
+          <QuickActions actions={[
+            { href: '/directory', label: 'Directory', description: 'Find people and contacts', icon: Contact },
+            { href: '/org-chart', label: 'Org chart', description: 'Who reports to whom', icon: Network },
+            { href: '/profile', label: 'My profile', description: 'Details, documents, career', icon: UserRound },
+            { href: '/resignations', label: 'Resignation', description: 'Submit or track yours', icon: UserMinus },
+          ]} />
+          <div className="grid gap-3 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader title="People by department" />
+              <CardBody>{stats.byDepartment.length ? <BarList items={stats.byDepartment.map((d) => ({ label: d.name, value: d.n }))} /> : <p className="text-sm text-muted-foreground">No departments yet.</p>}</CardBody>
+            </Card>
+            <Card>
+              <CardHeader title={`My department${myDept ? ` · ${myDept}` : ''}`} action={<Link className="text-xs text-primary hover:underline" href="/directory">Directory</Link>} />
+              {stats.sameDept.length ? (
+                <ul className="divide-y">
+                  {stats.sameDept.slice(0, 8).map((p) => (
+                    <li key={p.id} className="px-5 py-2.5 text-sm"><span className="block truncate font-medium">{p.fullName}</span><span className="block truncate text-xs text-muted-foreground">{p.designation}</span></li>
+                  ))}
+                </ul>
+              ) : <EmptyState icon={Users} title="No colleagues listed yet" />}
+            </Card>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** Employees module overview: KPIs first, then quick actions, then charts and recent records. */
 export default function EmployeesOverviewPage() {
+  const { can } = useAuth();
+  // Everyone gets an overview; people without access to employee records see the directory-based one.
+  if (!can(P.EMPLOYEES_READ_ALL) && !can(P.EMPLOYEES_READ_TEAM) && !can(P.HEADCOUNT_READ)) return <StaffEmployeesOverview />;
+  return <RecordsEmployeesOverview />;
+}
+
+function RecordsEmployeesOverview() {
   const { can } = useAuth();
   const orgWide = can(P.HEADCOUNT_READ);
   // Org-wide numbers for HR / Operations; Team Leads get the same view of the people they can see.

@@ -57,12 +57,12 @@ export function CalendarView({ employeeId = '', compact = false, headerExtra }: 
   });
   const today = todayLocal();
   const sel = selected ? dayInfo(selected) : null;
-  const cellH = compact ? 'min-h-12 sm:min-h-16' : 'min-h-24';
+  const cellH = compact ? 'min-h-9 sm:min-h-10' : 'min-h-24';
 
   return (
     <>
       <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+        <div className={cn('flex flex-wrap items-center justify-between gap-3 border-b px-4', compact ? 'py-1.5' : 'py-3')}>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" aria-label="Previous month" onClick={() => setMonth((m) => shift(m, -1))}><ChevronLeft className="h-4 w-4" /></Button>
             <h2 className="w-36 text-center font-semibold sm:w-40" aria-live="polite">{monthLabel(month)}</h2>
@@ -76,7 +76,7 @@ export function CalendarView({ employeeId = '', compact = false, headerExtra }: 
         </div>
         {isLoading ? <Skeleton className="m-4 h-72" /> : (
           <div className="grid grid-cols-7 text-sm" role="grid" aria-label={monthLabel(month)}>
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} role="columnheader" className="border-b px-1 py-2 text-center text-xs font-medium text-muted-foreground">{d}</div>)}
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} role="columnheader" className={cn('border-b px-1 text-center text-xs font-medium text-muted-foreground', compact ? 'py-1' : 'py-2')}>{d}</div>)}
             {cells.map((d, i) => {
               if (!d) return <div key={`e${i}`} className={cn(cellH, 'border-r border-b bg-muted/30')} />;
               const x = dayInfo(d);
@@ -87,6 +87,16 @@ export function CalendarView({ employeeId = '', compact = false, headerExtra }: 
                     <span className={cn('text-xs font-medium', d === today && 'rounded-full bg-primary px-1.5 text-white')}>{Number(d.slice(8))}</span>
                     {color && <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} title={x.att?.status ?? 'Holiday'} />}
                   </div>
+                  {compact ? (
+                    // Short calendar: one coloured dot per item; tap the day for details.
+                    <div className="mt-1 flex flex-wrap gap-0.5" aria-hidden>
+                      {x.hol.map((h) => <span key={h.id} title={h.name} className="h-1.5 w-1.5 rounded-full bg-violet-500" />)}
+                      {x.lv.map((l) => <span key={l.id} title={`${l.typeName} · ${leaveStatusLabel(l)}`} className={cn('h-1.5 w-1.5 rounded-full', l.status !== 'APPROVED' && 'opacity-50')} style={{ background: l.status === 'REJECTED' ? '#94a3b8' : l.color }} />)}
+                      {x.wfh.map((w) => <span key={w.id} title="Work from home" className={cn('h-1.5 w-1.5 rounded-full bg-emerald-500', w.status !== 'APPROVED' && 'opacity-50')} />)}
+                      {x.ev.map((e) => <span key={e.id} title={e.title} className="h-1.5 w-1.5 rounded-full bg-sky-500" />)}
+                      {x.bd.map((b) => <span key={b.id} title={`${b.fullName}'s birthday`} className="h-1.5 w-1.5 rounded-full bg-pink-500" />)}
+                    </div>
+                  ) : (
                   <div className="mt-1 space-y-0.5">
                     {x.hol.map((h) => <p key={h.id} className="truncate rounded bg-violet-100 px-1 text-[11px] text-violet-800 dark:bg-violet-950 dark:text-violet-200">{h.name}</p>)}
                     {x.lv.map((l) => <p key={l.id} className={cn('truncate rounded px-1 text-[11px] text-white', l.status !== 'APPROVED' && 'opacity-60', l.status === 'CANCELLED' && 'line-through')} style={{ background: l.status === 'REJECTED' ? '#94a3b8' : l.color }}>{l.typeName}{compact ? '' : ` · ${leaveStatusLabel(l)}`}</p>)}
@@ -95,6 +105,7 @@ export function CalendarView({ employeeId = '', compact = false, headerExtra }: 
                     {!compact && x.ot && <p className="truncate text-[11px] text-success">+{hours(x.ot.minutes)} OT</p>}
                     {x.bd.map((b) => <p key={b.id} className="truncate text-[11px]">🎂 {b.fullName}</p>)}
                   </div>
+                  )}
                 </button>
               );
             })}

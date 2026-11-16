@@ -10,15 +10,15 @@ export interface DonutSlice {
   color: string;
 }
 
-export function Donut({ slices, center, sub, className, showLegend = true }: { slices: DonutSlice[]; center?: string; sub?: string; className?: string; showLegend?: boolean }) {
+export function Donut({ slices, center, sub, className, showLegend = true, size = 'md' }: { slices: DonutSlice[]; center?: string; sub?: string; className?: string; showLegend?: boolean; /** "sm": smaller ring with the legend kept beside it (dashboards). */ size?: 'sm' | 'md' }) {
   const total = slices.reduce((a, s) => a + s.value, 0);
   const r = 42;
   const c = 2 * Math.PI * r;
   let offset = 0;
   const desc = slices.map((s) => `${s.label}: ${s.value}`).join(', ');
   return (
-    <div className={cn('flex flex-wrap items-center gap-6', className)}>
-      <svg viewBox="0 0 100 100" className="h-36 w-36 shrink-0" role="img" aria-label={desc}>
+    <div className={cn('flex items-center', size === 'sm' ? 'gap-4' : 'flex-wrap gap-6', className)}>
+      <svg viewBox="0 0 100 100" className={cn('shrink-0', size === 'sm' ? 'h-24 w-24' : 'h-36 w-36')} role="img" aria-label={desc}>
         <g transform="rotate(-90 50 50)">
           <circle cx="50" cy="50" r={r} fill="none" stroke="var(--muted)" strokeWidth="12" />
           {total > 0 &&
