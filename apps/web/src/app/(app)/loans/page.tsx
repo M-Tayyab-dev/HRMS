@@ -1,7 +1,7 @@
 'use client';
 
 import { PERMISSIONS as P, loanSchema } from '@hrms/shared';
-import { HandCoins, Paperclip, Plus, Send } from 'lucide-react';
+import { HandCoins, Plus, Send } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,8 @@ import { Field, FormGrid, Input, Textarea } from '@/components/ui/form';
 import { Dialog } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
 import { FileUpload } from '@/components/ui/file-upload';
-import { api, downloadFile } from '@/lib/api';
+import { api } from '@/lib/api';
+import { AttachmentLinks } from '@/components/file-preview';
 import { useAuth } from '@/lib/auth';
 import { fieldError, useZodForm } from '@/lib/form';
 import { date, money, monthLabel, todayLocal } from '@/lib/format';
@@ -91,7 +92,7 @@ export default function LoansPage() {
             { key: 'p', header: 'Amount', cell: (l) => <span className="tabular-nums">{money(l.principal, currency)}</span> },
             { key: 'i', header: 'Instalment', hideOnMobile: true, cell: (l) => `${money(l.installment, currency)} from ${monthLabel(l.startPeriod)}` },
             { key: 'r', header: 'Reason', hideOnMobile: true, cell: (l) => <span className="text-muted-foreground">{l.reason}</span> },
-            { key: 'f', header: 'Documents', cell: (l) => (l.fileIds.length ? <div className="flex gap-1">{l.fileIds.map((_, i) => <Button key={i} size="icon" variant="ghost" className="h-7 w-7" aria-label={`Download document ${i + 1}`} onClick={() => downloadFile(`/payroll/loans/${l.id}/files/${i}`, `loan-${i + 1}`).catch((e) => toast.error(e.message))}><Paperclip className="h-3.5 w-3.5" /></Button>)}</div> : '—') },
+            { key: 'f', header: 'Documents', cell: (l) => (l.fileIds.length ? <AttachmentLinks base={`/payroll/loans/${l.id}/files`} count={l.fileIds.length} label="Loan document" /> : '—') },
             { key: 'a', header: '', cell: (l) => <DecisionButtons path={`/payroll/loans/${l.id}/decision`} invalidate={['/payroll/loans']} /> },
           ]} />
         </Card>

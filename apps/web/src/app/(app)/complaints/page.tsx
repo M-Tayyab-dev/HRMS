@@ -11,7 +11,8 @@ import { Field, Input, Select, Textarea } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
 import { FileUpload } from '@/components/ui/file-upload';
-import { api, downloadFile } from '@/lib/api';
+import { api } from '@/lib/api';
+import { AttachmentLinks } from '@/components/file-preview';
 import { useAuth } from '@/lib/auth';
 import { date, humanize } from '@/lib/format';
 import { useAction, useApi } from '@/lib/hooks';
@@ -106,7 +107,7 @@ function Manage() {
         {open && (
           <div className="space-y-4">
             <p className="text-sm whitespace-pre-wrap">{open.description}</p>
-            {open.attachments > 0 && <div className="flex flex-wrap gap-2">{Array.from({ length: open.attachments }, (_, i) => <Button key={i} size="sm" variant="outline" onClick={() => downloadFile(`/complaints/${open.id}/files/${i}`, `evidence-${i + 1}`).catch((e) => toast.error(e.message))}><Paperclip className="h-3.5 w-3.5" /> Evidence {i + 1}</Button>)}</div>}
+            {open.attachments > 0 && <AttachmentLinks base={`/complaints/${open.id}/files`} count={open.attachments} label="Evidence" rows />}
             <Field label="Status">{(a) => <Select {...a} value={upd.status} onChange={(e) => setUpd({ ...upd, status: e.target.value })}>{COMPLAINT_STATUSES.map((s) => <option key={s} value={s}>{humanize(s)}</option>)}</Select>}</Field>
             <Field label="Response to submitter" hint="Visible to the submitter via their tracking code">{(a) => <Textarea {...a} rows={4} value={upd.resolutionNote} onChange={(e) => setUpd({ ...upd, resolutionNote: e.target.value })} />}</Field>
           </div>

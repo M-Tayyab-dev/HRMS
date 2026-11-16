@@ -16,36 +16,25 @@ import {
   type SocialLinks,
 } from '@hrms/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { Award, Briefcase, Download, Eye, Facebook, Globe, GraduationCap, Instagram, Link2, Linkedin, Lock, Paperclip, Pencil, Plus, Trash2, Twitter, UserRoundCheck, X } from 'lucide-react';
+import { Award, Briefcase, Facebook, Globe, GraduationCap, Instagram, Link2, Linkedin, Lock, Paperclip, Pencil, Plus, Trash2, Twitter, UserRoundCheck, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardBody, CardHeader, EmptyState, Skeleton } from '@/components/ui/display';
 import { Checkbox, Field, FormGrid, Input, IntlPhoneInput, Select, Textarea } from '@/components/ui/form';
 import { Dialog, useConfirm } from '@/components/ui/overlay';
-import { FilePreviewDialog } from '@/components/file-preview';
-import { api, downloadFile } from '@/lib/api';
+import { FileRow } from '@/components/file-preview';
+import { api } from '@/lib/api';
 import { date } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 
-/** An attached document: its name, a preview (PDF or image, in the app) and a download. */
-function Attachment({ employeeId, fileId, name, onRemove }: { employeeId: string; fileId: string; name: string; onRemove?: () => void }) {
-  const [open, setOpen] = useState(false);
-  const path = `/employees/${employeeId}/record-files/${fileId}`;
-  return (
-    <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs">
-      <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-      <span className="max-w-[16rem] truncate" title={name}>{name}</span>
-      <button type="button" className="inline-flex items-center gap-1 rounded px-1 text-primary hover:bg-muted" onClick={() => setOpen(true)} aria-label={`Preview ${name}`}><Eye className="h-3.5 w-3.5" aria-hidden /> Preview</button>
-      <button type="button" className="inline-flex items-center gap-1 rounded px-1 text-primary hover:bg-muted" aria-label={`Download ${name}`}
-        onClick={() => void downloadFile(`${path}?download=1`, name).catch((e) => toast.error((e as Error).message))}><Download className="h-3.5 w-3.5" aria-hidden /> Download</button>
-      {onRemove && <button type="button" aria-label="Remove file" className="rounded p-0.5 hover:bg-muted" onClick={onRemove}><X className="h-3 w-3" /></button>}
-      <FilePreviewDialog path={path} name={name} open={open} onOpenChange={setOpen} />
-    </span>
-  );
+/** An attached document, shown like the Documents list: thumbnail, name and details, preview and download. */
+function Attachment({ employeeId, file, detail, onRemove }: { employeeId: string; file: { id: string; name: string; mimeType?: string | null; size?: number | null }; detail?: string; onRemove?: () => void }) {
+  const path = `/employees/${employeeId}/record-files/${file.id}`;
+  return <FileRow path={path} downloadPath={`${path}?download=1`} name={file.name} mimeType={file.mimeType} size={file.size} detail={detail} onRemove={onRemove} />;
 }
 
-type Row = Record<string, unknown> & { id: string; file?: { id: string; name: string } | null };
+type Row = Record<string, unknown> & { id: string; file?: { id: string; name: string; mimeType?: string; size?: number } | null };
 
 export interface ProfileRecords {
   noExperience: boolean;
@@ -121,16 +110,16 @@ const FIELDS: Record<ProfileRecordKind, FieldDef[]> = {
   ],
 };
 
-const META: Record<ProfileRecordKind, { title: string; icon: typeof Briefcase; addMore: string; empty: string; description: string }> = {
-  experience: { title: 'Previous work experience', icon: Briefcase, addMore: 'Add More Experience', empty: 'No previous experience recorded.', description: 'Jobs before joining the company.' },
-  education: { title: 'Education', icon: GraduationCap, addMore: 'Add More Education Details', empty: 'No education details yet.', description: 'Schools, colleges and universities.' },
-  certifications: { title: 'Certifications', icon: Award, addMore: 'Add More Certifications', empty: 'No certifications yet.', description: 'Optional: professional certificates and licences.' },
-  references: { title: 'References', icon: UserRoundCheck, addMore: 'Add More References', empty: 'No references yet.', description: 'Optional: people who can vouch for the work. Contact details are visible to HR only.' },
+const META: Record<ProfileRecordKind, { title: string; icon: typeof Briefcase; addMore: string; empty: string; description: string; fileLabel: string }> = {
+  experience: { title: 'Previous work experience', icon: Briefcase, addMore: 'Add More Experience', empty: 'No previous experience recorded.', description: 'Jobs before joining the company.', fileLabel: 'Experience letter' },
+  education: { title: 'Education', icon: GraduationCap, addMore: 'Add More Education Details', empty: 'No education details yet.', description: 'Schools, colleges and universities.', fileLabel: 'Degree / transcript' },
+  certifications: { title: 'Certifications', icon: Award, addMore: 'Add More Certifications', empty: 'No certifications yet.', description: 'Optional: professional certificates and licences.', fileLabel: 'Certificate' },
+  references: { title: 'References', icon: UserRoundCheck, addMore: 'Add More References', empty: 'No references yet.', description: 'Optional: people who can vouch for the work. Contact details are visible to HR only.', fileLabel: 'Document' },
 };
 
 const FILE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
 
-type Draft = Record<string, unknown> & { _key: string; _fileName?: string };
+type Draft = Record<string, unknown> & { _key: string; _fileName?: string; _fileType?: string; _fileSize?: number };
 const blank = (kind: ProfileRecordKind): Draft => ({ _key: Math.random().toString(36).slice(2), ...(kind === 'education' ? { currentlyStudying: false } : {}) });
 
 /** Form values → API body: empty strings dropped, numbers converted, helper keys removed. */
@@ -168,8 +157,8 @@ function RecordForm({ kind, employeeId, value, onChange, errors }: { kind: Profi
     try {
       const fd = new FormData();
       fd.set('file', f);
-      const r = await api.post<{ fileId: string; name: string }>(`/employees/${employeeId}/record-files`, fd);
-      onChange({ ...value, fileId: r.fileId, _fileName: r.name });
+      const r = await api.post<{ fileId: string; name: string; mimeType: string; size: number }>(`/employees/${employeeId}/record-files`, fd);
+      onChange({ ...value, fileId: r.fileId, _fileName: r.name, _fileType: r.mimeType, _fileSize: r.size });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -193,7 +182,7 @@ function RecordForm({ kind, employeeId, value, onChange, errors }: { kind: Profi
                     <input {...a} type="file" className="sr-only" accept={FILE_TYPES.join(',')} disabled={uploading} onChange={(e) => { const x = e.target.files?.[0]; e.target.value = ''; if (x) void upload(x); }} />
                   </label>
                   {!!value.fileId && (
-                    <Attachment employeeId={employeeId} fileId={String(value.fileId)} name={value._fileName ?? 'Attached document'} onRemove={() => onChange({ ...value, fileId: null, _fileName: undefined })} />
+                    <Attachment employeeId={employeeId} file={{ id: String(value.fileId), name: value._fileName ?? 'Attached document', mimeType: value._fileType, size: value._fileSize }} detail="Not submitted yet" onRemove={() => onChange({ ...value, fileId: null, _fileName: undefined, _fileType: undefined, _fileSize: undefined })} />
                   )}
                 </div>
               )}
@@ -262,7 +251,7 @@ function summary(kind: ProfileRecordKind, r: Row): { title: string; sub: string;
 }
 
 function toDraft(kind: ProfileRecordKind, r: Row): Draft {
-  const d: Draft = { _key: r.id, _fileName: r.file?.name };
+  const d: Draft = { _key: r.id, _fileName: r.file?.name, _fileType: r.file?.mimeType, _fileSize: r.file?.size };
   for (const f of FIELDS[kind]) d[f.key] = r[f.key] ?? (f.type === 'checkbox' ? false : '');
   return d;
 }
@@ -396,7 +385,7 @@ function RecordSection({ kind, employeeId, data, self, hr }: { kind: ProfileReco
                   <div key={k} className="grid gap-1 sm:grid-cols-[10rem_1fr]"><dt className="text-muted-foreground">{k}</dt><dd className="min-w-0 break-words whitespace-pre-line">{v}</dd></div>
                 ))}
               </dl>
-              {r.file && <div className="mt-2"><Attachment employeeId={employeeId} fileId={r.file.id} name={r.file.name} /></div>}
+              {r.file && <div className="mt-3"><Attachment employeeId={employeeId} file={r.file} detail={META[kind].fileLabel} /></div>}
             </div>
           );
         })}
