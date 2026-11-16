@@ -22,7 +22,7 @@ import { DeleteButton } from '@/components/delete-button';
 import { IdCard } from '@/components/id-card';
 import { todayLocal } from '@/lib/format';
 
-interface S { name: string; slug: string; timezone: string; currency: string; settings: { directoryShowJoinDate: boolean; sessionIdleMinutes?: number; medicalAnnualLimit: number; overtimeThresholdMinutes: number; payrollWorkingHoursBased: boolean; birthdayPostTitle?: string; birthdayPostBody?: string; idCard?: Partial<IdCardTemplate> } }
+interface S { name: string; slug: string; timezone: string; currency: string; settings: { directoryShowJoinDate: boolean; directoryShowPhone?: boolean; sessionIdleMinutes?: number; medicalAnnualLimit: number; overtimeThresholdMinutes: number; payrollWorkingHoursBased: boolean; birthdayPostTitle?: string; birthdayPostBody?: string; idCard?: Partial<IdCardTemplate> } }
 interface WS { id: string; name: string; startTime: string; endTime: string; breakMinutes: number; workingDays: number[]; isDefault: boolean }
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -83,7 +83,7 @@ function Company() {
   const full = can(P.TENANT_SETTINGS);
   const save = useAction('patch', '/settings', {
     invalidate: ['/settings', '/directory'], success: 'Settings saved', onSuccess: () => refresh(),
-    body: () => (full ? { name: v!.name, timezone: v!.timezone, currency: v!.currency, ...v!.settings } : { directoryShowJoinDate: v!.settings.directoryShowJoinDate, sessionIdleMinutes: v!.settings.sessionIdleMinutes ?? 30 }),
+    body: () => (full ? { name: v!.name, timezone: v!.timezone, currency: v!.currency, ...v!.settings } : { directoryShowJoinDate: v!.settings.directoryShowJoinDate, directoryShowPhone: v!.settings.directoryShowPhone !== false, sessionIdleMinutes: v!.settings.sessionIdleMinutes ?? 30 }),
   });
   if (!v) return null;
   const set = (patch: Partial<S['settings']>) => setV({ ...v, settings: { ...v.settings, ...patch } });
@@ -108,6 +108,7 @@ function Company() {
         <div className="flex flex-col gap-3">
           {full && <Checkbox label="Calculate salaries from actual working hours" checked={v.settings.payrollWorkingHoursBased} onChange={(e) => set({ payrollWorkingHoursBased: e.target.checked })} />}
           <Checkbox label='Show joining date in the directory (e.g. "Joined 13 November 2026")' checked={v.settings.directoryShowJoinDate} onChange={(e) => set({ directoryShowJoinDate: e.target.checked })} />
+          <Checkbox label="Show phone numbers in the directory (HR and admins always see them)" checked={v.settings.directoryShowPhone !== false} onChange={(e) => set({ directoryShowPhone: e.target.checked })} />
         </div>
         <Button loading={save.isPending} onClick={() => save.mutate(undefined)}>Save settings</Button>
       </CardBody>
