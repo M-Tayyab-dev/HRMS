@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, CalendarClock, Clock, FileText, HandCoins, Inbox, LifeBuoy, Megaphone, Receipt, Target, Timer, TrendingUp, UserCheck, Users, Utensils } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CalendarDays, CalendarRange, Clock, Contact, FileText, HandCoins, House, Inbox, LifeBuoy, Megaphone, Receipt, Target, Timer, TrendingUp, UserCheck, UserRound, Users, Utensils } from 'lucide-react';
 import { ATTENDANCE_COLORS as C, auditActionLabel } from '@hrms/shared';
 import Link from 'next/link';
 import { CalendarView } from '@/components/calendar-view';
@@ -64,6 +64,19 @@ interface Dash {
   };
 }
 
+/** The same calendar as the Calendar page (filtered by the server for this person), in its short form. */
+function DashboardCalendar() {
+  return (
+    <section aria-labelledby="cal-heading" className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h2 id="cal-heading" className="text-sm font-semibold text-muted-foreground">Calendar</h2>
+        <Link className="text-xs text-primary hover:underline" href="/calendar">Open full calendar</Link>
+      </div>
+      <CalendarView compact />
+    </section>
+  );
+}
+
 function greeting() {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
@@ -114,7 +127,7 @@ export default function DashboardPage() {
           <h2 id="my-heading" className="sr-only">
             My overview
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
             {has('ATTENDANCE') && <><Stat
               label="Today"
               icon={Clock}
@@ -126,11 +139,14 @@ export default function DashboardPage() {
             {has('PAYROLL') && <Stat label="Last salary" icon={Receipt} tone="info" value={e.lastPayslip ? money(e.lastPayslip.net, cur) : '—'} hint={e.lastPayslip ? monthLabel(e.lastPayslip.period) : 'No slips yet'} />}
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-3">
+          {/* Stats first, then the calendar. */}
+          <DashboardCalendar />
+
+          <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
             {has('ATTENDANCE') && <Card className="lg:col-span-2">
               <CardHeader title="Attendance this month" action={<Link className="text-xs text-primary hover:underline" href="/attendance">View attendance</Link>} />
               <CardBody>
-                <Donut
+                <Donut size="sm"
                   className="justify-center sm:justify-start"
                   center={`${e.attendance.present + e.attendance.late + e.attendance.absent + e.attendance.leave}`}
                   sub="days"
@@ -165,7 +181,7 @@ export default function DashboardPage() {
             </Card>}
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
             {has('PERFORMANCE') && <Card>
               <CardHeader title="KPI progress" description={monthLabel(d.month)} action={<Link className="text-xs text-primary hover:underline" href="/kpi">Submit</Link>} />
               <CardBody className="space-y-3">
@@ -202,18 +218,25 @@ export default function DashboardPage() {
             <Card>
               <CardHeader title="Quick links" />
               <CardBody className="grid grid-cols-2 gap-2">
+                {/* Links every plan has come first; module links only when the company's plan includes them. */}
                 {([
-                  ['/profile?tab=documents', 'HR documents', FileText, e.hrDocuments, null],
-                  ['/queries', 'My queries', LifeBuoy, e.openQueries, 'COMPLIANCE'],
+                  ['/profile', 'My profile', UserRound, null, null],
+                  ['/profile?tab=documents', 'HR documents', FileText, e.hrDocuments === null ? null : `${e.hrDocuments} shared`, null],
+                  ['/leave', 'Apply for leave', CalendarRange, null, 'LEAVE'],
+                  ['/leave?tab=wfh', 'Work from home', House, null, 'LEAVE'],
+                  ['/attendance', 'My attendance', Clock, null, 'ATTENDANCE'],
                   ['/payslips', 'Salary slips', Receipt, null, 'PAYROLL'],
+                  ['/queries', 'My queries', LifeBuoy, `${e.openQueries} open`, 'COMPLIANCE'],
                   ['/complaints', 'Report concern', AlertTriangle, null, 'COMPLIANCE'],
-                ] as const).filter((x) => !x[4] || has(x[4])).map(([href, label, Icon, n]) => {
+                  ['/calendar', 'Calendar', CalendarDays, null, null],
+                  ['/directory', 'Directory', Contact, null, null],
+                ] as const).filter((x) => !x[4] || has(x[4])).slice(0, 8).map(([href, label, Icon, note]) => {
                   const I = Icon as typeof FileText;
                   return (
                     <Link key={href as string} href={href as string} className="flex flex-col gap-1 rounded-md border p-3 text-sm hover:bg-muted">
                       <I className="h-4 w-4 text-primary" aria-hidden />
                       <span>{label as string}</span>
-                      {n !== null && <span className="text-xs text-muted-foreground">{n as number} open</span>}
+                      {note !== null && <span className="text-xs text-muted-foreground">{note as string}</span>}
                     </Link>
                   );
                 })}
@@ -223,14 +246,8 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* ---------- Calendar: the same calendar as the Calendar page, filtered by the server for this person ---------- */}
-      <section aria-labelledby="cal-heading" className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 id="cal-heading" className="text-lg font-semibold">Calendar</h2>
-          <Link className="text-xs text-primary hover:underline" href="/calendar">Open full calendar</Link>
-        </div>
-        <CalendarView compact />
-      </section>
+      {/* Without an employee profile (e.g. a Company Admin) the calendar sits here; employees get it under their stats. */}
+      {!e && <DashboardCalendar />}
 
       {/* ---------- Sales revenue (Sales department / permitted roles only) ---------- */}
       {d.sales && (
@@ -239,7 +256,7 @@ export default function DashboardPage() {
             <h2 id="sales-heading" className="text-lg font-semibold">Sales revenue</h2>
             <Link className="text-xs text-primary hover:underline" href="/overview/sales">Sales overview</Link>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
             <Stat label={`Revenue in ${monthLabel(d.month).split(' ')[0]}`} icon={TrendingUp} tone="success" value={money(d.sales.totals.achieved, cur)} hint="Approved KPI results" />
             <Stat label="Target" icon={Target} value={money(d.sales.totals.target, cur)} hint={`${d.sales.totals.people} people with sales targets`} />
             <Stat label="Achieved" icon={UserCheck} tone="info" value={d.sales.totals.progress === null ? '—' : `${d.sales.totals.progress}%`} hint={`${money(d.sales.totals.pending, cur)} awaiting approval`} />
@@ -252,17 +269,17 @@ export default function DashboardPage() {
       {d.teamLead && (
         <section aria-labelledby="team-heading" className="space-y-3">
           <h2 id="team-heading" className="text-lg font-semibold">My team</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
             <Stat label="Team members" icon={Users} value={d.teamLead.memberCount} />
             {has('ATTENDANCE') && <Stat label="In today" icon={UserCheck} tone="success" value={(d.teamLead.todayAttendance.PRESENT ?? 0) + (d.teamLead.todayAttendance.LATE ?? 0)} hint={`${d.teamLead.todayAttendance.LATE ?? 0} late · ${d.teamLead.notCheckedIn} not in`} />}
             {has('COMPLIANCE') && <Stat label="Open queries" icon={LifeBuoy} tone="warning" value={d.teamLead.openQueries} />}
             {has('COMPLIANCE') && <Stat label="Open team surveys" icon={Megaphone} tone="info" value={d.teamLead.openSurveys} />}
           </div>
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
           {has('ATTENDANCE') && <Card>
             <CardHeader title="Team today" description={date(d.today, { weekday: 'long', day: 'numeric', month: 'short' })} />
             <CardBody>
-              <Donut center={`${d.teamLead.memberCount}`} sub="members" slices={[
+              <Donut size="sm" center={`${d.teamLead.memberCount}`} sub="members" slices={[
                 { label: 'Present', value: d.teamLead.todayAttendance.PRESENT ?? 0, color: C.PRESENT },
                 { label: 'Late', value: d.teamLead.todayAttendance.LATE ?? 0, color: C.LATE },
                 { label: 'On leave', value: d.teamLead.todayAttendance.ON_LEAVE ?? 0, color: C.ON_LEAVE },
@@ -288,7 +305,7 @@ export default function DashboardPage() {
       {d.organisation && (
         <section aria-labelledby="org-heading" className="space-y-3">
           <h2 id="org-heading" className="text-lg font-semibold">Organisation</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
             <Stat label="Active employees" icon={Users} value={d.organisation.headcount.active} hint={`${d.organisation.headcount.total} registered · ${d.organisation.headcount.resigned + d.organisation.headcount.terminated} left`} />
             {has('ATTENDANCE') && <><Stat label="Present today" icon={UserCheck} tone="success" value={(d.organisation.todayAttendance.PRESENT ?? 0) + (d.organisation.todayAttendance.LATE ?? 0)} hint={`${d.organisation.todayAttendance.LATE ?? 0} late · ${d.organisation.todayAttendance.ON_LEAVE ?? 0} on leave`} />
             <Stat
@@ -306,11 +323,11 @@ export default function DashboardPage() {
               hint={d.organisation.latestPayroll ? `${monthLabel(d.organisation.latestPayroll.period)} · ${d.organisation.latestPayroll.status.replace('_', ' ').toLowerCase()}` : 'Not processed yet'}
             />}
           </div>
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
             {has('ATTENDANCE') && <Card>
               <CardHeader title="Attendance today" />
               <CardBody>
-                <Donut center={`${d.organisation.headcount.active}`} sub="active" slices={[
+                <Donut size="sm" center={`${d.organisation.headcount.active}`} sub="active" slices={[
                   { label: 'Present', value: d.organisation.todayAttendance.PRESENT ?? 0, color: C.PRESENT },
                   { label: 'Late', value: d.organisation.todayAttendance.LATE ?? 0, color: C.LATE },
                   { label: 'Absent', value: d.organisation.todayAttendance.ABSENT ?? 0, color: C.ABSENT },
@@ -318,7 +335,7 @@ export default function DashboardPage() {
                 ]} />
               </CardBody>
             </Card>}
-            <Card className={has('ATTENDANCE') ? '' : 'lg:col-span-2'}>
+            <Card>
               <CardHeader title="Headcount trend" description="Active employees at each month end" />
               <CardBody>
                 <Bars items={d.organisation.workforceTrend.map((t) => ({ label: monthLabel(t.month).slice(0, 3), value: t.headcount, title: `${monthLabel(t.month)}: ${t.headcount} employees · +${t.joined} joined · −${t.left} left` }))} />
@@ -334,7 +351,7 @@ export default function DashboardPage() {
               </CardBody>
             </Card>}
           </div>
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
             <Card className="lg:col-span-2">
               <CardHeader title="Employees by department" action={<Link className="text-xs text-primary hover:underline" href="/headcount">Headcount report</Link>} />
               <CardBody>
@@ -366,7 +383,7 @@ export default function DashboardPage() {
       {d.system && (
         <section aria-labelledby="sys-heading" className="space-y-3">
           <h2 id="sys-heading" className="text-lg font-semibold">System overview</h2>
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 lg:auto-cols-fr lg:grid-flow-col">
             <Card>
               <CardHeader title="Accounts" action={<Link className="text-xs text-primary hover:underline" href="/access/users">Manage</Link>} />
               <CardBody className="grid grid-cols-2 gap-3">

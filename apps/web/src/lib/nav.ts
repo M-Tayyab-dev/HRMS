@@ -76,7 +76,8 @@ export const NAV: NavGroup[] = [
     icon: Users,
     limited: { label: 'Employee directory', icon: Contact },
     items: [
-      { href: '/overview/employees', label: 'Overview', icon: LayoutGrid, any: [P.EMPLOYEES_READ_ALL, P.EMPLOYEES_READ_TEAM] },
+      // Everyone: staff see a directory-based overview, HR / Team Leads see their records.
+      { href: '/overview/employees', label: 'Overview', icon: LayoutGrid },
       { href: '/employees', label: 'Profiles', icon: Users, any: [P.EMPLOYEES_READ_ALL, P.EMPLOYEES_READ_TEAM] },
       { href: '/directory', label: 'Directory', icon: Contact },
       { href: '/org-chart', label: 'Org chart', icon: Network },

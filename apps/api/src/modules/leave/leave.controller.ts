@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { currentUser } from '../../common/context';
 import { Audit, RequireAny, RequireModule } from '../../common/decorators';
 import { badRequest, conflict, forbidden } from '../../common/errors';
-import { monthRange, todayIn } from '../../common/tz';
+import { addDays, eachDay, monthRange, todayIn } from '../../common/tz';
 import { one, scoped, requireDelete, assertUnused, countWhere } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
 import { ApprovalsService } from '../../core/approvals.service';
@@ -143,7 +143,98 @@ export class LeaveController {
       .orderBy(desc(leaveRequests.createdAt))
       .limit(8);
     const balances = u.employeeId ? await this.svc.balances(u.employeeId, Number(today.slice(0, 4))) : [];
-    return { scope: visible === null ? 'company' : visible.length > 1 ? 'team' : 'self', ...k, balances, recent };
+    return { scope: visible === null ? 'company' : visible.length > 1 ? 'team' : 'self', ...k, balances, recent, last7: await this.lastSevenDays(today, visible), me: await this.myDay(today, balances) };
+  }
+
+  /** The signed-in person's own numbers: today's check-in/out, leave totals and pending requests. */
+  private async myDay(today: string, balances: { available: number; used: number; pending: number }[]) {
+    const employeeId = currentUser().employeeId;
+    if (!employeeId) return null;
+    const tx = this.db.tx;
+    const [day] = await tx
+      .select({
+        status: attendanceDays.status,
+        checkIn: attendanceDays.checkIn,
+        checkOut: attendanceDays.checkOut,
+        workedMinutes: attendanceDays.workedMinutes,
+        scheduledMinutes: attendanceDays.scheduledMinutes,
+        breakMinutes: attendanceDays.breakMinutes,
+        lateMinutes: attendanceDays.lateMinutes,
+        workFromHome: attendanceDays.workFromHome,
+      })
+      .from(attendanceDays)
+      .where(and(eq(attendanceDays.employeeId, employeeId), eq(attendanceDays.date, today)));
+    const [{ wfhPending }] = (await tx
+      .select({ wfhPending: sql<number>`count(*)::int` })
+      .from(wfhRequests)
+      .where(and(eq(wfhRequests.employeeId, employeeId), eq(wfhRequests.status, 'PENDING')))) as [{ wfhPending: number }];
+    const [{ wfhToday }] = (await tx
+      .select({ wfhToday: sql<number>`count(*)::int` })
+      .from(wfhRequests)
+      .where(and(eq(wfhRequests.employeeId, employeeId), eq(wfhRequests.status, 'APPROVED'), lte(wfhRequests.startDate, today), gte(wfhRequests.endDate, today)))) as [{ wfhToday: number }];
+    const sum = (k: 'available' | 'used' | 'pending') => Math.round(balances.reduce((a, b) => a + b[k], 0) * 10) / 10;
+    // My latest submitted requests (leave and work from home together), newest first.
+    const [myLeave, myWfh] = await Promise.all([
+      tx
+        .select({ id: leaveRequests.id, startDate: leaveRequests.startDate, endDate: leaveRequests.endDate, days: leaveRequests.days, status: leaveRequests.status, currentStep: leaveRequests.currentStep, createdAt: leaveRequests.createdAt, typeName: leaveTypes.name, color: leaveTypes.color })
+        .from(leaveRequests)
+        .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
+        .where(eq(leaveRequests.employeeId, employeeId))
+        .orderBy(desc(leaveRequests.createdAt))
+        .limit(6),
+      tx
+        .select({ id: wfhRequests.id, startDate: wfhRequests.startDate, endDate: wfhRequests.endDate, status: wfhRequests.status, currentStep: wfhRequests.currentStep, createdAt: wfhRequests.createdAt })
+        .from(wfhRequests)
+        .where(eq(wfhRequests.employeeId, employeeId))
+        .orderBy(desc(wfhRequests.createdAt))
+        .limit(6),
+    ]);
+    const requests = [
+      ...myLeave.map((r) => ({ id: r.id, kind: 'LEAVE' as const, label: r.typeName, color: r.color, startDate: r.startDate, endDate: r.endDate, days: r.days, status: r.status, currentStep: r.currentStep, createdAt: r.createdAt })),
+      ...myWfh.map((r) => ({ id: r.id, kind: 'WORK_FROM_HOME' as const, label: 'Work from home', color: '#059669', startDate: r.startDate, endDate: r.endDate, days: null, status: r.status, currentStep: r.currentStep, createdAt: r.createdAt })),
+    ]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 6);
+    return {
+      requests,
+      today: day ?? null,
+      workingFromHomeToday: wfhToday > 0 || !!day?.workFromHome,
+      leaveAvailable: sum('available'),
+      leaveUsed: sum('used'),
+      leavePendingDays: sum('pending'),
+      wfhPending,
+    };
+  }
+
+  /** Mini calendar for the overview: who was on leave or working from home on each of the last 7 days, and holidays. */
+  private async lastSevenDays(today: string, visible: string[] | null) {
+    const tx = this.db.tx;
+    const from = addDays(today, -6);
+    const overlaps = <T extends typeof leaveRequests | typeof wfhRequests>(t: T) =>
+      and(eq(t.status, 'APPROVED'), lte(t.startDate, today), gte(t.endDate, from), scoped(t.employeeId, visible));
+    const [leaves, wfh, hols] = await Promise.all([
+      tx
+        .select({ employeeId: leaveRequests.employeeId, name: employees.fullName, startDate: leaveRequests.startDate, endDate: leaveRequests.endDate, typeName: leaveTypes.name, color: leaveTypes.color })
+        .from(leaveRequests)
+        .innerJoin(employees, eq(employees.id, leaveRequests.employeeId))
+        .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
+        .where(overlaps(leaveRequests)),
+      tx
+        .select({ employeeId: wfhRequests.employeeId, name: employees.fullName, startDate: wfhRequests.startDate, endDate: wfhRequests.endDate })
+        .from(wfhRequests)
+        .innerJoin(employees, eq(employees.id, wfhRequests.employeeId))
+        .where(overlaps(wfhRequests)),
+      tx.select({ date: holidays.date, name: holidays.name }).from(holidays).where(and(gte(holidays.date, from), lte(holidays.date, today), isNull(holidays.departmentId))),
+    ]);
+    return eachDay(from, today).map((date) => {
+      const on = <R extends { startDate: string; endDate: string }>(rows: R[]) => rows.filter((r) => r.startDate <= date && r.endDate >= date);
+      return {
+        date,
+        holiday: hols.find((h) => h.date === date)?.name ?? null,
+        onLeave: on(leaves).map((l) => ({ name: l.name, typeName: l.typeName, color: l.color })),
+        workFromHome: on(wfh).map((w) => ({ name: w.name })),
+      };
+    });
   }
 
   /* ---------------- Requests (Team Lead → HR, C3) ---------------- */
