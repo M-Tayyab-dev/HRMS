@@ -97,15 +97,20 @@ export class EmployeesService {
       .leftJoin(manager, eq(manager.id, employees.reportingManagerId));
   }
 
-  private redact<T extends Record<string, unknown>>(row: T, user: AuthUser): T {
+  private redact<T extends Record<string, unknown>>(row: T, user: AuthUser, phonesPrivate = false): T {
     const copy: Record<string, unknown> = { ...row };
     // Number of dependents: HR / Company Admin only (not colleagues, Team Leads or the person themselves).
     if (!user.permissions.has(P.EMPLOYEES_MANAGE)) copy.dependents = null;
     if (user.employeeId === row.id || user.permissions.has(P.EMPLOYEES_READ_ALL)) return copy as T;
     for (const k of CONFIDENTIAL) if (k in copy) copy[k] = null;
-    // The person chose to hide their number: only they and org-wide HR / admins see it.
-    if (row.hidePhone) copy.contactNo = null;
+    // The person chose to hide their number, or the company hides everyone's: only they and org-wide HR / admins see it.
+    if (row.hidePhone || phonesPrivate) copy.contactNo = null;
     return copy as T;
+  }
+
+  /** The company turned off "Show phone numbers in the directory": colleagues see nobody's number. */
+  private async phonesPrivate(): Promise<boolean> {
+    return (await tenantInfo(this.db.tx)).settings.directoryShowPhone === false;
   }
 
   async list(q: { page: number; pageSize: number; search?: string; departmentId?: string; status?: string }) {
@@ -119,7 +124,8 @@ export class EmployeesService {
     const where = conds.length ? and(...conds) : undefined;
     const rows = await this.baseSelect().where(where).orderBy(sql`${employees.employmentStatus} <> 'ACTIVE'`, asc(employees.fullName)).limit(q.pageSize).offset(offset(q));
     const [{ n }] = (await this.db.tx.select({ n: sql<number>`count(*)::int` }).from(employees).where(where)) as [{ n: number }];
-    return page(rows.map((r) => this.redact(r, user)), n, q);
+    const phonesPrivate = await this.phonesPrivate();
+    return page(rows.map((r) => this.redact(r, user, phonesPrivate)), n, q);
   }
 
   async get(id: string) {
@@ -138,7 +144,7 @@ export class EmployeesService {
       .select({ n: sql<number>`count(*)::int` })
       .from(employeePositions)
       .where(and(eq(employeePositions.employeeId, id), eq(employeePositions.changeType, 'PROMOTED')))) as [{ n: number }];
-    return { ...this.redact(row, currentUser()), team: team ?? null, roles, accountStatus: account?.status ?? null, hasPromotions: promotions > 0, tenure: tenureLabel(row.joiningDate) };
+    return { ...this.redact(row, currentUser(), await this.phonesPrivate()), team: team ?? null, roles, accountStatus: account?.status ?? null, hasPromotions: promotions > 0, tenure: tenureLabel(row.joiningDate) };
   }
 
   private async validatePlacement(departmentId: string, levelId: string) {
@@ -467,10 +473,14 @@ export class EmployeesService {
     const t = await tenantInfo(tx);
     const conds: SQL[] = [eq(employees.employmentStatus, 'ACTIVE')];
     const seesAll = currentUser().permissions.has(P.EMPLOYEES_READ_ALL);
+    const phonesPrivate = t.settings.directoryShowPhone === false;
     if (q.search) {
       const digits = q.search.replace(/\D/g, '');
       // Phone search only finds numbers the searcher may see (hidden numbers never match for colleagues).
-      const byPhone = digits.length >= 4 ? and(sql`regexp_replace(coalesce(${employees.contactNo}, ''), '\D', '', 'g') like ${`%${digits}%`}`, seesAll ? undefined : eq(employees.hidePhone, false)) : undefined;
+      const byPhone =
+        digits.length >= 4 && (seesAll || !phonesPrivate)
+          ? and(sql`regexp_replace(coalesce(${employees.contactNo}, ''), '\D', '', 'g') like ${`%${digits}%`}`, seesAll ? undefined : eq(employees.hidePhone, false))
+          : undefined;
       conds.push(or(ilike(employees.fullName, like(q.search)), ilike(employees.designation, like(q.search)), ilike(departments.name, like(q.search)), ilike(employees.email, like(q.search)), ilike(employees.employeeCode, like(q.search)), byPhone)!);
     }
     if (q.departmentId) conds.push(eq(employees.departmentId, q.departmentId));
@@ -506,8 +516,8 @@ export class EmployeesService {
     return rows.map(({ joiningDate, hidePhone, contactNo, ...r }) => ({
       ...r,
       // Hidden numbers never leave the server for colleagues; HR / admins and the person still see them.
-      contactNo: hidePhone && !seesAllPhones && r.id !== user.employeeId ? null : contactNo,
-      phoneHidden: hidePhone,
+      contactNo: (hidePhone || phonesPrivate) && !seesAllPhones && r.id !== user.employeeId ? null : contactNo,
+      phoneHidden: hidePhone || phonesPrivate,
       level: `${r.levelCode} – ${r.levelTitle}`,
       tenure: tenureLabel(joiningDate, today),
       // Joining date in the directory only when the company allows it (B5); the same wording as on profiles.

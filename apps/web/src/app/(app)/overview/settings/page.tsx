@@ -44,6 +44,7 @@ export default function SettingsOverviewPage() {
                 ['Workspace', t?.slug],
                 ['Login email domains', t?.emailDomains.length ? t.emailDomains.map((d) => `@${d}`).join(', ') : 'Any'],
                 ['Joining date in directory', t?.settings.directoryShowJoinDate ? 'Shown' : 'Hidden'],
+                ['Phone numbers in directory', t?.settings.directoryShowPhone === false ? 'Hidden' : 'Shown'],
                 ['Medical yearly limit', t ? `${t.settings.medicalAnnualLimit.toLocaleString()} ${t.currency}` : null],
               ]} />
             </CardBody>

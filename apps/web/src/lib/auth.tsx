@@ -42,7 +42,7 @@ export interface Me {
     /** Feature modules in the company's plan. */
     modules: string[];
     maxEmployees: number | null;
-    settings: { directoryShowJoinDate: boolean; communityPostingMode: string; communityEngagementEnabled: boolean; medicalAnnualLimit: number };
+    settings: { directoryShowJoinDate: boolean; directoryShowPhone?: boolean; communityPostingMode: string; communityEngagementEnabled: boolean; medicalAnnualLimit: number };
     /** Subscription: UNPAID locks the workspace to Billing, DUE shows a reminder. */
     billingStatus: 'PAID' | 'DUE' | 'UNPAID';
     billingCycle: 'MONTHLY' | 'ANNUAL';
