@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_TIERS, DOC_CATEGORIES } from '../enums';
 import { ROLES } from '../permissions';
 import { cnic, isoDate, money, optionalText, password, phone, trimmed, uuid } from './common';
+import { socialLinksSchema } from './profile';
 
 /** B1 – fields the employee may edit themselves. */
 export const selfProfileSchema = z.object({
@@ -12,6 +13,11 @@ export const selfProfileSchema = z.object({
   bloodGroup: z.enum(BLOOD_GROUPS).optional(),
   emergencyContact: phone.optional(),
   contactNo: phone.optional(),
+  /** Hide the contact number from the directory and from colleagues (HR still sees it). */
+  hidePhone: z.boolean().optional(),
+  /** "No previous experience": switches the experience forms off. */
+  noExperience: z.boolean().optional(),
+  socialLinks: socialLinksSchema.optional(),
 });
 export type SelfProfileInput = z.infer<typeof selfProfileSchema>;
 
@@ -33,6 +39,8 @@ export const employeeSchema = selfProfileSchema.extend({
   /** D3: whether this person may claim medical expenses. */
   medicalEligible: z.boolean().optional(),
   workScheduleId: uuid.nullable().optional(),
+  /** Number of dependents: HR / Company Admin only. */
+  dependents: z.coerce.number().int().min(0, 'Cannot be negative').max(50).optional(),
   roles: z.array(z.enum(ROLES)).default(['EMPLOYEE']),
   sendInvite: z.boolean().default(true),
   /** Without an invitation, HR sets the first password (optional otherwise). */

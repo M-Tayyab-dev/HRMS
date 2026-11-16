@@ -120,6 +120,13 @@
       "when": 1794806144561,
       "tag": "0016_extra_email_domains",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794813923062,
+      "tag": "0017_employee_profile_records",
+      "breakpoints": true
     }
   ]
 }

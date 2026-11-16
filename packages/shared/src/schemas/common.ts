@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { phoneProblem, toInternationalPhone } from '../phone';
 
 /**
  * Plain-language defaults for validation messages (shown in forms and API errors), instead of
@@ -42,30 +43,16 @@ export const cnic = z
     return `${d.slice(0, 5)}-${d.slice(5, 12)}-${d.slice(12)}`;
   });
 
-/**
- * Phone numbers: Pakistani local (0 + 9–10 digits, e.g. 0300 1234567 or 042 1234567), +92 + 10 digits,
- * or another country's number starting with + (8–15 digits). Spaces, dashes and brackets are ignored.
- */
-export function phoneProblem(value: string): string | null {
-  const v = value.trim();
-  if (!v) return null;
-  if (/[^0-9+ ()-]/.test(v) || v.indexOf('+') > 0) return 'Use digits only, e.g. 0300 1234567';
-  const d = v.replace(/[^0-9+]/g, '');
-  if (d.startsWith('+92')) return /^\+92\d{10}$/.test(d) ? null : 'A +92 number has 10 digits after +92, e.g. +92 300 1234567';
-  if (d.startsWith('+')) return /^\+\d{8,15}$/.test(d) ? null : 'Enter the full international number, e.g. +44 7911 123456';
-  if (!d.startsWith('0')) return 'Start with 0 (e.g. 0300 1234567) or a country code like +92';
-  if (d.length < 10) return 'This number is too short, e.g. 0300 1234567';
-  if (d.length > 11) return 'This number is too long, e.g. 0300 1234567';
-  return null;
-}
 
+/** Phone number validated for its country and stored in international form, e.g. "+92 3001234567". */
 export const phone = z
   .string()
   .trim()
   .superRefine((v, ctx) => {
     const problem = v ? phoneProblem(v) : 'Enter a phone number';
     if (problem) ctx.addIssue({ code: 'custom', message: problem });
-  });
+  })
+  .transform((v) => toInternationalPhone(v));
 
 export const password = z
   .string()

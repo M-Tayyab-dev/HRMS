@@ -1,6 +1,6 @@
 'use client';
 
-import { BLOOD_GROUPS, changePasswordSchema, resignationSchema, selfProfileSchema, joinedLabel } from '@hrms/shared';
+import { BLOOD_GROUPS, PERMISSIONS as P, changePasswordSchema, resignationSchema, selfProfileSchema, joinedLabel, type SocialLinks } from '@hrms/shared';
 import { Camera, Lock } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef } from 'react';
@@ -9,7 +9,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { CareerTimeline, DocumentsPanel } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardBody, CardHeader, KeyValue, PageHeader, Skeleton, StatusBadge } from '@/components/ui/display';
-import { Field, FormGrid, Input, Select, Textarea, CnicInput, PhoneInput } from '@/components/ui/form';
+import { Checkbox, Field, FormGrid, Input, Select, Textarea, CnicInput, IntlPhoneInput } from '@/components/ui/form';
+import { RecordsPanel, SocialLinksCard } from '@/components/profile-records';
 import { Tabs } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -52,6 +53,12 @@ export interface EmployeeDetail {
   tenure: string;
   createdAt?: string;
   userId: string | null;
+  /** Contact number hidden from the directory and colleagues. */
+  hidePhone?: boolean;
+  /** HR / Company Admin only (null for everyone else). */
+  dependents?: number | null;
+  socialLinks?: SocialLinks;
+  noExperience?: boolean;
 }
 
 function PersonalForm({ emp }: { emp: EmployeeDetail }) {
@@ -64,6 +71,7 @@ function PersonalForm({ emp }: { emp: EmployeeDetail }) {
     bloodGroup: (emp.bloodGroup as (typeof BLOOD_GROUPS)[number]) ?? undefined,
     emergencyContact: emp.emergencyContact ?? undefined,
     contactNo: emp.contactNo ?? undefined,
+    hidePhone: !!emp.hidePhone,
   });
   const onSubmit = form.handleSubmit(async (v) => {
     const clean = Object.fromEntries(Object.entries(v).filter(([, x]) => x !== '' && x !== undefined));
@@ -83,8 +91,8 @@ function PersonalForm({ emp }: { emp: EmployeeDetail }) {
         <FormGrid>
           <Field label="Full name" error={fieldError(form, 'fullName')}>{(a) => <Input {...a} {...form.register('fullName')} />}</Field>
           <Field label="CNIC number" error={fieldError(form, 'cnic')} hint="e.g. 35202-1234567-1">{(a) => <CnicInput {...a} {...form.register('cnic', empty)} />}</Field>
-          <Field label="Father's name" error={fieldError(form, 'fatherName')}>{(a) => <Input {...a} {...form.register('fatherName', empty)} />}</Field>
-          <Field label="Father's CNIC" error={fieldError(form, 'fatherCnic')}>{(a) => <CnicInput {...a} {...form.register('fatherCnic', empty)} />}</Field>
+          <Field label="Father/Guardian Name" error={fieldError(form, 'fatherName')}>{(a) => <Input {...a} {...form.register('fatherName', empty)} />}</Field>
+          <Field label="Father/Guardian CNIC" error={fieldError(form, 'fatherCnic')}>{(a) => <CnicInput {...a} {...form.register('fatherCnic', empty)} />}</Field>
           <Field label="Blood group" error={fieldError(form, 'bloodGroup')}>
             {(a) => (
               <Select {...a} {...form.register('bloodGroup', empty)}>
@@ -93,9 +101,13 @@ function PersonalForm({ emp }: { emp: EmployeeDetail }) {
               </Select>
             )}
           </Field>
-          <Field label="Contact number" error={fieldError(form, 'contactNo')}>{(a) => <PhoneInput {...a} {...form.register('contactNo', empty)} />}</Field>
-          <Field label="Emergency contact number" error={fieldError(form, 'emergencyContact')}>{(a) => <PhoneInput {...a} {...form.register('emergencyContact', empty)} />}</Field>
+          <Field label="Contact number" error={fieldError(form, 'contactNo')}>{(a) => <IntlPhoneInput {...a} value={form.watch('contactNo') as string | undefined} onChange={(v) => form.setValue('contactNo', (v || undefined) as never, { shouldDirty: true, shouldValidate: form.formState.isSubmitted })} />}</Field>
+          <Field label="Emergency contact number" error={fieldError(form, 'emergencyContact')}>{(a) => <IntlPhoneInput {...a} value={form.watch('emergencyContact') as string | undefined} onChange={(v) => form.setValue('emergencyContact', (v || undefined) as never, { shouldDirty: true, shouldValidate: form.formState.isSubmitted })} />}</Field>
         </FormGrid>
+        <div className="mt-4">
+          <Checkbox label="Hide phone number from directory" {...form.register('hidePhone')} />
+          <p className="mt-1 ml-6 text-xs text-muted-foreground">Colleagues won&apos;t see your contact number in the directory, search or exports. HR and admins still can.</p>
+        </div>
         <div className="mt-5 flex justify-end">
           <Button type="submit" loading={form.formState.isSubmitting}>Save changes</Button>
         </div>
@@ -184,7 +196,7 @@ function MyIdCard({ emp }: { emp: EmployeeDetail }) {
 
 function ProfileInner() {
   const params = useSearchParams();
-  const { me, refresh } = useAuth();
+  const { me, refresh, can } = useAuth();
   const qc = useQueryClient();
   const { data: emp, isLoading } = useApi<EmployeeDetail>(me?.employee ? '/me/profile' : null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -277,9 +289,16 @@ function ProfileInner() {
                     />
                   </CardBody>
                 </Card>
+                <div className="lg:col-span-3">
+                  <SocialLinksCard links={emp.socialLinks} editable save={async (links) => { await api.patch('/me/profile', { socialLinks: links }); await qc.invalidateQueries({ queryKey: ['/me/profile'] }); }} />
+                </div>
               </div>
             ),
           },
+          { value: 'experience', label: 'Experience', content: <RecordsPanel kind="experience" employeeId={emp.id} self hr={can(P.EMPLOYEES_MANAGE)} /> },
+          { value: 'education', label: 'Education', content: <RecordsPanel kind="education" employeeId={emp.id} self hr={can(P.EMPLOYEES_MANAGE)} /> },
+          { value: 'certifications', label: 'Certifications', content: <RecordsPanel kind="certifications" employeeId={emp.id} self hr={can(P.EMPLOYEES_MANAGE)} /> },
+          { value: 'references', label: 'References', content: <RecordsPanel kind="references" employeeId={emp.id} self hr={can(P.EMPLOYEES_MANAGE)} /> },
           { value: 'documents', label: 'Documents', content: <DocumentsPanel employeeId={emp.id} self /> },
           { value: 'id-card', label: 'ID card', content: <MyIdCard emp={emp} /> },
           { value: 'career', label: 'Career', content: <CareerTimeline employeeId={emp.id} currency={me.tenant.currency} alwaysShow /> },

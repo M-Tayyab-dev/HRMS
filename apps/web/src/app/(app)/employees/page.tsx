@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { DepartmentSelect, EmployeeSelect, useLevels } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Avatar, Card, PageHeader, StatusBadge } from '@/components/ui/display';
-import { Checkbox, Field, FormGrid, Input, Select, CompanyEmailInput } from '@/components/ui/form';
+import { Checkbox, Field, FormGrid, Input, Select, CompanyEmailInput, CnicInput, IntlPhoneInput } from '@/components/ui/form';
 import { Dialog } from '@/components/ui/overlay';
 import { DataTable, Pagination } from '@/components/ui/table';
 import { api, qs } from '@/lib/api';
@@ -23,7 +23,7 @@ function AddEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const { me } = useAuth();
   const qc = useQueryClient();
   const router = useRouter();
-  const form = useZodForm(employeeSchema, { roles: ['EMPLOYEE'], sendInvite: true, mustChangePassword: true, hierarchyTier: 'MEMBER', joiningDate: todayLocal() } as never);
+  const form = useZodForm(employeeSchema, { roles: ['EMPLOYEE'], sendInvite: true, mustChangePassword: true, hierarchyTier: 'MEMBER', joiningDate: todayLocal(), dependents: 0, hidePhone: false } as never);
   const dept = form.watch('departmentId') as string | undefined;
   const levelId = form.watch('levelId') as string | undefined;
   const roles = (form.watch('roles') as string[] | undefined) ?? [];
@@ -106,7 +106,13 @@ function AddEmployeeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
               </Select>
             )}
           </Field>
+          <Field label="Contact number" error={fieldError(form, 'contactNo')}>{(a) => <IntlPhoneInput {...a} value={form.watch('contactNo') as string | undefined} onChange={(x) => form.setValue('contactNo', (x || undefined) as never, { shouldValidate: form.formState.isSubmitted })} />}</Field>
+          <Field label="Emergency contact" error={fieldError(form, 'emergencyContact')}>{(a) => <IntlPhoneInput {...a} value={form.watch('emergencyContact') as string | undefined} onChange={(x) => form.setValue('emergencyContact', (x || undefined) as never, { shouldValidate: form.formState.isSubmitted })} />}</Field>
+          <Field label="Father/Guardian Name" error={fieldError(form, 'fatherName')}>{(a) => <Input {...a} {...form.register('fatherName', empty)} />}</Field>
+          <Field label="Father/Guardian CNIC" error={fieldError(form, 'fatherCnic')}>{(a) => <CnicInput {...a} {...form.register('fatherCnic', empty)} />}</Field>
+          <Field label="Number of dependents" error={fieldError(form, 'dependents')} hint="Visible to HR and Company Admin only">{(a) => <Input {...a} type="number" min={0} step={1} {...form.register('dependents', { setValueAs: (x) => (x === '' ? undefined : Number(x)) })} />}</Field>
         </FormGrid>
+        <Checkbox label="Hide phone number from directory" {...form.register('hidePhone')} />
         {assignable.length > 0 && (
           <fieldset>
             <legend className="mb-2 text-sm font-medium">Additional roles</legend>
@@ -140,6 +146,10 @@ export default function EmployeesPage() {
   // Everyone by default (active first); former employees stay listed until deleted.
   const [status, setStatus] = useState('');
   const [open, setOpen] = useState(false);
+  // "Add employee" quick action on the Employees overview opens the form straight away.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('add') === '1') setOpen(true);
+  }, []);
   useEffect(() => {
     const t = setTimeout(() => {
       setQ(search);

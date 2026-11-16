@@ -110,6 +110,39 @@ export class LeaveController {
     return this.svc.balances(employeeId, q.year ?? Number(todayIn(t.timezone).slice(0, 4)));
   }
 
+  /**
+   * Leave module overview: KPIs in the person's own scope (HR: everyone, Team Lead: their team plus
+   * themselves, others: themselves), their own balances and the latest requests.
+   */
+  @Get('leave/overview')
+  async overview() {
+    const u = currentUser();
+    const t = await this.attendance.tenant();
+    const today = todayIn(t.timezone);
+    const visible = await this.scope.visibleEmployeeIds(P.LEAVE_APPROVE_HR, P.LEAVE_APPROVE_TL);
+    const s = scoped(leaveRequests.employeeId, visible);
+    const tx = this.db.tx;
+    const [k] = await tx
+      .select({
+        pending: sql<number>`count(*) filter (where ${leaveRequests.status} = 'PENDING')::int`,
+        approvedThisMonth: sql<number>`count(*) filter (where ${leaveRequests.status} = 'APPROVED' and to_char(${leaveRequests.startDate}, 'YYYY-MM') = ${today.slice(0, 7)})::int`,
+        onLeaveToday: sql<number>`count(distinct ${leaveRequests.employeeId}) filter (where ${leaveRequests.status} = 'APPROVED' and ${leaveRequests.startDate} <= ${today} and ${leaveRequests.endDate} >= ${today})::int`,
+        upcoming: sql<number>`count(*) filter (where ${leaveRequests.status} = 'APPROVED' and ${leaveRequests.startDate} > ${today} and ${leaveRequests.startDate} <= ${today}::date + 30)::int`,
+      })
+      .from(leaveRequests)
+      .where(s);
+    const recent = await tx
+      .select({ id: leaveRequests.id, employeeName: employees.fullName, typeName: leaveTypes.name, typeColor: leaveTypes.color, startDate: leaveRequests.startDate, endDate: leaveRequests.endDate, status: leaveRequests.status, currentStep: leaveRequests.currentStep })
+      .from(leaveRequests)
+      .innerJoin(employees, eq(employees.id, leaveRequests.employeeId))
+      .innerJoin(leaveTypes, eq(leaveTypes.id, leaveRequests.leaveTypeId))
+      .where(s)
+      .orderBy(desc(leaveRequests.createdAt))
+      .limit(8);
+    const balances = u.employeeId ? await this.svc.balances(u.employeeId, Number(today.slice(0, 4))) : [];
+    return { scope: visible === null ? 'company' : visible.length > 1 ? 'team' : 'self', ...k, balances, recent };
+  }
+
   /* ---------------- Requests (Team Lead → HR, C3) ---------------- */
 
   @Get('leave/requests')

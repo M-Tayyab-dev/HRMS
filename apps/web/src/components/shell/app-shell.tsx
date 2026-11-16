@@ -87,8 +87,10 @@ function NotificationBell() {
 function useVisibleNav(): NavGroup[] {
   const { can, isTeamLead, me, hasModule } = useAuth();
   const medicalEligible = useMedicalEligible();
+  const { data: sales } = useApi<{ allowed: boolean }>(hasModule('PERFORMANCE') ? '/sales/access' : null);
   const visible = (i: NavItem) => {
     if (i.module && !hasModule(i.module)) return false;
+    if (i.sales && !sales?.allowed) return false;
     if (i.employeeOnly && !me?.employee) return false;
     if (i.teamLead && !isTeamLead) return false;
     if (i.any?.length && !can(...i.any)) return false;

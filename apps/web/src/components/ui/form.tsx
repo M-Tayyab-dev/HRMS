@@ -1,4 +1,5 @@
-import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { DEFAULT_PHONE_COUNTRY, PHONE_COUNTRIES, parsePhone } from '@hrms/shared';
+import { forwardRef, useEffect, useId, useState, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/format';
 
 const control =
@@ -195,6 +196,79 @@ export function CompanyEmailInput({
       ) : (
         <span className={domainBox} title="Company email domain (set by your provider)">{suffix}</span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Phone number with an international dialling-code picker (Pakistan +92 by default).
+ * `value` / `onChange` use the international form "+92 3001234567"; older local numbers ("0300…") are read as +92.
+ */
+export function IntlPhoneInput({
+  value,
+  onChange,
+  id,
+  disabled,
+  defaultCountry = DEFAULT_PHONE_COUNTRY,
+  'aria-invalid': invalid,
+  'aria-describedby': describedBy,
+}: {
+  value: string | null | undefined;
+  onChange: (value: string) => void;
+  id?: string;
+  disabled?: boolean;
+  defaultCountry?: string;
+  'aria-invalid'?: boolean;
+  'aria-describedby'?: string;
+}) {
+  const [iso, setIso] = useState(() => (value ? parsePhone(value, defaultCountry).country.iso : defaultCountry));
+  const parsed = parsePhone(value, iso);
+  // Follow a value set from outside (form reset, record loaded) when it belongs to another country.
+  useEffect(() => {
+    if (value && parsed.country.iso !== iso) setIso(parsed.country.iso);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const country = PHONE_COUNTRIES.find((c) => c.iso === iso) ?? PHONE_COUNTRIES[0]!;
+  const national = value ? parsed.national : '';
+  const emit = (dial: string, digits: string) => onChange(digits ? `+${dial} ${digits}` : '');
+  return (
+    <div className={cn('flex h-9 w-full overflow-hidden rounded-md border border-input bg-card shadow-xs focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40', invalid && 'border-danger', disabled && 'opacity-60')}>
+      <select
+        aria-label="Country code"
+        value={iso}
+        disabled={disabled}
+        onChange={(e) => {
+          const c = PHONE_COUNTRIES.find((x) => x.iso === e.target.value) ?? country;
+          setIso(c.iso);
+          emit(c.dial, national);
+        }}
+        className="w-[5.75rem] shrink-0 cursor-pointer border-r bg-muted px-2 text-sm text-foreground outline-none"
+        title={`${country.name} (+${country.dial})`}
+      >
+        {PHONE_COUNTRIES.map((c) => (
+          <option key={c.iso} value={c.iso}>{c.iso} +{c.dial} · {c.name}</option>
+        ))}
+      </select>
+      <input
+        id={id}
+        type="tel"
+        inputMode="tel"
+        autoComplete="tel-national"
+        disabled={disabled}
+        value={national}
+        placeholder={country.iso === 'PK' ? '300 1234567' : 'Phone number'}
+        maxLength={country.max + 4}
+        aria-invalid={invalid}
+        aria-describedby={describedBy}
+        onChange={(e) => {
+          let d = e.target.value.replace(/\D/g, '');
+          // People often type the trunk 0 (0300…) or paste the code again (92 300…): drop them.
+          if (d.startsWith(country.dial) && d.length > country.max) d = d.slice(country.dial.length);
+          d = d.replace(/^0+/, '').slice(0, 15);
+          emit(country.dial, d);
+        }}
+        className="min-w-0 flex-1 bg-transparent px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
+      />
     </div>
   );
 }

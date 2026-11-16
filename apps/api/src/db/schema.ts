@@ -432,6 +432,17 @@ export const employees = pgTable(
     onboardingCompletedAt: ts('onboarding_completed_at'),
     /** D3: the company offers this person medical claims (HR decides per employee). */
     medicalEligible: boolean('medical_eligible').notNull().default(false),
+    /** The person hid their contact number from the directory and colleagues (HR still sees it). */
+    hidePhone: boolean('hide_phone').notNull().default(false),
+    /** Number of dependents: HR / Company Admin only. */
+    dependents: integer('dependents').notNull().default(0),
+    /** LinkedIn, Instagram, X, Facebook, website and custom links (http/https only). */
+    socialLinks: jsonb('social_links').$type<SocialLinksData>().notNull().default({}),
+    /** "No previous experience" ticked: the experience forms are switched off. */
+    noExperience: boolean('no_experience').notNull().default(false),
+    /** When the employee submitted their education / references; after that only HR can change them. */
+    educationSubmittedAt: ts('education_submitted_at'),
+    referencesSubmittedAt: ts('references_submitted_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -442,6 +453,97 @@ export const employees = pgTable(
     index('employees_dept_idx').on(t.departmentId),
     index('employees_status_idx').on(t.tenantId, t.employmentStatus),
   ],
+);
+
+export interface SocialLinksData {
+  linkedin?: string;
+  instagram?: string;
+  x?: string;
+  facebook?: string;
+  website?: string;
+  custom?: { label: string; url: string }[];
+}
+
+/** Columns every profile record has (experience, education, certifications, references). */
+const profileRecordColumns = () => ({
+  id: id(),
+  tenantId: tenantId(),
+  employeeId: uuid('employee_id')
+    .notNull()
+    .references(() => employees.id, { onDelete: 'cascade' }),
+  createdByUserId: uuid('created_by_user_id'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** Previous work experience (before joining this company). */
+export const employeeExperiences = pgTable(
+  'employee_experiences',
+  {
+    ...profileRecordColumns(),
+    companyName: text('company_name').notNull(),
+    designation: text('designation').notNull(),
+    employmentType: text('employment_type').notNull(),
+    department: text('department'),
+    startDate: date('start_date', { mode: 'string' }).notNull(),
+    endDate: date('end_date', { mode: 'string' }),
+    responsibilities: text('responsibilities').notNull(),
+    achievements: text('achievements'),
+    reasonForLeaving: text('reason_for_leaving'),
+    fileId: uuid('file_id').references(() => files.id),
+  },
+  (t) => [index('emp_experiences_employee_idx').on(t.employeeId)],
+);
+
+export const employeeEducations = pgTable(
+  'employee_educations',
+  {
+    ...profileRecordColumns(),
+    qualificationLevel: text('qualification_level').notNull(),
+    degreeTitle: text('degree_title').notNull(),
+    fieldOfStudy: text('field_of_study'),
+    institution: text('institution').notNull(),
+    board: text('board'),
+    startDate: date('start_date', { mode: 'string' }).notNull(),
+    completionDate: date('completion_date', { mode: 'string' }),
+    currentlyStudying: boolean('currently_studying').notNull().default(false),
+    grade: text('grade'),
+    fileId: uuid('file_id').references(() => files.id),
+  },
+  (t) => [index('emp_educations_employee_idx').on(t.employeeId)],
+);
+
+export const employeeCertifications = pgTable(
+  'employee_certifications',
+  {
+    ...profileRecordColumns(),
+    name: text('name').notNull(),
+    issuer: text('issuer').notNull(),
+    issueDate: date('issue_date', { mode: 'string' }).notNull(),
+    expiryDate: date('expiry_date', { mode: 'string' }),
+    credentialId: text('credential_id'),
+    verificationUrl: text('verification_url'),
+    description: text('description'),
+    fileId: uuid('file_id').references(() => files.id),
+  },
+  (t) => [index('emp_certifications_employee_idx').on(t.employeeId)],
+);
+
+/** Professional references. Contact details are for HR only. */
+export const employeeReferences = pgTable(
+  'employee_references',
+  {
+    ...profileRecordColumns(),
+    name: text('name').notNull(),
+    designation: text('designation'),
+    organisation: text('organisation').notNull(),
+    relationship: text('relationship').notNull(),
+    email: text('email'),
+    phone: text('phone'),
+    yearsKnown: integer('years_known'),
+    notes: text('notes'),
+  },
+  (t) => [index('emp_references_employee_idx').on(t.employeeId)],
 );
 
 /** B8 – every position an employee has held. */

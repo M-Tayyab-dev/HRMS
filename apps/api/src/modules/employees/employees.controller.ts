@@ -18,7 +18,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { currentUser } from '../../common/context';
 import { Audit, RequireAny } from '../../common/decorators';
-import { one } from '../../common/util';
+import { csvFile, one } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
 import { NotificationsService } from '../../core/notifications.service';
 import { DbService } from '../../db/db.service';
@@ -123,6 +123,19 @@ export class EmployeesController {
   @Get('directory')
   directory(@Query(zp(directoryQuery)) q: z.infer<typeof directoryQuery>) {
     return this.svc.directory(q);
+  }
+
+  /** Directory as CSV: the same rows the person sees, so hidden phone numbers stay hidden. */
+  @Get('directory/export')
+  async directoryExport(@Query(zp(directoryQuery)) q: z.infer<typeof directoryQuery>) {
+    const rows = await this.svc.directory(q);
+    return csvFile(
+      [
+        ['Employee ID', 'Name', 'Email', 'Phone', 'Department', 'Designation', 'Level', 'Reporting manager'],
+        ...rows.map((r) => [r.employeeCode, r.fullName, r.email, r.contactNo, r.departmentName, r.designation, r.level, r.reportingManagerName]),
+      ],
+      'directory.csv',
+    );
   }
 
   @Get('directory/org-chart')

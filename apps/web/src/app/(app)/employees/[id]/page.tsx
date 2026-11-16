@@ -1,7 +1,7 @@
 'use client';
 
-import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, phoneProblem, promotionSchema, joinedLabel } from '@hrms/shared';
-import { ArrowLeft, BadgeCheck, Camera, Info, KeyRound, Mail, Pencil, UserCheck, UserX } from 'lucide-react';
+import { BLOOD_GROUPS, EMPLOYMENT_STATUSES, HIERARCHY_LABELS, HIERARCHY_TIERS, PERMISSIONS as P, formatPhoneDisplay, phoneProblem, promotionSchema, joinedLabel } from '@hrms/shared';
+import { ArrowLeft, BadgeCheck, Camera, EyeOff, Info, KeyRound, Mail, Pencil, UserCheck, UserX } from 'lucide-react';
 import Link from 'next/link';
 import { use, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -12,7 +12,8 @@ import { DepartmentSelect, EmployeeSelect, useLevels } from '@/components/domain
 import { CareerTimeline, DocumentsPanel } from '@/components/employee-panels';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardBody, CardHeader, ErrorState, KeyValue, Skeleton, StatusBadge } from '@/components/ui/display';
-import { Checkbox, Field, FormGrid, Input, Select, Textarea, CnicInput, PhoneInput, CompanyEmailInput } from '@/components/ui/form';
+import { Checkbox, Field, FormGrid, Input, Select, Textarea, CnicInput, IntlPhoneInput, CompanyEmailInput } from '@/components/ui/form';
+import { RecordsPanel, SocialLinksCard } from '@/components/profile-records';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -72,6 +73,8 @@ function SignInAccess({ userId, email }: { userId: string; email: string }) {
   );
 }
 
+const badDependents = (v: string) => v !== '' && (!Number.isInteger(Number(v)) || Number(v) < 0);
+
 function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
   const { me } = useAuth();
@@ -85,7 +88,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         basicSalary: emp.basicSalary, joiningDate: emp.joiningDate, dateOfBirth: emp.dateOfBirth ?? '', reportingManagerId: emp.reportingManagerId ?? '',
         hierarchyTier: emp.hierarchyTier, employmentStatus: emp.employmentStatus, cnic: emp.cnic ?? '', fatherName: emp.fatherName ?? '',
         fatherCnic: emp.fatherCnic ?? '', bloodGroup: emp.bloodGroup ?? '', contactNo: emp.contactNo ?? '', emergencyContact: emp.emergencyContact ?? '',
-        medicalEligible: !!emp.medicalEligible,
+        medicalEligible: !!emp.medicalEligible, hidePhone: !!emp.hidePhone, dependents: emp.dependents ?? 0,
       });
   }, [open, emp]);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setV((s) => ({ ...s, [k]: e.target.value }));
@@ -95,7 +98,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
       const body = Object.fromEntries(
         Object.entries(v)
           .filter(([, x]) => x !== '' && x !== undefined)
-          .map(([k, x]) => [k, k === 'basicSalary' ? Number(x) : x]),
+          .map(([k, x]) => [k, k === 'basicSalary' || k === 'dependents' ? Number(x) : x]),
       );
       if (v.reportingManagerId === '') body.reportingManagerId = null;
       await api.patch(`/employees/${emp.id}`, body);
@@ -111,7 +114,7 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
   const s = (k: string) => String(v[k] ?? '');
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Edit employee" description="Company Admin and HR can edit every field, including ones employees can't change. Setting the status back to Active restores their login." size="xl"
-      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} loading={busy} disabled={!!(phoneProblem(s('contactNo')) || phoneProblem(s('emergencyContact')))}>Save</Button></>}>
+      footer={<><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} loading={busy} disabled={!!(phoneProblem(s('contactNo')) || phoneProblem(s('emergencyContact')) || badDependents(s('dependents')))}>Save</Button></>}>
       <FormGrid cols={3}>
         <Field label="Full name">{(a) => <Input {...a} value={s('fullName')} onChange={set('fullName')} />}</Field>
         <Field label="Company email">{(a) => <CompanyEmailInput {...a} domain={me?.tenant.emailDomain} domains={me?.tenant.emailDomains} value={s('email')} onChange={(v) => setV((x) => ({ ...x, email: v }))} />}</Field>
@@ -126,11 +129,16 @@ function EditDialog({ emp, open, onOpenChange }: { emp: EmployeeDetail; open: bo
         <Field label="Hierarchy">{(a) => <Select {...a} value={s('hierarchyTier')} onChange={set('hierarchyTier')}>{HIERARCHY_TIERS.map((t) => <option key={t} value={t}>{HIERARCHY_LABELS[t]}</option>)}</Select>}</Field>
         <Field label="Blood group">{(a) => <Select {...a} value={s('bloodGroup')} onChange={set('bloodGroup')}><option value="">—</option>{BLOOD_GROUPS.map((b) => <option key={b}>{b}</option>)}</Select>}</Field>
         <Field label="CNIC">{(a) => <CnicInput {...a} value={s('cnic')} onChange={set('cnic')} />}</Field>
-        <Field label="Father's name">{(a) => <Input {...a} value={s('fatherName')} onChange={set('fatherName')} />}</Field>
-        <Field label="Father's CNIC">{(a) => <CnicInput {...a} value={s('fatherCnic')} onChange={set('fatherCnic')} />}</Field>
-        <Field label="Contact number" error={phoneProblem(s('contactNo')) ?? undefined}>{(a) => <PhoneInput {...a} value={s('contactNo')} onChange={set('contactNo')} />}</Field>
-        <Field label="Emergency contact" error={phoneProblem(s('emergencyContact')) ?? undefined}>{(a) => <PhoneInput {...a} value={s('emergencyContact')} onChange={set('emergencyContact')} />}</Field>
+        <Field label="Father/Guardian Name">{(a) => <Input {...a} value={s('fatherName')} onChange={set('fatherName')} />}</Field>
+        <Field label="Father/Guardian CNIC">{(a) => <CnicInput {...a} value={s('fatherCnic')} onChange={set('fatherCnic')} />}</Field>
+        <Field label="Contact number" error={phoneProblem(s('contactNo')) ?? undefined}>{(a) => <IntlPhoneInput {...a} value={s('contactNo')} onChange={(x) => setV((y) => ({ ...y, contactNo: x }))} />}</Field>
+        <Field label="Emergency contact" error={phoneProblem(s('emergencyContact')) ?? undefined}>{(a) => <IntlPhoneInput {...a} value={s('emergencyContact')} onChange={(x) => setV((y) => ({ ...y, emergencyContact: x }))} />}</Field>
+        <Field label="Number of dependents" hint="Visible to HR and Company Admin only" error={badDependents(s('dependents')) ? 'Enter a whole number, 0 or more' : undefined}>{(a) => <Input {...a} type="number" min={0} step={1} value={s('dependents')} onChange={set('dependents')} />}</Field>
       </FormGrid>
+      <div className="mt-4">
+        <Checkbox label="Hide phone number from directory" checked={!!v.hidePhone} onChange={(e) => setV((x) => ({ ...x, hidePhone: e.target.checked }))} />
+        <p className="mt-1 ml-6 text-xs text-muted-foreground">Colleagues won&apos;t see the contact number in the directory, search or exports. HR and admins still can.</p>
+      </div>
       <div className="mt-5 border-t pt-4">
         <Checkbox label="Eligible for medical claims" checked={!!v.medicalEligible} onChange={(e) => setV((x) => ({ ...x, medicalEligible: e.target.checked }))} />
         <p className="mt-1 ml-6 text-xs text-muted-foreground">They can claim medical expenses up to the company's yearly limit. Without this, Medical claims is hidden for them.</p>
@@ -260,6 +268,8 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
   if (error) return <ErrorState message={error.message} />;
   if (isLoading || !emp) return <Skeleton className="h-96" />;
   const hr = can(P.EMPLOYEES_MANAGE);
+  const seesAll = can(P.EMPLOYEES_READ_ALL);
+  const self = me?.employee?.id === id;
 
   const uploadAvatar = async (f: File) => {
     const fd = new FormData();
@@ -332,19 +342,43 @@ export default function EmployeeDetailPage({ params }: { params: Promise<{ id: s
                 <Card>
                   <CardHeader title="Personal" />
                   <CardBody>
-                    <KeyValue items={[['Full name', emp.fullName], ['CNIC', emp.cnic ?? (hr ? null : 'Confidential')], ["Father's name", emp.fatherName], ["Father's CNIC", emp.fatherCnic ?? (hr ? null : 'Confidential')], ['Blood group', emp.bloodGroup], ['Contact', emp.contactNo], ['Emergency contact', emp.emergencyContact], ['Date of birth', emp.dateOfBirth ? date(emp.dateOfBirth, { day: 'numeric', month: 'long' }) : null]]} />
+                    <KeyValue items={[['Full name', emp.fullName], ['CNIC', emp.cnic ?? (seesAll ? null : 'Confidential')], ['Father/Guardian Name', emp.fatherName], ['Father/Guardian CNIC', emp.fatherCnic ?? (seesAll ? null : 'Confidential')], ['Blood group', emp.bloodGroup], ['Date of birth', emp.dateOfBirth ? date(emp.dateOfBirth, { day: 'numeric', month: 'long' }) : null]]} />
+                  </CardBody>
+                </Card>
+                <Card>
+                  <CardHeader title="Contact & privacy" />
+                  <CardBody>
+                    <KeyValue items={[
+                      ['Contact', emp.contactNo ? formatPhoneDisplay(emp.contactNo) : emp.hidePhone ? <span key="h" className="inline-flex items-center gap-1 text-muted-foreground"><EyeOff className="h-3.5 w-3.5" aria-hidden /> Hidden</span> : null],
+                      ['Emergency contact', emp.emergencyContact ? formatPhoneDisplay(emp.emergencyContact) : null],
+                      ['Company email', emp.email],
+                      ['Phone in directory', emp.hidePhone ? 'Hidden' : 'Shown'],
+                    ]} />
                   </CardBody>
                 </Card>
                 <Card>
                   <CardHeader title="Employment" />
                   <CardBody>
-                    <KeyValue items={[['Employee ID', emp.employeeCode], ['Company email', emp.email], ['Department', emp.departmentName], ['Level', `${emp.levelCode} – ${emp.levelTitle}`], ['Reporting manager', emp.reportingManagerName], ['Hierarchy', HIERARCHY_LABELS[emp.hierarchyTier as keyof typeof HIERARCHY_LABELS]], ['Joined', date(emp.joiningDate)], ['Exit date', emp.exitDate ? date(emp.exitDate) : null], ['Basic salary', emp.basicSalary !== null ? money(emp.basicSalary, currency) : 'Confidential'], ['Roles', emp.roles.join(', ').toLowerCase().replace(/_/g, ' ')]]} />
+                    <KeyValue items={[['Employee ID', emp.employeeCode], ['Department', emp.departmentName], ['Designation', emp.designation], ['Level', `${emp.levelCode} – ${emp.levelTitle}`], ['Team', emp.team?.teamName], ['Reporting manager', emp.reportingManagerName], ['Hierarchy', HIERARCHY_LABELS[emp.hierarchyTier as keyof typeof HIERARCHY_LABELS]], ['Joined', date(emp.joiningDate)], ['Exit date', emp.exitDate ? date(emp.exitDate) : null], ['Basic salary', emp.basicSalary !== null ? money(emp.basicSalary, currency) : 'Confidential'], ['Roles', emp.roles.join(', ').toLowerCase().replace(/_/g, ' ')]]} />
                   </CardBody>
                 </Card>
+                <div className="space-y-6">
+                  {hr && (
+                    <Card>
+                      <CardHeader title="Dependents" description="Visible to HR and Company Admin only." />
+                      <CardBody><KeyValue items={[['Number of dependents', String(emp.dependents ?? 0)]]} /></CardBody>
+                    </Card>
+                  )}
+                  <SocialLinksCard links={emp.socialLinks} editable={hr} save={async (links) => { await api.patch(`/employees/${emp.id}`, { socialLinks: links }); await qc.invalidateQueries({ queryKey: [`/employees/${id}`] }); }} />
+                </div>
               </div>
             ),
           },
-          { value: 'documents', label: 'Documents', hidden: !(can(P.EMPLOYEE_DOCS_MANAGE) || can(P.EMPLOYMENT_DOCS_MANAGE)), content: <DocumentsPanel employeeId={id} self={false} /> },
+          { value: 'experience', label: 'Experience', content: <RecordsPanel kind="experience" employeeId={id} self={self} hr={hr} /> },
+          { value: 'education', label: 'Education', content: <RecordsPanel kind="education" employeeId={id} self={self} hr={hr} /> },
+          { value: 'certifications', label: 'Certifications', content: <RecordsPanel kind="certifications" employeeId={id} self={self} hr={hr} /> },
+          { value: 'references', label: 'References', content: <RecordsPanel kind="references" employeeId={id} self={self} hr={hr} /> },
+          { value: 'documents', label: 'Supporting documents', hidden: !(can(P.EMPLOYEE_DOCS_MANAGE) || can(P.EMPLOYMENT_DOCS_MANAGE)), content: <DocumentsPanel employeeId={id} self={false} /> },
           { value: 'career', label: 'Promotions', content: <CareerTimeline employeeId={id} currency={currency} alwaysShow /> },
           { value: 'id-card', label: 'ID card', hidden: !hr, content: <EmployeeIdCard emp={emp} /> },
           {
