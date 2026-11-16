@@ -78,7 +78,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <Skeleton className="h-10 w-72" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-28" />
           ))}
@@ -91,8 +91,8 @@ export default function DashboardPage() {
   const cur = d.currency;
   const e = d.employee;
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-sm text-muted-foreground">{date(d.today, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
@@ -110,11 +110,11 @@ export default function DashboardPage() {
 
       {/* ---------- Employee ---------- */}
       {e && (
-        <section aria-labelledby="my-heading" className="space-y-4">
+        <section aria-labelledby="my-heading" className="space-y-3">
           <h2 id="my-heading" className="sr-only">
             My overview
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {has('ATTENDANCE') && <><Stat
               label="Today"
               icon={Clock}
@@ -126,7 +126,7 @@ export default function DashboardPage() {
             {has('PAYROLL') && <Stat label="Last salary" icon={Receipt} tone="info" value={e.lastPayslip ? money(e.lastPayslip.net, cur) : '—'} hint={e.lastPayslip ? monthLabel(e.lastPayslip.period) : 'No slips yet'} />}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-3">
             {has('ATTENDANCE') && <Card className="lg:col-span-2">
               <CardHeader title="Attendance this month" action={<Link className="text-xs text-primary hover:underline" href="/attendance">View attendance</Link>} />
               <CardBody>
@@ -165,7 +165,7 @@ export default function DashboardPage() {
             </Card>}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-3">
             {has('PERFORMANCE') && <Card>
               <CardHeader title="KPI progress" description={monthLabel(d.month)} action={<Link className="text-xs text-primary hover:underline" href="/kpi">Submit</Link>} />
               <CardBody className="space-y-3">
@@ -234,12 +234,12 @@ export default function DashboardPage() {
 
       {/* ---------- Sales revenue (Sales department / permitted roles only) ---------- */}
       {d.sales && (
-        <section aria-labelledby="sales-heading" className="space-y-4">
+        <section aria-labelledby="sales-heading" className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 id="sales-heading" className="text-lg font-semibold">Sales revenue</h2>
             <Link className="text-xs text-primary hover:underline" href="/overview/sales">Sales overview</Link>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label={`Revenue in ${monthLabel(d.month).split(' ')[0]}`} icon={TrendingUp} tone="success" value={money(d.sales.totals.achieved, cur)} hint="Approved KPI results" />
             <Stat label="Target" icon={Target} value={money(d.sales.totals.target, cur)} hint={`${d.sales.totals.people} people with sales targets`} />
             <Stat label="Achieved" icon={UserCheck} tone="info" value={d.sales.totals.progress === null ? '—' : `${d.sales.totals.progress}%`} hint={`${money(d.sales.totals.pending, cur)} awaiting approval`} />
@@ -250,15 +250,15 @@ export default function DashboardPage() {
 
       {/* ---------- Team Lead ---------- */}
       {d.teamLead && (
-        <section aria-labelledby="team-heading" className="space-y-4">
+        <section aria-labelledby="team-heading" className="space-y-3">
           <h2 id="team-heading" className="text-lg font-semibold">My team</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Team members" icon={Users} value={d.teamLead.memberCount} />
             {has('ATTENDANCE') && <Stat label="In today" icon={UserCheck} tone="success" value={(d.teamLead.todayAttendance.PRESENT ?? 0) + (d.teamLead.todayAttendance.LATE ?? 0)} hint={`${d.teamLead.todayAttendance.LATE ?? 0} late · ${d.teamLead.notCheckedIn} not in`} />}
             {has('COMPLIANCE') && <Stat label="Open queries" icon={LifeBuoy} tone="warning" value={d.teamLead.openQueries} />}
             {has('COMPLIANCE') && <Stat label="Open team surveys" icon={Megaphone} tone="info" value={d.teamLead.openSurveys} />}
           </div>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-3">
           {has('ATTENDANCE') && <Card>
             <CardHeader title="Team today" description={date(d.today, { weekday: 'long', day: 'numeric', month: 'short' })} />
             <CardBody>
@@ -286,9 +286,9 @@ export default function DashboardPage() {
 
       {/* ---------- HR / Operations ---------- */}
       {d.organisation && (
-        <section aria-labelledby="org-heading" className="space-y-4">
+        <section aria-labelledby="org-heading" className="space-y-3">
           <h2 id="org-heading" className="text-lg font-semibold">Organisation</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Active employees" icon={Users} value={d.organisation.headcount.active} hint={`${d.organisation.headcount.total} registered · ${d.organisation.headcount.resigned + d.organisation.headcount.terminated} left`} />
             {has('ATTENDANCE') && <><Stat label="Present today" icon={UserCheck} tone="success" value={(d.organisation.todayAttendance.PRESENT ?? 0) + (d.organisation.todayAttendance.LATE ?? 0)} hint={`${d.organisation.todayAttendance.LATE ?? 0} late · ${d.organisation.todayAttendance.ON_LEAVE ?? 0} on leave`} />
             <Stat
@@ -306,7 +306,7 @@ export default function DashboardPage() {
               hint={d.organisation.latestPayroll ? `${monthLabel(d.organisation.latestPayroll.period)} · ${d.organisation.latestPayroll.status.replace('_', ' ').toLowerCase()}` : 'Not processed yet'}
             />}
           </div>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-3">
             {has('ATTENDANCE') && <Card>
               <CardHeader title="Attendance today" />
               <CardBody>
@@ -334,7 +334,7 @@ export default function DashboardPage() {
               </CardBody>
             </Card>}
           </div>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader title="Employees by department" action={<Link className="text-xs text-primary hover:underline" href="/headcount">Headcount report</Link>} />
               <CardBody>
@@ -364,12 +364,12 @@ export default function DashboardPage() {
 
       {/* ---------- Super Admin ---------- */}
       {d.system && (
-        <section aria-labelledby="sys-heading" className="space-y-4">
+        <section aria-labelledby="sys-heading" className="space-y-3">
           <h2 id="sys-heading" className="text-lg font-semibold">System overview</h2>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-3 lg:grid-cols-3">
             <Card>
               <CardHeader title="Accounts" action={<Link className="text-xs text-primary hover:underline" href="/access/users">Manage</Link>} />
-              <CardBody className="grid grid-cols-2 gap-4">
+              <CardBody className="grid grid-cols-2 gap-3">
                 {[
                   ['Active', d.system.users.active],
                   ['Invited', d.system.users.invited],
@@ -401,7 +401,7 @@ export default function DashboardPage() {
       )}
 
       {/* ---------- Announcements & community ---------- */}
-      {has('COMMUNITY') && <div className="grid gap-4 lg:grid-cols-2">
+      {has('COMMUNITY') && <div className="grid gap-3 lg:grid-cols-2">
         <Card>
           <CardHeader title="Company announcements" action={<Link className="text-xs text-primary hover:underline" href="/announcements">All</Link>} />
           {d.announcements.length ? (

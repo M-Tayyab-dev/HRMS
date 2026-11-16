@@ -887,6 +887,26 @@ export const leaveRequests = pgTable(
   (t) => [index('leave_requests_emp_idx').on(t.employeeId, t.startDate)],
 );
 
+/** Work-from-home requests: applied for like leave and approved Team Lead → HR. */
+export const wfhRequests = pgTable(
+  'wfh_requests',
+  {
+    id: id(),
+    tenantId: tenantId(),
+    employeeId: uuid('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    startDate: date('start_date', { mode: 'string' }).notNull(),
+    endDate: date('end_date', { mode: 'string' }).notNull(),
+    reason: text('reason').notNull(),
+    ...approvalColumns(),
+    cancellationReason: text('cancellation_reason'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('wfh_requests_emp_idx').on(t.employeeId, t.startDate)],
+);
+
 export const holidays = pgTable(
   'holidays',
   {

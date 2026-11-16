@@ -28,6 +28,7 @@ const ENTITY_TABLES: Record<string, PgTable & { id: unknown }> = {
   kpi_submission: schema.kpiSubmissions,
   kpi_target: schema.kpiTargets,
   leave_request: schema.leaveRequests,
+  wfh_request: schema.wfhRequests,
   leave_type: schema.leaveTypes,
   level: schema.levels,
   loan: schema.loans,

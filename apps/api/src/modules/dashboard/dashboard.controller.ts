@@ -33,6 +33,7 @@ import { LeaveService } from '../leave/leave.service';
 
 const TABLES: Record<Exclude<WorkflowType, 'PAYROLL'>, { table: string; label: string; link: string }> = {
   LEAVE: { table: 'leave_requests', label: 'Leave request', link: '/leave/approvals' },
+  WORK_FROM_HOME: { table: 'wfh_requests', label: 'Work from home', link: '/leave?tab=approvals' },
   ATTENDANCE_CORRECTION: { table: 'attendance_corrections', label: 'Attendance correction', link: '/attendance/corrections' },
   OVERTIME: { table: 'overtime_records', label: 'Overtime', link: '/attendance/overtime' },
   COMPENSATION: { table: 'compensation_requests', label: 'Overtime compensation', link: '/attendance/overtime' },

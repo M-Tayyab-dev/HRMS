@@ -102,6 +102,17 @@ export type LeaveRequestInput = z.infer<typeof leaveRequestSchema>;
 
 export const leaveCancelSchema = z.object({ reason: trimmed(5, 1000) });
 
+/** Work from home request: one or more days, approved like leave (Team Lead → HR). */
+export const wfhRequestSchema = z
+  .object({
+    startDate: isoDate,
+    endDate: isoDate,
+    reason: trimmed(3, 1000),
+  })
+  .refine((v) => v.startDate <= v.endDate, { message: 'End date must be on or after start date', path: ['endDate'] })
+  .refine((v) => (Date.parse(v.endDate) - Date.parse(v.startDate)) / 864e5 < 31, { message: 'Ask for at most 31 days at a time', path: ['endDate'] });
+export type WfhRequestInput = z.infer<typeof wfhRequestSchema>;
+
 export const leaveAllocationSchema = z.object({
   employeeId: uuid,
   leaveTypeId: uuid,

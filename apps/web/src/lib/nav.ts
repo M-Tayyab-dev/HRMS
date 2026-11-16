@@ -136,6 +136,7 @@ export const NAV: NavGroup[] = [
     label: 'Access & roles',
     icon: ShieldCheck,
     items: [
+      { href: '/overview/access', label: 'Overview', icon: LayoutGrid, any: [P.USERS_MANAGE_ACCESS, P.ROLES_MANAGE, P.AUDIT_READ] },
       { href: '/access/users', label: 'Users & access', icon: KeyRound, any: [P.USERS_MANAGE_ACCESS] },
       { href: '/access/roles', label: 'Roles & permissions', icon: ShieldCheck, any: [P.ROLES_MANAGE] },
       { href: '/access/audit', label: 'Audit trail', icon: History, any: [P.AUDIT_READ] },
@@ -145,6 +146,7 @@ export const NAV: NavGroup[] = [
     label: 'Settings',
     icon: Settings,
     items: [
+      { href: '/overview/settings', label: 'Overview', icon: LayoutGrid, any: [P.TENANT_SETTINGS, P.ATTENDANCE_MANAGE, P.LEAVE_MANAGE, P.DIRECTORY_SETTINGS] },
       { href: '/settings', label: 'Settings', icon: Settings, any: [P.TENANT_SETTINGS, P.ATTENDANCE_MANAGE, P.LEAVE_MANAGE, P.DIRECTORY_SETTINGS] },
       { href: '/billing', label: 'Billing & plan', icon: CreditCard, any: [P.TENANT_SETTINGS] },
     ],

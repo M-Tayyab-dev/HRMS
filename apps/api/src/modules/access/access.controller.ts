@@ -193,6 +193,37 @@ export class AccessController {
   }
 
   /** F5 – audit trail browser. */
+  /** Access & roles overview: account numbers, people per role and recent activity (what the person may see). */
+  @Get('overview')
+  @RequireAny(P.USERS_MANAGE_ACCESS, P.ROLES_MANAGE, P.AUDIT_READ)
+  async overview() {
+    const u = currentUser();
+    const tx = this.db.tx;
+    const out: Record<string, unknown> = {};
+    if (u.permissions.has(P.USERS_MANAGE_ACCESS) || u.permissions.has(P.ROLES_MANAGE)) {
+      const [accounts] = await tx
+        .select({
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${users.status} = 'ACTIVE')::int`,
+          invited: sql<number>`count(*) filter (where ${users.status} = 'INVITED')::int`,
+          disabled: sql<number>`count(*) filter (where ${users.status} = 'DISABLED')::int`,
+          locked: sql<number>`count(*) filter (where ${users.lockedUntil} > now())::int`,
+          neverSignedIn: sql<number>`count(*) filter (where ${users.lastLoginAt} is null and ${users.status} <> 'DISABLED')::int`,
+        })
+        .from(users);
+      const perRole = await tx.select({ role: userRoles.role, n: sql<number>`count(*)::int` }).from(userRoles).groupBy(userRoles.role);
+      out.accounts = accounts;
+      out.roles = ROLES.map((role) => ({ role, label: ROLE_LABELS[role], users: perRole.find((r) => r.role === role)?.n ?? 0 }));
+    }
+    if (u.permissions.has(P.AUDIT_READ)) {
+      const since = new Date(Date.now() - 7 * 864e5);
+      const [week] = await tx.select({ n: sql<number>`count(*)::int`, failed: sql<number>`count(*) filter (where ${auditLogs.action} = 'auth.login_failed')::int` }).from(auditLogs).where(gte(auditLogs.createdAt, since));
+      const recent = await tx.select({ a: auditLogs, email: users.email }).from(auditLogs).leftJoin(users, eq(users.id, auditLogs.actorUserId)).orderBy(desc(auditLogs.id)).limit(8);
+      out.activity = { lastWeek: week?.n ?? 0, failedSignIns: week?.failed ?? 0, recent: recent.map((r) => ({ id: r.a.id, action: r.a.action, actorLabel: r.a.actorLabel ?? r.email ?? null, createdAt: r.a.createdAt })) };
+    }
+    return out;
+  }
+
   @Get('audit')
   @RequireAny(P.AUDIT_READ)
   async audit(@Query(zp(auditQuery)) q: z.infer<typeof auditQuery>) {

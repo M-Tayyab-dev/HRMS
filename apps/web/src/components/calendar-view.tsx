@@ -17,6 +17,8 @@ export interface CalendarData {
   leaves: { id: string; startDate: string; endDate: string; status: string; currentStep: string | null; cancellationStatus: string | null; typeName: string; color: string; halfDay: boolean }[];
   overtime: { date: string; minutes: number; status: string }[];
   birthdays: { id: string; fullName: string; day: number }[];
+  /** Work-from-home requests (pending or approved). */
+  wfh?: { id: string; startDate: string; endDate: string; status: string; currentStep: string | null }[];
 }
 
 const LEGEND: [string, string][] = [['PRESENT', 'Satisfactory'], ['LATE', 'Late / irregular'], ['ABSENT', 'Absent'], ['ON_LEAVE', 'Leave'], ['HOLIDAY', 'Holiday']];
@@ -51,10 +53,11 @@ export function CalendarView({ employeeId = '', compact = false, headerExtra }: 
     lv: data?.leaves.filter((l) => l.startDate <= d && l.endDate >= d) ?? [],
     ot: data?.overtime.find((o) => o.date === d),
     bd: data?.birthdays.filter((b) => b.day === Number(d.slice(8))) ?? [],
+    wfh: data?.wfh?.filter((w) => w.startDate <= d && w.endDate >= d) ?? [],
   });
   const today = todayLocal();
   const sel = selected ? dayInfo(selected) : null;
-  const cellH = compact ? 'min-h-16 sm:min-h-20' : 'min-h-24';
+  const cellH = compact ? 'min-h-12 sm:min-h-16' : 'min-h-24';
 
   return (
     <>
@@ -87,6 +90,7 @@ export function CalendarView({ employeeId = '', compact = false, headerExtra }: 
                   <div className="mt-1 space-y-0.5">
                     {x.hol.map((h) => <p key={h.id} className="truncate rounded bg-violet-100 px-1 text-[11px] text-violet-800 dark:bg-violet-950 dark:text-violet-200">{h.name}</p>)}
                     {x.lv.map((l) => <p key={l.id} className={cn('truncate rounded px-1 text-[11px] text-white', l.status !== 'APPROVED' && 'opacity-60', l.status === 'CANCELLED' && 'line-through')} style={{ background: l.status === 'REJECTED' ? '#94a3b8' : l.color }}>{l.typeName}{compact ? '' : ` · ${leaveStatusLabel(l)}`}</p>)}
+                    {x.wfh.map((w) => <p key={w.id} className={cn('truncate rounded bg-emerald-100 px-1 text-[11px] text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200', w.status !== 'APPROVED' && 'opacity-60')}>WFH{compact || w.status === 'APPROVED' ? '' : ' · pending'}</p>)}
                     {x.ev.map((e) => <p key={e.id} className="truncate rounded bg-sky-100 px-1 text-[11px] text-sky-800 dark:bg-sky-950 dark:text-sky-200">{e.title}</p>)}
                     {!compact && x.ot && <p className="truncate text-[11px] text-success">+{hours(x.ot.minutes)} OT</p>}
                     {x.bd.map((b) => <p key={b.id} className="truncate text-[11px]">🎂 {b.fullName}</p>)}
@@ -104,6 +108,7 @@ export function CalendarView({ employeeId = '', compact = false, headerExtra }: 
               <div><p className="font-medium">Attendance: {sel.att.status.replace('_', ' ').toLowerCase()}</p><p className="text-muted-foreground">{time(sel.att.checkIn)} – {time(sel.att.checkOut)} · {hours(sel.att.workedMinutes)} worked{sel.att.lateMinutes ? ` · ${sel.att.lateMinutes}m late` : ''}{sel.att.overtimeMinutes ? ` · ${hours(sel.att.overtimeMinutes)} overtime` : ''}</p></div>
             ) : <p className="text-muted-foreground">No attendance record.</p>}
             {sel.lv.map((l) => <p key={l.id}>{l.typeName}{l.halfDay ? ' (half day)' : ''}: <strong>{leaveStatusLabel(l)}</strong></p>)}
+            {sel.wfh.map((w) => <p key={w.id}>Work from home: <strong>{w.status === 'APPROVED' ? 'approved' : `pending ${w.currentStep === 'HR' ? 'HR' : 'Team Lead'}`}</strong></p>)}
             {sel.hol.map((h) => <p key={h.id}>🏖 {h.name}</p>)}
             {sel.ev.map((e) => <div key={e.id}><p className="font-medium">{e.title}</p>{e.description && <p className="text-muted-foreground">{e.description}</p>}</div>)}
             {sel.bd.map((b) => <p key={b.id}>🎂 {b.fullName}&apos;s birthday</p>)}

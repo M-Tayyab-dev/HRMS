@@ -94,6 +94,22 @@ describe('computeDay', () => {
     expect(computeDay(base({ leave: 'FULL' })).status).toBe('ON_LEAVE');
   });
 
+  it('counts an approved work-from-home day without punches as present for the scheduled hours', () => {
+    const r = computeDay(base({ workFromHome: true }));
+    expect(r.status).toBe('PRESENT');
+    expect(r.workedMinutes).toBe(480);
+    expect(r.lateMinutes).toBe(0);
+  });
+
+  it('work from home does not change weekends, holidays, leave, future days or real punches', () => {
+    expect(computeDay(base({ workFromHome: true, date: '2026-11-08' })).status).toBe('WEEKEND');
+    expect(computeDay(base({ workFromHome: true, isHoliday: true })).status).toBe('HOLIDAY');
+    expect(computeDay(base({ workFromHome: true, leave: 'FULL' })).status).toBe('ON_LEAVE');
+    expect(computeDay(base({ workFromHome: true, isFuture: true })).status).toBe('PENDING');
+    expect(computeDay(base({ workFromHome: true, punches: [p('09:40'), p('18:40')] })).lateMinutes).toBe(40);
+    expect(computeDay(base({ workFromHome: false })).status).toBe('ABSENT');
+  });
+
   it('marks weekends and holidays', () => {
     expect(computeDay(base({ date: '2026-11-08' })).status).toBe('WEEKEND');
     expect(computeDay(base({ isHoliday: true })).status).toBe('HOLIDAY');
