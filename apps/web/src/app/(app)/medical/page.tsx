@@ -1,7 +1,7 @@
 'use client';
 
 import { PERMISSIONS as P } from '@hrms/shared';
-import { HeartPulse, Paperclip, Plus } from 'lucide-react';
+import { HeartPulse, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,8 @@ import { Field, FormGrid, Input, Textarea } from '@/components/ui/form';
 import { Dialog, Tabs } from '@/components/ui/overlay';
 import { DataTable } from '@/components/ui/table';
 import { FileUpload } from '@/components/ui/file-upload';
-import { api, downloadFile } from '@/lib/api';
+import { api } from '@/lib/api';
+import { AttachmentLinks } from '@/components/file-preview';
 import { useAuth, useMedicalEligible } from '@/lib/auth';
 import { date, money, todayLocal } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
@@ -27,7 +28,7 @@ function ClaimsTable({ data, loading, showName, currency }: { data?: Claim[]; lo
       { key: 'd', header: 'Date', cell: (c) => date(c.claimDate) },
       { key: 'x', header: 'Description', hideOnMobile: true, cell: (c) => <span className="line-clamp-2 text-muted-foreground">{c.description}</span> },
       { key: 'a', header: 'Amount', cell: (c) => <div className="tabular-nums">{money(c.amount, currency)}{c.approvedAmount !== null && c.approvedAmount !== c.amount && <p className="text-xs text-success">approved {money(c.approvedAmount, currency)}</p>}</div> },
-      { key: 'f', header: 'Documents', cell: (c) => <div className="flex gap-1">{c.fileIds.map((_, i) => <Button key={i} size="icon" variant="ghost" className="h-7 w-7" aria-label={`Download document ${i + 1}`} onClick={() => downloadFile(`/payroll/medical/${c.id}/files/${i}`, `claim-${i + 1}`).catch((e) => toast.error(e.message))}><Paperclip className="h-3.5 w-3.5" /></Button>)}</div> },
+      { key: 'f', header: 'Documents', cell: (c) => <AttachmentLinks base={`/payroll/medical/${c.id}/files`} count={c.fileIds.length} label="Claim document" /> },
       { key: 's', header: 'Status', cell: (c) => <div className="flex flex-col gap-0.5"><StatusBadge status={c.status} step={c.currentStep} />{c.payrollRunId && <span className="text-xs text-muted-foreground">paid in payroll</span>}</div> },
       { key: 'z', header: '', cell: (c) => (c.canDecide ? <DecisionButtons path={`/payroll/medical/${c.id}/decision`} invalidate={['/payroll/medical']} extra={(approve) => (approve ? <Field label="Approved amount" hint={`Claimed ${money(c.amount, currency)}`}>{(a) => <Input {...a} type="number" data-field="approvedAmount" defaultValue={c.amount} />}</Field> : null)} /> : null) },
     ]} />
