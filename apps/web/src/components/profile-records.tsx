@@ -16,16 +16,34 @@ import {
   type SocialLinks,
 } from '@hrms/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { Award, Briefcase, Facebook, Globe, GraduationCap, Instagram, Link2, Linkedin, Lock, Paperclip, Pencil, Plus, Trash2, Twitter, UserRoundCheck, X } from 'lucide-react';
+import { Award, Briefcase, Download, Eye, Facebook, Globe, GraduationCap, Instagram, Link2, Linkedin, Lock, Paperclip, Pencil, Plus, Trash2, Twitter, UserRoundCheck, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, CardBody, CardHeader, EmptyState, Skeleton } from '@/components/ui/display';
 import { Checkbox, Field, FormGrid, Input, IntlPhoneInput, Select, Textarea } from '@/components/ui/form';
 import { Dialog, useConfirm } from '@/components/ui/overlay';
+import { FilePreviewDialog } from '@/components/file-preview';
 import { api, downloadFile } from '@/lib/api';
 import { date } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
+
+/** An attached document: its name, a preview (PDF or image, in the app) and a download. */
+function Attachment({ employeeId, fileId, name, onRemove }: { employeeId: string; fileId: string; name: string; onRemove?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const path = `/employees/${employeeId}/record-files/${fileId}`;
+  return (
+    <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 rounded-md border bg-card px-2 py-1 text-xs">
+      <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="max-w-[16rem] truncate" title={name}>{name}</span>
+      <button type="button" className="inline-flex items-center gap-1 rounded px-1 text-primary hover:bg-muted" onClick={() => setOpen(true)} aria-label={`Preview ${name}`}><Eye className="h-3.5 w-3.5" aria-hidden /> Preview</button>
+      <button type="button" className="inline-flex items-center gap-1 rounded px-1 text-primary hover:bg-muted" aria-label={`Download ${name}`}
+        onClick={() => void downloadFile(`${path}?download=1`, name).catch((e) => toast.error((e as Error).message))}><Download className="h-3.5 w-3.5" aria-hidden /> Download</button>
+      {onRemove && <button type="button" aria-label="Remove file" className="rounded p-0.5 hover:bg-muted" onClick={onRemove}><X className="h-3 w-3" /></button>}
+      <FilePreviewDialog path={path} name={name} open={open} onOpenChange={setOpen} />
+    </span>
+  );
+}
 
 type Row = Record<string, unknown> & { id: string; file?: { id: string; name: string } | null };
 
@@ -175,10 +193,7 @@ function RecordForm({ kind, employeeId, value, onChange, errors }: { kind: Profi
                     <input {...a} type="file" className="sr-only" accept={FILE_TYPES.join(',')} disabled={uploading} onChange={(e) => { const x = e.target.files?.[0]; e.target.value = ''; if (x) void upload(x); }} />
                   </label>
                   {!!value.fileId && (
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                      {value._fileName ?? 'Attached'}
-                      <button type="button" aria-label="Remove file" className="rounded p-0.5 hover:bg-muted" onClick={() => onChange({ ...value, fileId: null, _fileName: undefined })}><X className="h-3 w-3" /></button>
-                    </span>
+                    <Attachment employeeId={employeeId} fileId={String(value.fileId)} name={value._fileName ?? 'Attached document'} onRemove={() => onChange({ ...value, fileId: null, _fileName: undefined })} />
                   )}
                 </div>
               )}
@@ -267,14 +282,22 @@ function RecordSection({ kind, employeeId, data, self, hr }: { kind: ProfileReco
   const [editing, setEditing] = useState<Draft | null>(null);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const { confirm, node: confirmNode } = useConfirm();
-  const submitOnce = !hr && self && (kind === 'education' || kind === 'references');
+  // Employees can't change an entry after submitting it; education and references can only be submitted once.
+  const lockAfterSubmit = !hr && self;
+  const submitOnce = lockAfterSubmit && (kind === 'education' || kind === 'references');
   const refresh = () => qc.invalidateQueries({ queryKey: [`/employees/${employeeId}/records`] });
 
   const save = async () => {
     const errs = Object.fromEntries(drafts.map((d) => [d._key, validate(kind, d)]));
     setErrors(errs);
     if (Object.values(errs).some((e) => Object.keys(e).length)) return toast.error('Please fix the fields marked in red');
-    if (submitOnce && !(await confirm({ title: `Submit your ${meta.title.toLowerCase()}?`, body: 'You can submit these once. After that only HR can change or remove them.', confirmLabel: 'Submit' }))) return;
+    if (lockAfterSubmit && !(await confirm({
+      title: `Submit your ${meta.title.toLowerCase()}?`,
+      body: submitOnce
+        ? 'You can submit these once. Check every entry and document first: afterwards only HR can change or remove them.'
+        : 'Check every entry and document first (use Preview). After submitting, only HR can change or remove these entries; you can still add new ones.',
+      confirmLabel: 'Submit',
+    }))) return;
     setSaving(true);
     try {
       await api.post(`/employees/${employeeId}/records/${kind}`, { items: drafts.map((d) => toBody(kind, d)) });
@@ -373,11 +396,7 @@ function RecordSection({ kind, employeeId, data, self, hr }: { kind: ProfileReco
                   <div key={k} className="grid gap-1 sm:grid-cols-[10rem_1fr]"><dt className="text-muted-foreground">{k}</dt><dd className="min-w-0 break-words whitespace-pre-line">{v}</dd></div>
                 ))}
               </dl>
-              {r.file && (
-                <button type="button" className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline" onClick={() => void downloadFile(`/employees/${employeeId}/record-files/${r.file!.id}`, r.file!.name).catch((e) => toast.error((e as Error).message))}>
-                  <Paperclip className="h-3.5 w-3.5" aria-hidden /> {r.file.name}
-                </button>
-              )}
+              {r.file && <div className="mt-2"><Attachment employeeId={employeeId} fileId={r.file.id} name={r.file.name} /></div>}
             </div>
           );
         })}
@@ -396,10 +415,11 @@ function RecordSection({ kind, employeeId, data, self, hr }: { kind: ProfileReco
         {canAdd && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Button variant="outline" size="sm" onClick={() => setDrafts((x) => [...x, blank(kind)])}><Plus className="h-4 w-4" /> {meta.addMore}</Button>
-            {drafts.length > 0 && <Button size="sm" loading={saving} onClick={() => void save()}>{submitOnce ? 'Submit' : 'Save'}{drafts.length > 1 ? ` ${drafts.length} entries` : ''}</Button>}
+            {drafts.length > 0 && <Button size="sm" loading={saving} onClick={() => void save()}>{lockAfterSubmit ? 'Submit' : 'Save'}{drafts.length > 1 ? ` ${drafts.length} entries` : ''}</Button>}
           </div>
         )}
-        {submitOnce && canAdd && <p className="text-xs text-muted-foreground">You can submit these once. Add every entry before submitting; afterwards only HR can change them.</p>}
+        {lockAfterSubmit && canAdd && <p className="text-xs text-muted-foreground">{submitOnce ? 'You can submit these once. Add every entry before submitting; afterwards only HR can change them.' : 'Check each entry and its document (Preview) before submitting. After that, only HR can change or remove it.'}</p>}
+        {lockAfterSubmit && rows.length > 0 && !lockedNote && <p className="flex items-center gap-1 text-xs text-muted-foreground"><Lock className="h-3 w-3" aria-hidden /> Submitted entries are read-only. Ask HR if something needs to change.</p>}
       </CardBody>
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} title={`Edit ${meta.title.toLowerCase()}`} size="lg"
         footer={<><Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button><Button onClick={() => void saveEdit()}>Save</Button></>}>

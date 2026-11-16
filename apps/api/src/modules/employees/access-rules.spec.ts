@@ -132,13 +132,18 @@ describe('profile records: who may add, change and see what', () => {
     expect(writes.some((w) => w.op === 'update' && w.table === employees)).toBe(false);
   });
 
-  it('employees edit and delete experience and certifications, but not education or references', async () => {
+  it('once submitted, entries of every kind can only be edited or deleted by HR', async () => {
     const { ctl } = setup({});
-    await expect(as(self, () => ctl.update(EMP, 'experience', 'r', exp))).resolves.toMatchObject({ recordId: 'r' });
-    await expect(as(self, () => ctl.remove(EMP, 'certifications', 'r'))).resolves.toMatchObject({ deleted: true });
-    await expect(as(self, () => ctl.update(EMP, 'education', 'r', edu))).rejects.toMatchObject({ status: 403 });
-    await expect(as(self, () => ctl.remove(EMP, 'references', 'r'))).rejects.toMatchObject({ status: 403 });
-    await expect(as(hr, () => ctl.remove(EMP, 'references', 'r'))).resolves.toMatchObject({ deleted: true });
+    for (const kind of ['experience', 'education', 'certifications', 'references'] as const) {
+      await expect(as(self, () => ctl.update(EMP, kind, 'r', kind === 'education' ? edu : exp))).rejects.toMatchObject({ status: 403 });
+      await expect(as(self, () => ctl.remove(EMP, kind, 'r'))).rejects.toMatchObject({ status: 403 });
+      await expect(as(hr, () => ctl.remove(EMP, kind, 'r'))).resolves.toMatchObject({ deleted: true });
+    }
+    await expect(as(hr, () => ctl.update(EMP, 'experience', 'r', exp))).resolves.toMatchObject({ recordId: 'r' });
+  });
+
+  it('employees can still add new experience after submitting earlier entries', async () => {
+    await expect(as(self, () => setup({}).ctl.add(EMP, 'experience', { items: [exp] }))).resolves.toMatchObject({ added: 1 });
   });
 
   it('colleagues cannot add to someone else\'s profile', async () => {
@@ -162,7 +167,8 @@ describe('profile records: who may add, change and see what', () => {
     const forSelf = await as(self, () => setup({}, tables).ctl.list(EMP));
     expect(forSelf.references[0]).toMatchObject({ email: null, phone: null, contactHidden: true });
     expect(forSelf.canEdit).toEqual({ experience: true, education: true, certifications: true, references: true });
-    expect(forSelf.canChange).toEqual({ experience: true, education: false, certifications: true, references: false });
+    expect(forSelf.canChange).toEqual({ experience: false, education: false, certifications: false, references: false });
+    expect(forHr.canChange).toEqual({ experience: true, education: true, certifications: true, references: true });
   });
 
   it('viewing someone else\'s records goes through the data-scope check', async () => {

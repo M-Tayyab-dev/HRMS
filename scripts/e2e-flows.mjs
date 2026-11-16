@@ -308,7 +308,7 @@ async function main() {
   const raw = async (c, path) => {
     const cookie = [...c.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     const r = await fetch(ORIGIN + '/api/v1' + path, { headers: { cookie } });
-    return { status: r.status, type: r.headers.get('content-type') ?? '', text: await r.text() };
+    return { status: r.status, type: r.headers.get('content-type') ?? '', disposition: r.headers.get('content-disposition'), text: await r.text() };
   };
   const zara = await mk('Zara Colleague', `zara@${ws}.test`, hrDept.id, lvl('L1', hrLevels).id, ['EMPLOYEE'], { contactNo: '0300 7654321' });
   expect(zara.contactNo === '+92 3007654321', 'phone stored in international format (+92 default)', zara.contactNo);
@@ -363,10 +363,13 @@ async function main() {
   let mine = (await E.get(rec(emp.id))).data;
   expect(mine.experience.length === 2 && mine.experience.find((x) => x.companyName === 'Acme').duration === '2 yrs 5 mos', 'experience duration calculated', mine.experience.map((x) => x.duration));
   const acme = mine.experience.find((x) => x.companyName === 'Acme');
-  expect((await E.patch(`${rec(emp.id)}/experience/${acme.id}`, { companyName: 'Acme', designation: 'Senior Sales Rep', employmentType: 'FULL_TIME', startDate: '2019-01-01', endDate: '2021-06-30', responsibilities: 'Field sales and key accounts' })).status === 200, 'employee edits their experience');
+  const acmeEdit = { companyName: 'Acme', designation: 'Senior Sales Rep', employmentType: 'FULL_TIME', startDate: '2019-01-01', endDate: '2021-06-30', responsibilities: 'Field sales and key accounts' };
+  expect((await E.patch(`${rec(emp.id)}/experience/${acme.id}`, acmeEdit)).status === 403, 'employee cannot edit submitted experience');
+  expect((await E.del(`${rec(emp.id)}/experience/${acme.id}`)).status === 403, 'employee cannot delete submitted experience');
+  expect((await HR.patch(`${rec(emp.id)}/experience/${acme.id}`, acmeEdit)).status === 200, 'HR edits submitted experience');
   expect((await E.get(rec(emp.id))).data.experience.find((x) => x.id === acme.id).designation === 'Senior Sales Rep', 'edit saved');
   expect((await E.req('PATCH', '/me/profile', { noExperience: true })).status === 400, '"No experience" refused while entries exist');
-  for (const x of mine.experience) expect((await E.del(`${rec(emp.id)}/experience/${x.id}`)).status === 200, 'employee deletes an experience entry');
+  for (const x of mine.experience) expect((await HR.del(`${rec(emp.id)}/experience/${x.id}`)).status === 200, 'HR deletes an experience entry');
   expect((await E.req('PATCH', '/me/profile', { noExperience: true })).data.noExperience === true, 'employee ticks "No experience"');
   expect((await E.post(`${rec(emp.id)}/experience`, { items: [{ companyName: 'X Co', designation: 'Y', employmentType: 'OTHER', startDate: '2020-01-01', responsibilities: 'Z' }] })).status === 400, '"No experience" disables adding experience');
   await E.req('PATCH', '/me/profile', { noExperience: false });
@@ -408,12 +411,19 @@ async function main() {
   expect(notPdf.status === 400, 'attachment content is checked (fake PDF refused)', notPdf.data);
   const certPdf = await upload(E, `/employees/${emp.id}/record-files`, new TextEncoder().encode('%PDF-1.4\n%test\n'), 'cert.pdf', 'application/pdf');
   expect(certPdf.status === 201 && certPdf.data.fileId, 'certificate PDF uploaded', certPdf.data);
+  const draftPreview = await raw(E, `/employees/${emp.id}/record-files/${certPdf.data.fileId}`);
+  expect(draftPreview.status === 200 && draftPreview.text.startsWith('%PDF') && draftPreview.disposition?.startsWith('inline'), 'uploader previews the document before submitting', draftPreview.disposition);
+  expect((await raw(Z, `/employees/${emp.id}/record-files/${certPdf.data.fileId}`)).status === 403, 'others cannot open a document that is not submitted yet');
   expect((await upload(Z, `/employees/${emp.id}/record-files`, new TextEncoder().encode('%PDF-1.4\n'), 'x.pdf', 'application/pdf')).status === 403, 'colleagues cannot upload to someone else\'s profile');
   expect((await E.post(`${rec(emp.id)}/certifications`, { items: [{ name: 'CSM', issuer: 'Scrum Alliance', issueDate: '2022-01-10', verificationUrl: 'ftp://bad.example' }] })).status === 400, 'certification link must be http(s)');
   const cert = await E.post(`${rec(emp.id)}/certifications`, { items: [{ name: 'CSM', issuer: 'Scrum Alliance', issueDate: '2022-01-10', expiryDate: '2025-01-10', verificationUrl: 'https://verify.example/123', fileId: certPdf.data.fileId }, { name: 'Excel Expert', issuer: 'Microsoft', issueDate: '2021-03-01' }] });
   expect(cert.status === 201 && cert.data.added === 2, '"Add more certifications" saves each one');
   const certFile = await raw(HR, `/employees/${emp.id}/record-files/${certPdf.data.fileId}`);
-  expect(certFile.status === 200 && certFile.text.startsWith('%PDF'), 'HR downloads the certificate attachment');
+  expect(certFile.status === 200 && certFile.text.startsWith('%PDF'), 'HR previews the certificate attachment');
+  const certDownload = await raw(E, `/employees/${emp.id}/record-files/${certPdf.data.fileId}?download=1`);
+  expect(certDownload.status === 200 && certDownload.disposition?.startsWith('attachment'), 'employee downloads their submitted document', certDownload.disposition);
+  const certRows = (await E.get(rec(emp.id))).data.certifications;
+  expect((await E.del(`${rec(emp.id)}/certifications/${certRows[0].id}`)).status === 403, 'employee cannot delete a submitted certification');
   expect((await raw(Z, `/employees/${emp.id}/record-files/${certPdf.data.fileId}`)).status === 403, 'colleagues cannot download the attachment');
 
   // Sales revenue: Sales department or an explicitly permitted role only, checked live.

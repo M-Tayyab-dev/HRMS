@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { PERMISSIONS as P, PROFILE_RECORD_KINDS, PROFILE_RECORD_SCHEMAS, durationLabel, recordBatchSchema, type ProfileRecordKind } from '@hrms/shared';
@@ -130,7 +130,8 @@ export class ProfileRecordsController {
         references: hr || (self && !emp.referencesSubmittedAt),
       },
       /** Whether existing entries can be edited / deleted (education & references: HR only once submitted). */
-      canChange: { experience: hr || self, education: hr, certifications: hr || self, references: hr },
+      // Once saved, entries are read-only for the employee: only HR / Company Admin edit or delete them.
+      canChange: { experience: hr, education: hr, certifications: hr, references: hr },
       experience: experience.map((r) => ({ ...r, duration: durationLabel(r.startDate, r.endDate), file: file(r.fileId) })),
       education: education.map((r) => ({ ...r, file: file(r.fileId) })),
       certifications: certifications.map((r) => ({ ...r, file: file(r.fileId) })),
@@ -200,7 +201,8 @@ export class ProfileRecordsController {
   private async assertChange(id: string, kind: ProfileRecordKind) {
     this.assertWriter(id);
     if (this.hr()) return;
-    if (SUBMIT_ONCE[kind]) throw forbidden(`Submitted ${KIND_LABEL[kind]} can only be changed by HR.`);
+    // Saved entries (and their documents) are locked for the employee; HR makes any changes.
+    throw forbidden(`Submitted ${KIND_LABEL[kind]} can only be changed by HR.`);
   }
 
   /** Supporting document for an experience, education or certification entry (PDF or image, content-checked). */
@@ -214,15 +216,24 @@ export class ProfileRecordsController {
     return { id, fileId: f.id, name: f.originalName, mimeType: f.mimeType, size: f.size };
   }
 
+  /**
+   * View (`inline`) or download (`?download=1`) an attachment: one on this employee's saved entries, or a file
+   * the person just uploaded for a form they haven't submitted yet (so they can check it before submitting).
+   */
   @Get('employees/:id/record-files/:fileId')
-  async file(@Param('id', ParseUUIDPipe) id: string, @Param('fileId', ParseUUIDPipe) fileId: string) {
+  async file(@Param('id', ParseUUIDPipe) id: string, @Param('fileId', ParseUUIDPipe) fileId: string, @Query('download') download?: string) {
     await this.assertView(id);
     const tx = this.db.tx;
     const [{ n }] = (await tx.execute(sql`
       select ((select count(*) from employee_experiences where employee_id = ${id} and file_id = ${fileId})
         + (select count(*) from employee_educations where employee_id = ${id} and file_id = ${fileId})
         + (select count(*) from employee_certifications where employee_id = ${id} and file_id = ${fileId}))::int as n`)).rows as [{ n: number }];
-    if (!n) throw forbidden();
-    return this.storage.stream(fileId, 'attachment');
+    if (!n) {
+      // Not attached yet: only the uploader (the employee or HR working on this profile) may open it.
+      this.assertWriter(id);
+      const [f] = await tx.select({ by: files.uploadedByUserId }).from(files).where(eq(files.id, fileId));
+      if (!f || f.by !== currentUser().userId) throw forbidden();
+    }
+    return this.storage.stream(fileId, download ? 'attachment' : 'inline');
   }
 }
