@@ -94,6 +94,19 @@ describe('computeDay', () => {
     expect(computeDay(base({ leave: 'FULL' })).status).toBe('ON_LEAVE');
   });
 
+  it('app punches: a break is not a check-out; IN → break → OUT computes the break and hours', () => {
+    const web = (t: string, type: 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END') => ({ at: at(t), type, source: 'WEB' as const });
+    const onBreak = computeDay(base({ isFuture: true, punches: [web('09:00', 'IN'), web('13:00', 'BREAK_START')] }));
+    expect(onBreak.checkOut).toBeNull();
+    expect(onBreak.status).toBe('PRESENT');
+    const back = computeDay(base({ isFuture: true, punches: [web('09:00', 'IN'), web('13:00', 'BREAK_START'), web('13:45', 'BREAK_END')] }));
+    expect(back.checkOut).toBeNull();
+    const done = computeDay(base({ punches: [web('09:00', 'IN'), web('13:00', 'BREAK_START'), web('13:45', 'BREAK_END'), web('18:15', 'OUT')] }));
+    expect(done.checkOut?.toISOString()).toBe(at('18:15').toISOString());
+    expect(done.breakMinutes).toBe(45);
+    expect(done.workedMinutes).toBe(510);
+  });
+
   it('counts an approved work-from-home day without punches as present for the scheduled hours', () => {
     const r = computeDay(base({ workFromHome: true }));
     expect(r.status).toBe('PRESENT');

@@ -11,7 +11,7 @@ export interface Schedule {
 export interface Punch {
   at: Date;
   type?: PunchType | null;
-  source: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'CORRECTION';
+  source: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'CORRECTION' | 'WEB';
 }
 
 export interface DayInput {
@@ -102,7 +102,11 @@ export function computeDay(input: DayInput): DayResult {
   const regular = sorted.filter((p) => p.source !== 'CORRECTION');
 
   const checkIn = corrIn?.at ?? regular[0]?.at ?? sorted[0]!.at;
-  const lastRegular = regular.length > 1 ? regular[regular.length - 1]!.at : null;
+  // Typed punches (sign in / break buttons): only an OUT is a check-out; after IN or a break the person is still at
+  // work. Untyped device punches keep the "last punch is the check-out" rule.
+  const lastPunch = regular[regular.length - 1];
+  const stillIn = !!lastPunch?.type && lastPunch.type !== 'OUT';
+  const lastRegular = regular.length > 1 && !stillIn ? lastPunch!.at : null;
   const checkOut = corrOut?.at ?? lastRegular;
 
   // Breaks

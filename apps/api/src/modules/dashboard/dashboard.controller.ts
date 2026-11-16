@@ -149,7 +149,7 @@ export class DashboardController {
       // Today's sign-in: how it happened (biometric device, import, manual, correction or work from home) and the shift,
       // so the dashboard can show time passed and time remaining.
       const [firstPunch] = await tx
-        .select({ source: attendancePunches.source, at: attendancePunches.punchedAt })
+        .select({ source: attendancePunches.source, at: attendancePunches.punchedAt, note: attendancePunches.note })
         .from(attendancePunches)
         .where(and(eq(attendancePunches.employeeId, id), gte(attendancePunches.punchedAt, zonedInstant(today, '00:00', t.timezone)), lte(attendancePunches.punchedAt, zonedInstant(addDays(today, 1), '00:00', t.timezone))))
         .orderBy(asc(attendancePunches.punchedAt))
@@ -163,7 +163,7 @@ export class DashboardController {
       const workingDay = schedule.workingDays.includes(dayOfWeek(today));
       out.employee = {
         signIn: {
-          source: wfhToday || todayRec?.workFromHome ? 'HOME' : (firstPunch?.source ?? null),
+          source: wfhToday || todayRec?.workFromHome || firstPunch?.note === 'Signed in from home' ? 'HOME' : (firstPunch?.source ?? null),
           workFromHome: !!wfhToday || !!todayRec?.workFromHome,
           checkIn: todayRec?.checkIn ?? firstPunch?.at ?? null,
           checkOut: todayRec?.checkOut ?? null,

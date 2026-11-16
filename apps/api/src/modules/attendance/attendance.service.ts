@@ -175,7 +175,7 @@ export class AttendanceService {
   /** Store punches (deduplicated) and recompute affected days. Returns counts. */
   async ingest(
     punches: { employeeId: string; at: Date; type?: PunchType | null; note?: string }[],
-    source: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'CORRECTION',
+    source: 'DEVICE' | 'IMPORT' | 'MANUAL' | 'CORRECTION' | 'WEB',
     deviceId?: string,
   ) {
     if (!punches.length) return { inserted: 0 };

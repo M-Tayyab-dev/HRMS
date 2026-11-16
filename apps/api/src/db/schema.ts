@@ -737,7 +737,8 @@ export const attendancePunches = pgTable(
       .references(() => employees.id, { onDelete: 'cascade' }),
     punchedAt: ts('punched_at').notNull(),
     type: text('type'),
-    source: text('source', { enum: ['DEVICE', 'IMPORT', 'MANUAL', 'CORRECTION'] }).notNull(),
+    /** WEB: the employee signed in / out or took a break with the buttons in the app. */
+    source: text('source', { enum: ['DEVICE', 'IMPORT', 'MANUAL', 'CORRECTION', 'WEB'] }).notNull(),
     deviceId: uuid('device_id'),
     note: text('note'),
     createdAt: createdAt(),

@@ -2,7 +2,11 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe,
 import { Throttle } from '@nestjs/throttler';
 import {
   ATTENDANCE_COLORS,
+  CLOCK_ALLOWED,
   PERMISSIONS as P,
+  clockPunchSchema,
+  clockStatus,
+  type ClockPunchInput,
   attendanceCorrectionSchema,
   attendanceQuery,
   compensationRequestSchema,
@@ -14,13 +18,13 @@ import {
   type DecisionInput,
   type PunchType,
 } from '@hrms/shared';
-import { and, asc, desc, eq, gte, isNull, lte, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { als, currentUser } from '../../common/context';
 import { randomToken, sha256 } from '../../common/crypto';
 import { Audit, Public, RequireAny, SkipAudit, SkipCsrf, RequireModule } from '../../common/decorators';
 import { badRequest, forbidden } from '../../common/errors';
-import { localMinutes, monthRange, todayIn, zonedInstant } from '../../common/tz';
+import { addDays, localMinutes, monthRange, todayIn, zonedInstant } from '../../common/tz';
 import { one, scoped } from '../../common/util';
 import { zp } from '../../common/zod.pipe';
 import { ApprovalsService } from '../../core/approvals.service';
@@ -31,6 +35,7 @@ import {
   attendanceCorrections,
   attendanceDays,
   attendanceDevices,
+  attendancePunches,
   compensationRequests,
   deviceSerials,
   departments,
@@ -38,6 +43,7 @@ import {
   foodAllowanceRules,
   heldPunches,
   overtimeRecords,
+  wfhRequests,
 } from '../../db/schema';
 import { foodEligibleDays } from '../payroll/payroll.logic';
 import { AttendanceService } from './attendance.service';
@@ -214,6 +220,68 @@ export class AttendanceController {
   @Audit('attendance.manual_punch', 'employee')
   manual(@Body(zp(manualPunchSchema)) body: z.infer<typeof manualPunchSchema>) {
     return this.svc.ingest([{ employeeId: body.employeeId, at: new Date(body.at), type: body.type, note: body.note }], 'MANUAL');
+  }
+
+  /* ---------------- Punch clock: sign in / break / sign out from the app ---------------- */
+
+  /** My punches today and what I can do next (sign in, take a break, end the break, sign out). */
+  private async clock(employeeId: string) {
+    const t = await this.svc.tenant();
+    const today = todayIn(t.timezone);
+    const punches = await this.db.tx
+      .select({ type: attendancePunches.type, at: attendancePunches.punchedAt, source: attendancePunches.source })
+      .from(attendancePunches)
+      .where(and(eq(attendancePunches.employeeId, employeeId), gte(attendancePunches.punchedAt, zonedInstant(today, '00:00', t.timezone)), lte(attendancePunches.punchedAt, zonedInstant(addDays(today, 1), '00:00', t.timezone))))
+      .orderBy(asc(attendancePunches.punchedAt));
+    const [wfh] = await this.db.tx
+      .select({ id: wfhRequests.id, status: wfhRequests.status, currentStep: wfhRequests.currentStep })
+      .from(wfhRequests)
+      .where(and(eq(wfhRequests.employeeId, employeeId), inArray(wfhRequests.status, ['PENDING', 'APPROVED']), lte(wfhRequests.startDate, today), gte(wfhRequests.endDate, today)))
+      .orderBy(asc(wfhRequests.status)) // APPROVED before PENDING
+      .limit(1);
+    const status = clockStatus(punches);
+    return {
+      ...status,
+      today,
+      allowed: CLOCK_ALLOWED[status.state],
+      source: punches[0]?.source ?? null,
+      workFromHome: wfh ? { status: wfh.status, currentStep: wfh.currentStep } : null,
+      punches: punches.map((p) => ({ type: p.type, at: p.at, source: p.source })),
+    };
+  }
+
+  @Get('me/clock')
+  myClock() {
+    return this.clock(this.scope.requireEmployee());
+  }
+
+  /**
+   * Sign in, start or end a break, or sign out with the buttons in the app. Each press is a WEB punch and
+   * today's attendance is recalculated. Signing in "from home" without an approved work-from-home request
+   * sends one for today to the Team Lead → HR, like any other work-from-home request.
+   */
+  @Post('me/clock')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Audit('attendance.self_punch', 'employee')
+  async punch(@Body(zp(clockPunchSchema)) body: ClockPunchInput) {
+    const employeeId = this.scope.requireEmployee();
+    const before = await this.clock(employeeId);
+    if (!before.allowed.includes(body.type)) {
+      const why: Record<string, string> = { NOT_STARTED: 'Sign in first.', WORKING: 'You are already signed in.', ON_BREAK: 'End your break first.', SIGNED_OUT: 'You have signed out. Sign in again to continue.' };
+      throw badRequest(why[before.state] ?? 'Not possible right now', 'CLOCK_STATE');
+    }
+    const last = before.punches[before.punches.length - 1];
+    if (last && Date.now() - new Date(last.at).getTime() < 30_000) throw badRequest('Please wait a moment before the next action.', 'CLOCK_TOO_SOON');
+    const note = body.type === 'IN' && body.workFromHome ? 'Signed in from home' : undefined;
+    await this.svc.ingest([{ employeeId, at: new Date(), type: body.type, note }], 'WEB');
+    if (body.type === 'IN' && body.workFromHome && !before.workFromHome) {
+      const tx = this.db.tx;
+      const row = one(await tx.insert(wfhRequests).values({ tenantId: currentUser().tenantId, employeeId, startDate: before.today, endDate: before.today, reason: 'Signed in from home in the app' }).returning());
+      const wf = await this.approvals.submit('WORK_FROM_HOME', row.id, employeeId, { title: 'Work from home (today)', link: '/leave?tab=wfh' });
+      await tx.update(wfhRequests).set({ status: wf.status, currentStep: wf.currentStep }).where(eq(wfhRequests.id, row.id));
+      if (wf.status === 'APPROVED') await this.svc.recompute(employeeId, before.today, before.today);
+    }
+    return this.clock(employeeId);
   }
 
   /* ---------------- Records & reports ---------------- */
