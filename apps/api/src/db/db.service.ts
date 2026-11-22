@@ -1,10 +1,28 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import { Client, Pool } from 'pg';
 import { config } from '../config';
 import { als } from '../common/context';
 import * as schema from './schema';
+
+/**
+ * A pg client that sends promise-style queries one at a time. Requests run inside one transaction (one
+ * connection), and code often issues several of its queries at once (Promise.all). pg still queues those
+ * itself but warns that pg@9 removes that queue; waiting here keeps the same order and behaviour without it.
+ * Callback-style queries and submittables (cursors, streams) go straight through.
+ */
+export class SerialClient extends Client {
+  tail: Promise<unknown> = Promise.resolve();
+}
+const passThrough = Client.prototype.query as (...args: unknown[]) => unknown;
+SerialClient.prototype.query = function (this: SerialClient, ...args: unknown[]) {
+  const first = args[0] as { submit?: unknown } | undefined;
+  if (typeof args[args.length - 1] === 'function' || typeof first?.submit === 'function') return passThrough.apply(this, args);
+  const run = this.tail.then(() => passThrough.apply(this, args));
+  this.tail = run.catch(() => undefined); // a failed query must not block the ones after it
+  return run;
+} as typeof Client.prototype.query;
 
 export type Database = NodePgDatabase<typeof schema>;
 export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -18,6 +36,7 @@ export class DbService implements OnModuleDestroy {
 
   constructor() {
     this.pool = new Pool({
+      Client: SerialClient,
       connectionString: config().DATABASE_URL,
       max: config().DB_POOL_MAX,
       idleTimeoutMillis: 30_000,
