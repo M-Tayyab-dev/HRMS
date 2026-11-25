@@ -125,7 +125,7 @@ export default function BillingPage() {
                           title={on ? 'Your current billing' : `Switch to ${c === 'ANNUAL' ? 'yearly' : 'monthly'} billing`}
                           className={cn('rounded-lg border px-3 py-2 text-right transition', on ? 'border-primary bg-primary-soft ring-1 ring-primary' : 'hover:border-primary/60 hover:bg-muted', changeCycle.isPending && 'opacity-60')}>
                           <p className="text-xs text-muted-foreground">{c === 'ANNUAL' ? 'Yearly' : 'Monthly'}{on ? ' · current' : ''}</p>
-                          <p className="font-semibold tabular-nums">{money(c === 'ANNUAL' ? data.plan!.priceAnnual : data.plan!.priceMonthly, data.plan!.currency)}</p>
+                          <p className="font-semibold tabular-nums">{money(c === 'ANNUAL' ? data.plan!.priceAnnual : data.plan!.priceMonthly, data.plan!.currency)} per employee</p>
                         </button>
                       );
                     })}
@@ -172,8 +172,8 @@ export default function BillingPage() {
             return (
               <div key={p.id} className={cn('rounded-xl border p-4', current && 'border-primary ring-1 ring-primary')}>
                 <div className="flex items-center justify-between"><p className="font-semibold">{p.name}</p>{current && <Badge tone="primary">Current</Badge>}</div>
-                <p className="mt-2 text-xl font-semibold tabular-nums">{money(p.priceMonthly, p.currency)}<span className="text-sm font-normal text-muted-foreground"> / month</span></p>
-                <p className="text-sm text-muted-foreground">or {money(p.priceAnnual, p.currency)} / year{saving > 0 ? ` (save ${money(saving, p.currency)})` : ''}</p>
+                <p className="mt-2 text-xl font-semibold tabular-nums">{money(p.priceMonthly, p.currency)}<span className="text-sm font-normal text-muted-foreground"> / employee / month</span></p>
+                <p className="text-sm text-muted-foreground">or {money(p.priceAnnual, p.currency)} / employee / year{saving > 0 ? ` (save ${money(saving, p.currency)})` : ''}</p>
                 <ul className="mt-3 space-y-1 text-xs">
                   {p.modules.map((m) => <li key={m} className="flex gap-1.5"><Check className="h-3.5 w-3.5 text-primary" /> {MODULE_INFO[m].label}</li>)}
                 </ul>
