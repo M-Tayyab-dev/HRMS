@@ -16,6 +16,11 @@
 // so files survive redeploys.
 //
 // Build first with: npm run build
+// Keep thread counts low: shared hosting caps processes+threads per account (Hostinger: 120).
+// Must be set before anything touches the libuv thread pool or native thread pools.
+process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '2';
+process.env.RAYON_NUM_THREADS = process.env.RAYON_NUM_THREADS || '1';
+
 const { spawn } = require('node:child_process');
 const http = require('node:http');
 const os = require('node:os');
