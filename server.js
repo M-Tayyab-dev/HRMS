@@ -47,12 +47,20 @@ let startupFailed = false;
 const server = http.createServer((req, res) => {
   const url = req.url || '/';
   const isApi = url.startsWith('/api/') || url === '/health' || url.startsWith('/health?');
-  const handler = isApi ? apiHandler : webHandler;
-  if (handler) return handler(req, res);
-  res.statusCode = 503;
-  res.setHeader('Retry-After', '5');
-  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.end(startupFailed ? 'Service failed to start - check the server logs.' : 'Starting up, please retry in a few seconds.');
+  // Cold start: hold the request until both apps are ready (up to 60s) instead of failing it.
+  const started = Date.now();
+  const serve = () => {
+    const handler = isApi ? apiHandler : webHandler;
+    if (handler) return handler(req, res);
+    if (startupFailed || Date.now() - started > 60_000) {
+      res.statusCode = 503;
+      res.setHeader('Retry-After', '5');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.end(startupFailed ? 'Service failed to start - check the server logs.' : 'Still starting up, please retry in a few seconds.');
+    }
+    setTimeout(serve, 150);
+  };
+  serve();
 });
 const port = process.env.PORT || 3000;
 server.listen(port, () => log('listening on ' + port));
@@ -66,6 +74,17 @@ function runMigrations() {
       resolve(1);
     });
   });
+}
+
+/** True when every migration in apps/api/drizzle has already been applied (skips a slow child process). */
+async function migrationsUpToDate(client) {
+  try {
+    const journal = require(path.join(apiDir, 'drizzle', 'meta', '_journal.json'));
+    const r = await client.query('SELECT count(*)::int AS n FROM public.__drizzle_migrations');
+    return r.rows[0].n >= journal.entries.length;
+  } catch {
+    return false;
+  }
 }
 
 async function prepareDatabase() {
@@ -90,8 +109,12 @@ async function prepareDatabase() {
         await client.query('ALTER ROLE hrms_app PASSWORD ' + lit);
       }
     }
-    const code = await runMigrations();
-    if (code !== 0) log('migrations failed (exit ' + code + ')');
+    if (await migrationsUpToDate(client)) {
+      log('database schema up to date');
+    } else {
+      const code = await runMigrations();
+      if (code !== 0) log('migrations failed (exit ' + code + ')');
+    }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]).catch(() => {});
     await client.end().catch(() => {});
