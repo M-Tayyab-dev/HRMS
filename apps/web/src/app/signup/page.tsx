@@ -76,7 +76,7 @@ function SignupInner() {
                   className={cn('rounded-2xl border bg-card p-5 text-left transition hover:shadow-md', planId === p.id && 'border-primary ring-2 ring-primary')}>
                   <p className="font-semibold">{p.name}</p>
                   {p.description && <p className="mt-1 text-xs text-muted-foreground">{p.description}</p>}
-                  <p className="mt-4 text-2xl font-semibold tabular-nums">{money(cycle === 'ANNUAL' ? p.priceAnnual : p.priceMonthly, p.currency)}<span className="text-sm font-normal text-muted-foreground"> / {cycle === 'ANNUAL' ? 'year' : 'month'}</span></p>
+                  <p className="mt-4 text-2xl font-semibold tabular-nums">{money(cycle === 'ANNUAL' ? p.priceAnnual : p.priceMonthly, p.currency)}<span className="text-sm font-normal text-muted-foreground"> / employee / {cycle === 'ANNUAL' ? 'year' : 'month'}</span></p>
                   <p className="text-xs text-muted-foreground">{p.maxEmployees ? `Up to ${p.maxEmployees} employees` : 'Unlimited employees'}</p>
                   <ul className="mt-4 space-y-1.5 text-sm">
                     {p.modules.map((m) => <li key={m} className="flex gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" /> {MODULE_INFO[m].label}</li>)}
@@ -114,7 +114,7 @@ function SignupInner() {
                 <p className="text-lg font-semibold">{plan?.name}</p>
                 <div className="mt-3"><CycleToggle value={cycle} onChange={setCycle} /></div>
                 <p className="mt-4 text-3xl font-semibold tabular-nums">{plan ? money(price, plan.currency) : '—'}</p>
-                <p className="text-sm text-muted-foreground">per {cycle === 'ANNUAL' ? 'year' : 'month'}</p>
+                <p className="text-sm text-muted-foreground">per employee per {cycle === 'ANNUAL' ? 'year' : 'month'}</p>
               </CardBody>
             </Card>
             <div className="space-y-2 rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
