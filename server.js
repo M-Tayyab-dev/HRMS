@@ -2,7 +2,7 @@
 // Production entry for single-process Node hosts (e.g. Hostinger "Node.js web app").
 //
 // One HTTP server on $PORT:
-//   /api/*, /health  -> NestJS API, mounted in-process (no second port)
+//   /api/*, /iclock/*, /health -> NestJS API, mounted in-process (no second port)
 //   everything else  -> Next.js web app
 // It starts listening immediately (the host expects listen() within seconds) and answers
 // 503 "Starting up" until both apps are ready.
@@ -46,7 +46,8 @@ let startupFailed = false;
 
 const server = http.createServer((req, res) => {
   const url = req.url || '/';
-  const isApi = url.startsWith('/api/') || url === '/health' || url.startsWith('/health?');
+  // /iclock/* are fixed paths used by ZKTeco biometric devices (BIO-01).
+  const isApi = url.startsWith('/api/') || url.startsWith('/iclock/') || url === '/health' || url.startsWith('/health?');
   // Cold start: hold the request until both apps are ready (up to 60s) instead of failing it.
   const started = Date.now();
   const serve = () => {
