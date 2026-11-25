@@ -1,104 +1,138 @@
-// Production entry for single-process Node hosts (e.g. Hostinger "Node.js web app").
-// 1. creates/updates the hrms_app database role (needs DATABASE_ADMIN_URL + PG_APP_PASSWORD)
-// 2. runs migrations + RLS hardening (safe to repeat)
-// 3. starts the NestJS API on a private port (API_PORT, default 4000)
-// 4. serves the Next.js web app on $PORT; it proxies /api/v1/* to the API
-// Build first with: npm run build
 'use strict';
-const { spawn, spawnSync } = require('node:child_process');
+// Production entry for single-process Node hosts (e.g. Hostinger "Node.js web app").
+//
+// One HTTP server on $PORT:
+//   /api/*, /health  -> NestJS API, mounted in-process (no second port)
+//   everything else  -> Next.js web app
+// It starts listening immediately (the host expects listen() within seconds) and answers
+// 503 "Starting up" until both apps are ready.
+//
+// On every start it also, under a Postgres advisory lock (so several instances starting
+// at once don't collide):
+//   1. creates/updates the hrms_app role   (needs DATABASE_ADMIN_URL + PG_APP_PASSWORD)
+//   2. runs migrations + RLS hardening       (safe to repeat)
+//
+// Uploads: a relative STORAGE_DIR is placed in the home directory (~/hrms-storage by default)
+// so files survive redeploys.
+//
+// Build first with: npm run build
+const { spawn } = require('node:child_process');
 const http = require('node:http');
+const os = require('node:os');
 const path = require('node:path');
-
-process.env.NODE_ENV = process.env.NODE_ENV || 'production';
-process.env.COOKIE_SECURE = process.env.COOKIE_SECURE || 'true';
-process.env.API_PORT = process.env.API_PORT || '4000';
-process.env.API_INTERNAL_URL = process.env.API_INTERNAL_URL || 'http://127.0.0.1:' + process.env.API_PORT;
 
 const root = __dirname;
 const apiDir = path.join(root, 'apps', 'api');
 const webDir = path.join(root, 'apps', 'web');
 const log = (...a) => console.log('[server]', ...a);
+const MIGRATION_LOCK_ID = 72451901;
 
-async function ensureAppRole() {
+process.env.NODE_ENV = process.env.NODE_ENV || 'production';
+process.env.COOKIE_SECURE = process.env.COOKIE_SECURE || 'true';
+process.env.HRMS_EMBEDDED = '1'; // apps/api/dist/main.js: don't listen on API_PORT
+const storage = process.env.STORAGE_DIR;
+if (!storage || !path.isAbsolute(storage)) {
+  process.env.STORAGE_DIR = path.join(os.homedir(), 'hrms-storage');
+}
+
+let apiHandler = null;
+let webHandler = null;
+let startupFailed = false;
+
+const server = http.createServer((req, res) => {
+  const url = req.url || '/';
+  const isApi = url.startsWith('/api/') || url === '/health' || url.startsWith('/health?');
+  const handler = isApi ? apiHandler : webHandler;
+  if (handler) return handler(req, res);
+  res.statusCode = 503;
+  res.setHeader('Retry-After', '5');
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.end(startupFailed ? 'Service failed to start - check the server logs.' : 'Starting up, please retry in a few seconds.');
+});
+const port = process.env.PORT || 3000;
+server.listen(port, () => log('listening on ' + port));
+
+function runMigrations() {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['dist/db/migrate.js'], { cwd: apiDir, stdio: 'inherit', env: process.env });
+    child.on('exit', (code) => resolve(code));
+    child.on('error', (err) => {
+      log('could not run migrations: ' + err.message);
+      resolve(1);
+    });
+  });
+}
+
+async function prepareDatabase() {
   const adminUrl = process.env.DATABASE_ADMIN_URL;
-  const pw = process.env.PG_APP_PASSWORD;
-  if (!adminUrl || !pw) {
-    log('DATABASE_ADMIN_URL or PG_APP_PASSWORD not set - skipping hrms_app role setup');
+  if (!adminUrl) {
+    log('DATABASE_ADMIN_URL not set - skipping role setup and migrations');
     return;
   }
   const { Client } = require(require.resolve('pg', { paths: [apiDir] }));
   const client = new Client({ connectionString: adminUrl });
   await client.connect();
   try {
-    const lit = "'" + pw.replace(/'/g, "''") + "'";
-    const r = await client.query("SELECT 1 FROM pg_roles WHERE rolname = 'hrms_app'");
-    if (r.rowCount === 0) {
-      await client.query('CREATE ROLE hrms_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD ' + lit);
-      log('created database role hrms_app');
-    } else {
-      await client.query('ALTER ROLE hrms_app PASSWORD ' + lit);
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_ID]);
+    const pw = process.env.PG_APP_PASSWORD;
+    if (pw) {
+      const lit = "'" + pw.replace(/'/g, "''") + "'";
+      const r = await client.query("SELECT 1 FROM pg_roles WHERE rolname = 'hrms_app'");
+      if (r.rowCount === 0) {
+        await client.query('CREATE ROLE hrms_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD ' + lit);
+        log('created database role hrms_app');
+      } else {
+        await client.query('ALTER ROLE hrms_app PASSWORD ' + lit);
+      }
     }
+    const code = await runMigrations();
+    if (code !== 0) log('migrations failed (exit ' + code + ')');
   } finally {
-    await client.end();
+    await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]).catch(() => {});
+    await client.end().catch(() => {});
   }
 }
 
-function migrate() {
-  if (!process.env.DATABASE_ADMIN_URL) {
-    log('DATABASE_ADMIN_URL not set - skipping migrations');
-    return;
-  }
-  const r = spawnSync(process.execPath, ['--enable-source-maps', 'dist/db/migrate.js'], {
-    cwd: apiDir,
-    stdio: 'inherit',
-    env: process.env,
-  });
-  if (r.status !== 0) log('migrations failed (exit ' + r.status + ') - continuing');
-}
-
-let api;
-let stopping = false;
-function startApi() {
-  api = spawn(process.execPath, ['--enable-source-maps', 'dist/main.js'], {
-    cwd: apiDir,
-    stdio: 'inherit',
-    env: process.env,
-  });
-  api.on('exit', (code, signal) => {
-    if (stopping) return;
-    log('API exited (' + (code ?? signal) + '), restarting in 3s');
-    setTimeout(startApi, 3000);
-  });
+async function startApi() {
+  const { createApiApp } = require(path.join(apiDir, 'dist', 'main.js'));
+  const app = await createApiApp();
+  await app.init();
+  const expressApp = app.getHttpAdapter().getInstance();
+  apiHandler = (req, res) => expressApp(req, res);
+  log('API ready');
 }
 
 async function startWeb() {
   const nextMod = require(require.resolve('next', { paths: [webDir] }));
   const next = nextMod.default || nextMod;
   const app = next({ dev: false, dir: webDir });
-  const handle = app.getRequestHandler();
   await app.prepare();
-  const port = process.env.PORT || 3000;
-  http.createServer((req, res) => handle(req, res)).listen(port, () => log('web listening on ' + port));
+  webHandler = app.getRequestHandler();
+  log('web ready');
 }
 
+(async () => {
+  const web = startWeb().catch((err) => {
+    startupFailed = true;
+    console.error('[server] web failed to start', err);
+  });
+  try {
+    await prepareDatabase();
+  } catch (err) {
+    log('database preparation failed: ' + err.message);
+  }
+  try {
+    await startApi();
+  } catch (err) {
+    startupFailed = true;
+    console.error('[server] API failed to start', err);
+  }
+  await web;
+})();
+
 function shutdown() {
-  stopping = true;
-  if (api) api.kill('SIGTERM');
+  server.close();
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-
-(async () => {
-  try {
-    await ensureAppRole();
-  } catch (err) {
-    log('could not create/update hrms_app role: ' + err.message);
-  }
-  migrate();
-  startApi();
-  await startWeb();
-})().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
