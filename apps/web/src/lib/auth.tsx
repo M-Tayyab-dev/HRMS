@@ -3,7 +3,18 @@
 import type { Permission, Role } from '@hrms/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { api } from './api';
+import { api, ApiError } from './api';
+
+/** Current user; on 401 try one silent session refresh (the access token may simply have expired). */
+async function fetchMe(): Promise<Me> {
+  try {
+    return await api.get<Me>('/auth/me');
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 401) throw err;
+    await api.post('/auth/refresh');
+    return api.get<Me>('/auth/me');
+  }
+}
 
 export interface Me {
   user: {
@@ -51,7 +62,7 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
-  const { data, isLoading, refetch } = useQuery({ queryKey: ['me'], queryFn: () => api.get<Me>('/auth/me'), staleTime: 60_000, retry: false });
+  const { data, isLoading, refetch } = useQuery({ queryKey: ['me'], queryFn: fetchMe, staleTime: 60_000, retry: false });
   const perms = useMemo(() => new Set(data?.user.permissions ?? []), [data]);
 
   const logout = useCallback(async () => {
