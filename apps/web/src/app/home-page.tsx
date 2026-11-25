@@ -639,7 +639,7 @@ export function HomePage() {
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               <li><Link href="/login" className="hover:text-foreground">Sign in</Link></li>
               <li><Link href="/forgot-password" className="hover:text-foreground">Forgot password</Link></li>
-              {SITE.supportEmail && <li><a href={`mailto:${SITE.supportEmail}`} className="hover:text-foreground">Support</a></li>}
+              {SITE.supportEmail && <li><a href={`mailto:${SITE.supportEmail}`} className="hover:text-foreground">{SITE.supportEmail}</a></li>}
             </ul>
           </div>
         </div>
