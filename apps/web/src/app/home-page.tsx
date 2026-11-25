@@ -340,9 +340,9 @@ function Pricing() {
             {hot && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-primary to-indigo-500 px-3 py-1 text-xs font-medium text-white shadow">Most popular</span>}
             <h3 className="text-lg font-semibold">{p.name}</h3>
             {p.description && <p className="mt-1 min-h-10 text-sm text-muted-foreground">{p.description}</p>}
-            <p className="mt-5 flex items-baseline gap-1"><span className="text-4xl font-semibold tracking-tight tabular-nums">{money(cycle === 'ANNUAL' ? p.priceAnnual : p.priceMonthly, p.currency)}</span><span className="text-sm text-muted-foreground">/ {cycle === 'ANNUAL' ? 'year' : 'month'}</span></p>
-            {cycle === 'ANNUAL' && p.priceMonthly * 12 > p.priceAnnual && <p className="mt-1 text-xs font-medium text-success">Save {money(p.priceMonthly * 12 - p.priceAnnual, p.currency)} a year</p>}
-            {cycle === 'MONTHLY' && <p className="mt-1 text-xs text-muted-foreground">or {money(p.priceAnnual, p.currency)} billed yearly</p>}
+            <p className="mt-5 flex items-baseline gap-1"><span className="text-4xl font-semibold tracking-tight tabular-nums">{money(cycle === 'ANNUAL' ? p.priceAnnual : p.priceMonthly, p.currency)}</span><span className="text-sm text-muted-foreground">/ employee / {cycle === 'ANNUAL' ? 'year' : 'month'}</span></p>
+            {cycle === 'ANNUAL' && p.priceMonthly * 12 > p.priceAnnual && <p className="mt-1 text-xs font-medium text-success">Save {money(p.priceMonthly * 12 - p.priceAnnual, p.currency)} per employee a year</p>}
+            {cycle === 'MONTHLY' && <p className="mt-1 text-xs text-muted-foreground">or {money(p.priceAnnual, p.currency)} per employee billed yearly</p>}
             <p className="mt-1 text-sm text-muted-foreground">{p.maxEmployees ? `Up to ${p.maxEmployees} employees` : 'Unlimited employees'}</p>
             <Link href={`/signup?plan=${p.id}&cycle=${cycle}`}
               className={cn('mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-medium transition', hot ? 'bg-primary text-primary-foreground shadow-md shadow-primary/30 hover:shadow-lg' : 'border hover:bg-muted')}>
