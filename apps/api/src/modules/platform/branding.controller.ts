@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Query, Res, ServiceUnavailableException } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Res, ServiceUnavailableException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { demoRequestSchema, isReservedWorkspace, signupSchema, type DemoRequestInput, type SignupInput } from '@hrms/shared';
 import type { Response } from 'express';
@@ -45,6 +45,21 @@ export class BrandingController {
   @Get('plans')
   plans() {
     return this.settings.publicPlans();
+  }
+
+  /**
+   * Company subdomains: does this workspace exist, and what is the company called?
+   * Lets ecomalign.hrmsalign.com show "Sign in to EcomAlign", and a made-up subdomain a "not found" page.
+   */
+  @Get('workspaces/:slug')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async workspace(@Param('slug') slug: string) {
+    const s = (slug ?? '').trim().toLowerCase();
+    const missing = () => new NotFoundException({ message: 'No company uses this address', code: 'WORKSPACE_NOT_FOUND' });
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(s) || isReservedWorkspace(s)) throw missing();
+    const [t] = await this.db.root.select({ name: tenants.name, status: tenants.status }).from(tenants).where(eq(tenants.slug, s)).limit(1);
+    if (!t) throw missing();
+    return { workspace: s, name: t.name, active: t.status === 'ACTIVE' };
   }
 
   @Get('logo')
