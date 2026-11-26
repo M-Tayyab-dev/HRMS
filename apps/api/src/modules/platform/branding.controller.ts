@@ -70,7 +70,7 @@ export class BrandingController {
     if (!plan) throw badRequest('Choose one of the plans shown', 'PLAN_NOT_FOUND');
     const workspace = await freeWorkspace(this.db, body.companyName);
     const { tenantId, userId } = await this.auth.createCompany(
-      { companyName: body.companyName, workspace, adminName: body.adminName, email: body.email, password: body.password, mustChangePassword: false, planId: plan.id, timezone: 'Asia/Karachi', currency: plan.currency },
+      { companyName: body.companyName, workspace, adminName: body.adminName, email: body.email, password: body.password, mustChangePassword: false, planId: plan.id, timezone: 'Asia/Karachi', currency: body.currency ?? plan.currency },
       'website sign-up',
     );
     await this.db.inTenant(tenantId, (tx) => tx.update(tenants).set({ signupSource: 'SELF', billingCycle: body.cycle, billingStatus: 'UNPAID' }).where(eq(tenants.id, tenantId)));
