@@ -31,6 +31,7 @@ const apiDir = path.join(root, 'apps', 'api');
 const webDir = path.join(root, 'apps', 'web');
 const log = (...a) => console.log('[server]', ...a);
 const MIGRATION_LOCK_ID = 72451901;
+const DEMO_LOCK_ID = 72451902;
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.COOKIE_SECURE = process.env.COOKIE_SECURE || 'true';
@@ -66,12 +67,12 @@ const server = http.createServer((req, res) => {
 const port = process.env.PORT || 3000;
 server.listen(port, () => log('listening on ' + port));
 
-function runMigrations() {
+function runNode(script, cwd, extraEnv) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, ['dist/db/migrate.js'], { cwd: apiDir, stdio: 'inherit', env: process.env });
+    const child = spawn(process.execPath, [script], { cwd, stdio: 'inherit', env: { ...process.env, ...extraEnv } });
     child.on('exit', (code) => resolve(code));
     child.on('error', (err) => {
-      log('could not run migrations: ' + err.message);
+      log('could not run ' + script + ': ' + err.message);
       resolve(1);
     });
   });
@@ -113,11 +114,60 @@ async function prepareDatabase() {
     if (await migrationsUpToDate(client)) {
       log('database schema up to date');
     } else {
-      const code = await runMigrations();
+      const code = await runNode('dist/db/migrate.js', apiDir);
       if (code !== 0) log('migrations failed (exit ' + code + ')');
+    }
+    // Platform owner (Super Admin of the SaaS): created or its password reset from the env, when both are set.
+    if (process.env.PLATFORM_ADMIN_EMAIL && process.env.PLATFORM_ADMIN_PASSWORD) {
+      const code = await runNode('dist/db/create-platform-admin.js', apiDir);
+      log(code === 0 ? 'platform owner ready' : 'platform owner setup failed (exit ' + code + ')');
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]).catch(() => {});
+    await client.end().catch(() => {});
+  }
+}
+
+/**
+ * SEED_DEMO=1: once, fills a read-only demo company (scripts/seed-demo.mjs, through our own API) and marks
+ * it as the website's live demo. Skipped when the demo workspace already exists. Needs PLATFORM_ADMIN_*.
+ */
+async function seedDemoIfRequested() {
+  if (process.env.SEED_DEMO !== '1' || !process.env.DATABASE_ADMIN_URL) return;
+  if (!process.env.PLATFORM_ADMIN_EMAIL || !process.env.PLATFORM_ADMIN_PASSWORD) {
+    log('SEED_DEMO needs PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD - skipping');
+    return;
+  }
+  const workspace = process.env.DEMO_WORKSPACE || 'demo';
+  const { Client } = require(require.resolve('pg', { paths: [apiDir] }));
+  const client = new Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await client.connect();
+  try {
+    const lock = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [DEMO_LOCK_ID]);
+    if (!lock.rows[0].ok) return; // another instance is seeding
+    const findTenant = async () => (await client.query('SELECT id, is_demo FROM tenants WHERE slug = $1', [workspace])).rows[0];
+    let tenant = await findTenant();
+    if (!tenant) {
+      log('seeding demo company "' + workspace + '"');
+      const code = await runNode('scripts/seed-demo.mjs', root, {
+        API_URL: 'http://127.0.0.1:' + port + '/api/v1',
+        DEMO_WORKSPACE: workspace,
+      });
+      if (code !== 0) log('demo seeding failed (exit ' + code + ')');
+      tenant = await findTenant();
+    }
+    if (tenant && !tenant.is_demo) {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenant.id]);
+      await client.query('UPDATE tenants SET is_demo = true WHERE id = $1', [tenant.id]);
+      await client.query('COMMIT');
+      log('demo company "' + workspace + '" is now the live demo');
+    }
+    await client.query('SELECT pg_advisory_unlock($1)', [DEMO_LOCK_ID]);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    log('demo setup failed: ' + err.message);
+  } finally {
     await client.end().catch(() => {});
   }
 }
@@ -157,6 +207,7 @@ async function startWeb() {
     console.error('[server] API failed to start', err);
   }
   await web;
+  if (apiHandler) await seedDemoIfRequested();
 })();
 
 function shutdown() {
