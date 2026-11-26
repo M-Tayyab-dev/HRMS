@@ -118,13 +118,78 @@ async function prepareDatabase() {
       if (code !== 0) log('migrations failed (exit ' + code + ')');
     }
     // Platform owner (Super Admin of the SaaS): created or its password reset from the env, when both are set.
-    if (process.env.PLATFORM_ADMIN_EMAIL && process.env.PLATFORM_ADMIN_PASSWORD) {
-      const code = await runNode('dist/db/create-platform-admin.js', apiDir);
-      log(code === 0 ? 'platform owner ready' : 'platform owner setup failed (exit ' + code + ')');
+    // Done in-process: shared hosting may refuse to start extra processes (spawn EAGAIN).
+    try {
+      await ensurePlatformAdmin(client);
+    } catch (err) {
+      log('platform owner setup failed: ' + err.message);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]).catch(() => {});
     await client.end().catch(() => {});
+  }
+}
+
+/** Same Argon2id settings as apps/api/src/common/crypto.ts. */
+const ARGON = { memoryCost: 19456, timeCost: 2, parallelism: 1 };
+
+/** Creates the platform owner, or updates its password when PLATFORM_ADMIN_PASSWORD changed. */
+async function ensurePlatformAdmin(client) {
+  const email = (process.env.PLATFORM_ADMIN_EMAIL || '').trim().toLowerCase();
+  const password = process.env.PLATFORM_ADMIN_PASSWORD || '';
+  if (!email || !password) return;
+  const name = (process.env.PLATFORM_ADMIN_NAME || 'Super Admin').trim();
+  const argon2 = require(require.resolve('@node-rs/argon2', { paths: [apiDir] }));
+  const found = await client.query('SELECT id, password_hash FROM platform_admins WHERE email = $1', [email]);
+  if (found.rowCount) {
+    let same = false;
+    try {
+      same = await argon2.verify(found.rows[0].password_hash, password);
+    } catch {}
+    if (same) return log('platform owner ready: ' + email);
+    const hash = await argon2.hash(password, ARGON);
+    await client.query(
+      'UPDATE platform_admins SET password_hash = $1, name = $2, failed_login_count = 0, locked_until = NULL, token_version = token_version + 1 WHERE id = $3',
+      [hash, name, found.rows[0].id],
+    );
+    log('platform owner password updated: ' + email);
+  } else {
+    const hash = await argon2.hash(password, ARGON);
+    await client.query('INSERT INTO platform_admins (email, name, password_hash) VALUES ($1, $2, $3)', [email, name, hash]);
+    log('platform owner created: ' + email);
+  }
+}
+
+/**
+ * Runs scripts/seed-demo.mjs inside this process (no child process). The script ends with
+ * main().catch(... process.exit(1)), so a copy is loaded that exports main() instead.
+ */
+async function runSeedDemo(workspace) {
+  const fs = require('node:fs');
+  const { pathToFileURL } = require('node:url');
+  const scripts = path.join(root, 'scripts');
+  const src = fs
+    .readFileSync(path.join(scripts, 'seed-demo.mjs'), 'utf8')
+    .replace("from './smoke.mjs'", 'from ' + JSON.stringify(pathToFileURL(path.join(scripts, 'smoke.mjs')).href))
+    .replace(/main\(\)\.catch\([\s\S]*$/, 'export { main };\n');
+  const tmp = path.join(os.tmpdir(), 'hrms-seed-demo-' + process.pid + '.mjs');
+  fs.writeFileSync(tmp, src);
+  process.env.API_URL = 'http://127.0.0.1:' + port + '/api/v1';
+  process.env.DEMO_WORKSPACE = workspace;
+  const realExit = process.exit;
+  process.exit = (code) => {
+    throw new Error('seed script tried to exit (' + code + ')');
+  };
+  try {
+    const mod = await import(pathToFileURL(tmp).href);
+    await mod.main();
+    return 0;
+  } catch (err) {
+    log('demo seeding error: ' + (err && err.message ? err.message : err));
+    return 1;
+  } finally {
+    process.exit = realExit;
+    fs.unlink(tmp, () => {});
   }
 }
 
@@ -149,10 +214,7 @@ async function seedDemoIfRequested() {
     let tenant = await findTenant();
     if (!tenant) {
       log('seeding demo company "' + workspace + '"');
-      const code = await runNode('scripts/seed-demo.mjs', root, {
-        API_URL: 'http://127.0.0.1:' + port + '/api/v1',
-        DEMO_WORKSPACE: workspace,
-      });
+      const code = await runSeedDemo(workspace);
       if (code !== 0) log('demo seeding failed (exit ' + code + ')');
       tenant = await findTenant();
     }
