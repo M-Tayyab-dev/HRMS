@@ -14,6 +14,7 @@ import { applyServerErrors, fieldError, useZodForm } from '@/lib/form';
 import { cn, money } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import { useSiteName } from '@/lib/branding';
+import { SUBDOMAINS_ON, workspaceAddress } from '@/lib/workspace';
 
 interface PublicPlan { id: string; name: string; description: string | null; priceMonthly: number; priceAnnual: number; currency: string; modules: Module[]; maxEmployees: number | null }
 
@@ -47,8 +48,9 @@ function SignupInner() {
         setStep(1);
         return setError('Choose a plan first.');
       }
-      await api.post('/public/signup', { ...v, planId, cycle, currency });
-      window.location.href = '/billing';
+      const res = await api.post<{ workspace?: string }>('/public/signup', { ...v, planId, cycle, currency });
+      // With subdomains on, the company continues at its own address (ecomalign.hrmsalign.com) and signs in there.
+      window.location.href = SUBDOMAINS_ON && res?.workspace ? workspaceAddress(res.workspace, '/login?next=/billing&welcome=1') : '/billing';
     } catch (e) {
       if (!applyServerErrors(form, e)) setError(e instanceof ApiError ? e.message : 'Could not create your account');
     }
