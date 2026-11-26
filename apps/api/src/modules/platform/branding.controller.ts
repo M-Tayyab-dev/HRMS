@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Query, Res, ServiceUnavailableException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { demoRequestSchema, signupSchema, type DemoRequestInput, type SignupInput } from '@hrms/shared';
+import { demoRequestSchema, isReservedWorkspace, signupSchema, type DemoRequestInput, type SignupInput } from '@hrms/shared';
 import type { Response } from 'express';
 import { and, eq } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
@@ -18,7 +18,7 @@ import { PlatformSettingsService, type BrandImage } from './platform-settings.se
 async function freeWorkspace(db: DbService, companyName: string): Promise<string> {
   const base = companyName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'company';
   for (let i = 0; i < 5; i++) {
-    const slug = i === 0 && base.length >= 3 ? base : `${base}-${randomBytes(2).toString('hex')}`;
+    const slug = i === 0 && base.length >= 3 && !isReservedWorkspace(base) ? base : `${base}-${randomBytes(2).toString('hex')}`;
     const [taken] = await db.root.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, slug)).limit(1);
     if (!taken) return slug;
   }
