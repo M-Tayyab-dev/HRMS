@@ -275,6 +275,10 @@ async function startWeb() {
   }
   await web;
   if (apiHandler) await seedDemoIfRequested();
+  // One-off company copy from another database (MIGRATE_SOURCE_URL + MIGRATE_TENANT); see scripts/migrate-tenant.cjs.
+  if (apiHandler && process.env.MIGRATE_SOURCE_URL) {
+    await require(path.join(__dirname, 'scripts', 'migrate-tenant.cjs')).migrateTenant({ log, apiDir }).catch((e) => log('migration error: ' + e.message));
+  }
 })();
 
 function shutdown() {
