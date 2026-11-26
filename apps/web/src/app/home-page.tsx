@@ -10,6 +10,7 @@ import {
 import Link from 'next/link';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BillingCycle } from '@hrms/shared';
+import { CountryPicker } from '@/components/country-picker';
 import { CycleToggle } from '@/components/cycle-toggle';
 import { BrandLogo } from '@/components/brand';
 import { SiteCopyright } from '@/components/site-copyright';
@@ -338,16 +339,7 @@ function Pricing() {
     <>
     <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
       <CycleToggle value={cycle} onChange={setCycle} />
-      <select
-        value={country}
-        onChange={(e) => chooseCountry(e.target.value)}
-        aria-label="Show prices for country"
-        className="h-10 rounded-full border bg-card px-4 text-sm text-foreground shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        {PRICING_COUNTRIES.map((c) => (
-          <option key={c.code} value={c.code}>{c.name} ({c.currency})</option>
-        ))}
-      </select>
+      <CountryPicker value={country} onChange={chooseCountry} />
     </div>
     <div ref={ref} className="mt-10 grid items-start gap-6 md:grid-cols-2 lg:grid-cols-3">
       {isLoading && [0, 1, 2].map((i) => <div key={i} className="h-96 animate-pulse rounded-2xl border bg-muted/40" />)}
@@ -365,7 +357,7 @@ function Pricing() {
             {hot && <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-primary to-indigo-500 px-3 py-1 text-xs font-medium text-white shadow">Most popular</span>}
             <h3 className="text-lg font-semibold">{p.name}</h3>
             {p.description && <p className="mt-1 min-h-10 text-sm text-muted-foreground">{p.description}</p>}
-            <p className="mt-5 flex items-baseline gap-1"><span className="text-4xl font-semibold tracking-tight tabular-nums">{price(cycle === 'ANNUAL' ? p.priceAnnual : p.priceMonthly, p.currency)}</span><span className="text-sm text-muted-foreground">/ employee / {cycle === 'ANNUAL' ? 'year' : 'month'}</span></p>
+            <p className="mt-5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5"><span className="whitespace-nowrap text-3xl font-semibold tracking-tight tabular-nums">{price(cycle === 'ANNUAL' ? p.priceAnnual : p.priceMonthly, p.currency)}</span><span className="whitespace-nowrap text-xs text-muted-foreground">/ employee / {cycle === 'ANNUAL' ? 'year' : 'month'}</span></p>
             {cycle === 'ANNUAL' && p.priceMonthly * 12 > p.priceAnnual && <p className="mt-1 text-xs font-medium text-success">Save {price(p.priceMonthly * 12 - p.priceAnnual, p.currency)} per employee a year</p>}
             {cycle === 'MONTHLY' && <p className="mt-1 text-xs text-muted-foreground">or {price(p.priceAnnual, p.currency)} per employee billed yearly</p>}
             <p className="mt-1 text-sm text-muted-foreground">{p.maxEmployees ? `Up to ${p.maxEmployees} employees` : 'Unlimited employees'}</p>
