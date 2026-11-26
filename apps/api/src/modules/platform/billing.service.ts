@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { config } from '../../config';
-import { BILLING_GRACE_DAYS, invoiceTotal, planPrice, type BillingCycle, type CustomInvoiceInput } from '@hrms/shared';
+import { BILLING_GRACE_DAYS, billingCurrencyFor, convertCurrency, invoiceTotal, planPrice, type BillingCycle, type CustomInvoiceInput } from '@hrms/shared';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import { badRequest, notFound } from '../../common/errors';
 import { addDays, todayIn } from '../../common/tz';
@@ -98,7 +98,9 @@ export class BillingService implements OnApplicationBootstrap, OnModuleDestroy {
       .where(and(eq(billingInvoices.tenantId, tenantId), eq(billingInvoices.periodStart, from), ne(billingInvoices.status, 'VOID')));
     if (open) throw badRequest('There is already an invoice for that period', 'INVOICE_EXISTS');
     // Pricing is per employee: the plan price times the company's active employees (at least one).
-    const unitPrice = planPrice(plan, t.billingCycle);
+    // Invoiced in the company's currency (chosen at sign-up); plan prices are converted from the plan currency.
+    const currency = billingCurrencyFor(t.currency);
+    const unitPrice = convertCurrency(planPrice(plan, t.billingCycle), plan.currency, currency);
     const seats = await this.activeEmployees(tenantId);
     const amount = unitPrice * seats;
     const to = periodEnd(from, t.billingCycle);
@@ -114,7 +116,7 @@ export class BillingService implements OnApplicationBootstrap, OnModuleDestroy {
       dueDate: await this.dueDateFrom(from),
       cycle: t.billingCycle,
       amount,
-      currency: plan.currency,
+      currency,
       periodStart: from,
       periodEnd: to,
     }).returning();
