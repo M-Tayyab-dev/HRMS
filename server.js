@@ -174,7 +174,12 @@ async function runSeedDemo(workspace) {
     .replace(/main\(\)\.catch\([\s\S]*$/, 'export { main };\n');
   const tmp = path.join(os.tmpdir(), 'hrms-seed-demo-' + process.pid + '.mjs');
   fs.writeFileSync(tmp, src);
-  process.env.API_URL = 'http://127.0.0.1:' + port + '/api/v1';
+  // Prefer our own port; some hosts (Hostinger/LiteSpeed) don't expose it, so fall back to the public URL.
+  let base = 'http://127.0.0.1:' + port;
+  try { await fetch(base + '/health', { signal: AbortSignal.timeout(3000) }); }
+  catch { base = (process.env.APP_URL || '').replace(/\/+$/, ''); }
+  process.env.API_URL = base + '/api/v1';
+  log('seeding through ' + base);
   process.env.DEMO_WORKSPACE = workspace;
   const realExit = process.exit;
   process.exit = (code) => {
